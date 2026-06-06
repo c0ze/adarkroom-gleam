@@ -15,6 +15,7 @@ architecture and the M0–M8 milestone plan.
 ## Develop
 
 ```sh
+mise trust         # once: allow the pinned gleam toolchain (mise users)
 npm install        # once: install Vite
 npm run dev        # gleam build + Vite dev server (http://localhost:5173)
 ```
