@@ -64,6 +64,29 @@ pub fn navigate_flushes_target_queue_test() {
 pub fn light_fire_msg_lights_and_notifies_test() {
   let m = model.update(model.init(), model.LightFire)
   room.fire(m.state) |> should.equal(room.Burning)
+  // Lighting also reveals the forest, so the log carries those messages too
+  // (newest first).
   notifications.messages(m.notifications)
-  |> should.equal(["the fire is burning."])
+  |> should.equal([
+    "the wood is running out.",
+    "the wind howls outside.",
+    "the fire is burning.",
+  ])
+}
+
+pub fn light_fire_reveals_forest_test() {
+  let m = model.update(model.init(), model.LightFire)
+  state.get_store(m.state, "wood") |> should.equal(4)
+  state.has_feature(m.state, "location.outside") |> should.equal(True)
+  model.unlocked_locations(m) |> should.equal([model.Room, model.Outside])
+}
+
+// A failed light (wood present but below cost) must not reveal the forest.
+pub fn failed_light_does_not_reveal_forest_test() {
+  let base = model.init()
+  let m = model.Model(..base, state: state.set_store(base.state, "wood", 3))
+  let after = model.update(m, model.LightFire)
+  state.get_store(after.state, "wood") |> should.equal(3)
+  state.has_feature(after.state, "location.outside") |> should.equal(False)
+  model.unlocked_locations(after) |> should.equal([model.Room])
 }

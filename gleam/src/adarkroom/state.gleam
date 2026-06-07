@@ -11,7 +11,9 @@
 //// capped at `max_store`.
 
 import gleam/dict.{type Dict}
+import gleam/list
 import gleam/result
+import gleam/string
 
 /// The original engine's ceiling for any stored value.
 pub const max_store = 99_999_999_999_999
@@ -78,6 +80,13 @@ pub fn set_store(state: State, key: String, value: Int) -> State {
 /// `[0, max_store]`.
 pub fn add_store(state: State, key: String, delta: Int) -> State {
   set_store(state, key, get_store(state, key) + delta)
+}
+
+/// All stores as `(key, value)` pairs, sorted by key for stable display.
+pub fn stores_list(state: State) -> List(#(String, Int)) {
+  state.stores
+  |> dict.to_list
+  |> list.sort(fn(a, b) { string.compare(a.0, b.0) })
 }
 
 // --- features ---------------------------------------------------------------

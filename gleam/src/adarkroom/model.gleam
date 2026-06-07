@@ -66,7 +66,16 @@ pub fn update(model: Model, msg: Msg) -> Model {
           location_key(location),
         ),
       )
-    LightFire -> apply_room(model, room.light_fire(model.state))
+    LightFire -> {
+      let lit = apply_room(model, room.light_fire(model.state))
+      // A successful first light (Dead -> Burning) reveals the forest; a failed
+      // attempt (not enough wood) leaves it unchanged.
+      case room.fire(model.state), room.fire(lit.state) {
+        room.Dead, room.Burning ->
+          apply_room(lit, room.unlock_forest(lit.state))
+        _, _ -> lit
+      }
+    }
     StokeFire -> apply_room(model, room.stoke_fire(model.state))
     CoolFire -> apply_room(model, room.cool_fire(model.state))
     AdjustTemp -> apply_room(model, room.adjust_temp(model.state))

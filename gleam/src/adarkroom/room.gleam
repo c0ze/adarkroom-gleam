@@ -122,6 +122,21 @@ pub fn light_fire(s: State) -> #(State, List(String)) {
   }
 }
 
+/// Revealed on the first light: a little wood appears and the Outside unlocks.
+/// A no-op once already unlocked.
+pub fn unlock_forest(s: State) -> #(State, List(String)) {
+  case state.has_feature(s, "location.outside") {
+    True -> #(s, [])
+    False -> {
+      let unlocked =
+        s
+        |> state.set_store("wood", 4)
+        |> state.set_feature("location.outside", True)
+      #(unlocked, ["the wind howls outside", "the wood is running out"])
+    }
+  }
+}
+
 /// Stoke the fire one level. Costs 1 wood once wood exists; free before.
 pub fn stoke_fire(s: State) -> #(State, List(String)) {
   let stoked = fire_from_int(state.get_game(s, fire_key) + 1)
