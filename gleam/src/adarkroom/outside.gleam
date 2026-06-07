@@ -4,6 +4,11 @@
 
 import adarkroom/craft
 import adarkroom/state.{type State}
+import gleam/dict
+import gleam/int
+import gleam/list
+import gleam/result
+import gleam/string
 
 /// Cooldown after gathering wood by hand.
 pub const gather_cooldown_ms = 60_000
@@ -36,5 +41,70 @@ pub fn see_forest(s: State) -> #(State, List(String)) {
     False -> #(state.set_feature(s, seen_forest_key, True), [
       "the sky is grey and the wind blows relentlessly",
     ])
+  }
+}
+
+// --- check traps ------------------------------------------------------------
+
+/// How many drops a trap-check rolls: one per trap, plus one per bait (capped at
+/// the number of traps).
+pub fn num_drops(s: State) -> Int {
+  let traps = craft.building_count(s, "trap")
+  traps + int.min(state.get_store(s, "bait"), traps)
+}
+
+/// Check the traps, given one random roll in `[0.0, 1.0)` per drop (see
+/// `num_drops`). Each roll yields a resource from the weighted drop table; the
+/// gains are added to stores, the bait used is consumed, and the haul is
+/// reported (each kind named once, in the order first found).
+pub fn check_traps(s: State, rolls: List(Float)) -> #(State, List(String)) {
+  let traps = craft.building_count(s, "trap")
+  let bait_used = int.min(state.get_store(s, "bait"), traps)
+
+  let #(counts, seen_rev) =
+    list.fold(rolls, #(dict.new(), []), fn(acc, roll) {
+      let #(counts, seen) = acc
+      let #(name, message) = classify(roll)
+      let counts =
+        dict.insert(counts, name, result.unwrap(dict.get(counts, name), 0) + 1)
+      let seen = case list.contains(seen, message) {
+        True -> seen
+        False -> [message, ..seen]
+      }
+      #(counts, seen)
+    })
+
+  case list.reverse(seen_rev) {
+    [] -> #(s, [])
+    messages -> {
+      let gained = dict.fold(counts, s, state.add_store)
+      let after = state.add_store(gained, "bait", -bait_used)
+      #(after, ["the traps contain " <> join_drops(messages)])
+    }
+  }
+}
+
+/// The weighted trap-drop table: a roll in `[0.0, 1.0)` maps to a resource and
+/// its message (cumulative thresholds, as in the original `TrapDrops`).
+fn classify(roll: Float) -> #(String, String) {
+  case roll {
+    r if r <. 0.5 -> #("fur", "scraps of fur")
+    r if r <. 0.75 -> #("meat", "bits of meat")
+    r if r <. 0.85 -> #("scales", "strange scales")
+    r if r <. 0.93 -> #("teeth", "scattered teeth")
+    r if r <. 0.995 -> #("cloth", "tattered cloth")
+    _ -> #("charm", "a crudely made charm")
+  }
+}
+
+/// Join drop messages as "a", "a and b", or "a, b and c".
+fn join_drops(messages: List(String)) -> String {
+  case list.reverse(messages) {
+    [] -> ""
+    [last, ..rest_rev] ->
+      case list.reverse(rest_rev) {
+        [] -> last
+        init -> string.join(init, ", ") <> " and " <> last
+      }
   }
 }

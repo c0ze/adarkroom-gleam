@@ -6,6 +6,7 @@
 import adarkroom/craft
 import adarkroom/notifications.{type Notifications}
 import adarkroom/outside
+import adarkroom/rng
 import adarkroom/room
 import adarkroom/state.{type State}
 import adarkroom/timer
@@ -48,6 +49,10 @@ pub type Msg {
   Buy(name: String)
   /// Gather wood from the forest (Outside).
   GatherWood
+  /// Check the traps (Outside) — rolls the drops, then dispatches `TrapsChecked`.
+  CheckTraps
+  /// Apply trap drops from the supplied random rolls (one per drop).
+  TrapsChecked(rolls: List(Float))
 }
 
 pub type Model {
@@ -182,7 +187,30 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
           )
         }
       }
+
+    CheckTraps ->
+      case on_cooldown(model, "traps") {
+        True -> #(model, effect.none())
+        False -> #(
+          start_cooldown(model, "traps", outside.traps_cooldown_ms),
+          roll_traps(outside.num_drops(model.state)),
+        )
+      }
+
+    TrapsChecked(rolls: rolls) -> #(
+      apply_outside(model, outside.check_traps(model.state, rolls)),
+      effect.none(),
+    )
   }
+}
+
+/// An effect that rolls `n` random values and reports them as `TrapsChecked`.
+/// The randomness lives here, in the effect, so `update` stays pure.
+fn roll_traps(n: Int) -> Effect(Msg) {
+  effect.from(fn(dispatch) {
+    let rolls = list.map(list.repeat(Nil, n), fn(_) { rng.random() })
+    dispatch(TrapsChecked(rolls))
+  })
 }
 
 /// Apply a fire change, let the builder react (it is summoned once the room
