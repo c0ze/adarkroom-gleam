@@ -55,6 +55,7 @@ fn init(_flags) -> #(Model, Effect(Msg)) {
       time_interval(cool_check_ms, CoolCheck),
       interval(temp_interval_ms, AdjustTemp),
       resume_builder(loaded),
+      model.resume_population(loaded),
     ]),
   )
 }
@@ -138,8 +139,13 @@ fn header(m: Model) -> Element(Msg) {
         True -> "headerButton selected"
         False -> "headerButton"
       }
+      // The Outside's name grows with the village.
+      let title = case loc {
+        model.Outside -> outside.title(m.state)
+        _ -> model.location_title(loc)
+      }
       html.div([attribute.class(class), event.on_click(Navigate(to: loc))], [
-        element.text(model.location_title(loc)),
+        element.text(title),
       ])
     }),
   )
@@ -181,10 +187,49 @@ fn outside_panel(m: Model) -> Element(Msg) {
       ))
   }
   html.div([attribute.class("location"), attribute.id("outsidePanel")], [
+    village_view(m.state),
     gather,
     traps,
     stores_view(m.state),
   ])
+}
+
+/// The village: the buildings raised and the current population. Shown as a
+/// "forest" until the first hut makes it a "village". Hidden until something
+/// stands.
+fn village_view(s: state.State) -> Element(Msg) {
+  case craft.built(s) {
+    [] -> element.none()
+    buildings -> {
+      let legend = case craft.building_count(s, "hut") > 0 {
+        True -> "village"
+        False -> "forest"
+      }
+      let rows =
+        list.map(buildings, fn(entry) {
+          let #(name, count) = entry
+          html.div([attribute.class("storeRow")], [
+            html.div([attribute.class("row_key")], [element.text(name)]),
+            html.div([attribute.class("row_val")], [
+              element.text(int.to_string(count)),
+            ]),
+          ])
+        })
+      let population =
+        html.div([attribute.id("population")], [
+          element.text(
+            "pop "
+            <> int.to_string(outside.population(s))
+            <> "/"
+            <> int.to_string(outside.max_population(s)),
+          ),
+        ])
+      html.div(
+        [attribute.id("village"), attribute.attribute("data-legend", legend)],
+        list.append(rows, [population]),
+      )
+    }
+  }
 }
 
 /// The Room panel. For now: the fire control (light when dead, otherwise stoke).

@@ -12,6 +12,7 @@ import adarkroom/state.{type State}
 import adarkroom/timer
 import adarkroom/trade
 import gleam/dict.{type Dict}
+import gleam/float
 import gleam/int
 import gleam/list
 import gleam/set.{type Set}
@@ -53,6 +54,8 @@ pub type Msg {
   CheckTraps
   /// Apply trap drops from the supplied random rolls (one per drop).
   TrapsChecked(rolls: List(Float))
+  /// Timer: newcomers arrive (the roll sizes the group); reschedules itself.
+  PopulationIncreased(roll: Float)
 }
 
 pub type Model {
@@ -166,10 +169,16 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
       #(progressed, next)
     }
 
-    Build(name: name) -> #(
-      apply_room(model, craft.build(model.state, name)),
-      effect.none(),
-    )
+    Build(name: name) -> {
+      let had_huts = craft.building_count(model.state, "hut") > 0
+      let built = apply_room(model, craft.build(model.state, name))
+      // The first hut starts the flow of newcomers.
+      let eff = case !had_huts && craft.building_count(built.state, "hut") > 0 {
+        True -> schedule_population()
+        False -> effect.none()
+      }
+      #(built, eff)
+    }
 
     Buy(name: name) -> #(
       apply_room(model, trade.buy(model.state, name)),
@@ -201,6 +210,12 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
       apply_outside(model, outside.check_traps(model.state, rolls)),
       effect.none(),
     )
+
+    PopulationIncreased(roll: roll) -> #(
+      apply_outside(model, outside.increase_population(model.state, roll)),
+      // Keep the village growing: schedule the next arrival.
+      schedule_population(),
+    )
   }
 }
 
@@ -211,6 +226,30 @@ fn roll_traps(n: Int) -> Effect(Msg) {
     let rolls = list.map(list.repeat(Nil, n), fn(_) { rng.random() })
     dispatch(TrapsChecked(rolls))
   })
+}
+
+/// Schedule the next population increase after a random 0.5–2.5 minute delay
+/// (faithful to the original's floor'd `_POP_DELAY`). Start the chain once the
+/// first hut goes up; thereafter each increase reschedules itself.
+pub fn schedule_population() -> Effect(Msg) {
+  effect.from(fn(dispatch) {
+    let steps = float.truncate(rng.random() *. 2.5)
+    let delay = 30_000 + steps * 60_000
+    let _ =
+      timer.set_timeout(
+        fn() { dispatch(PopulationIncreased(rng.random())) },
+        delay,
+      )
+    Nil
+  })
+}
+
+/// The population timer for a loaded game: resume it if any huts already stand.
+pub fn resume_population(model: Model) -> Effect(Msg) {
+  case craft.building_count(model.state, "hut") > 0 {
+    True -> schedule_population()
+    False -> effect.none()
+  }
 }
 
 /// Apply a fire change, let the builder react (it is summoned once the room

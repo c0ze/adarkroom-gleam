@@ -30,6 +30,66 @@ pub fn first_arrival_notes_the_forest_once_test() {
   msgs2 |> should.equal([])
 }
 
+// --- village & population ---------------------------------------------------
+
+pub fn max_population_is_four_per_hut_test() {
+  outside.max_population(state.new()) |> should.equal(0)
+  outside.max_population(state.new() |> state.set_game("building.hut", 2))
+  |> should.equal(8)
+}
+
+pub fn increase_population_adds_and_notifies_test() {
+  // 2 huts → room for 8; empty, roll 0.0 → num = floor(0*4 + 4) = 4.
+  let s = state.new() |> state.set_game("building.hut", 2)
+  let #(s2, msgs) = outside.increase_population(s, 0.0)
+  outside.population(s2) |> should.equal(4)
+  msgs |> should.equal(["a weathered family takes up in one of the huts."])
+}
+
+pub fn increase_population_single_stranger_test() {
+  // 1 hut (room 4), 3 already → space 1, roll 0.0 → num = max(floor(0.5), 1) = 1.
+  let s =
+    state.new()
+    |> state.set_game("building.hut", 1)
+    |> state.set_game("population", 3)
+  let #(s2, msgs) = outside.increase_population(s, 0.0)
+  outside.population(s2) |> should.equal(4)
+  msgs |> should.equal(["a stranger arrives in the night"])
+}
+
+pub fn increase_population_noop_when_full_test() {
+  let s =
+    state.new()
+    |> state.set_game("building.hut", 1)
+    |> state.set_game("population", 4)
+  let #(s2, msgs) = outside.increase_population(s, 0.5)
+  outside.population(s2) |> should.equal(4)
+  msgs |> should.equal([])
+}
+
+pub fn increase_population_message_scales_with_size_test() {
+  let with_huts = fn(n) { state.new() |> state.set_game("building.hut", n) }
+  // small group: 2 huts, roll 0.5 → floor(0.5*4 + 4) = 6.
+  outside.increase_population(with_huts(2), 0.5).1
+  |> should.equal(["a small group arrives, all dust and bones."])
+  // convoy: 5 huts, roll 0.5 → floor(0.5*10 + 10) = 15.
+  outside.increase_population(with_huts(5), 0.5).1
+  |> should.equal(["a convoy lurches in, equal parts worry and hope."])
+  // booming: 20 huts, roll 0.5 → floor(0.5*40 + 40) = 60.
+  outside.increase_population(with_huts(20), 0.5).1
+  |> should.equal(["the town's booming. word does get around."])
+}
+
+pub fn outside_title_tracks_the_huts_test() {
+  outside.title(state.new()) |> should.equal("A Silent Forest")
+  outside.title(state.new() |> state.set_game("building.hut", 1))
+  |> should.equal("A Lonely Hut")
+  outside.title(state.new() |> state.set_game("building.hut", 3))
+  |> should.equal("A Tiny Village")
+  outside.title(state.new() |> state.set_game("building.hut", 12))
+  |> should.equal("A Large Village")
+}
+
 // --- check traps ------------------------------------------------------------
 
 pub fn num_drops_counts_traps_plus_capped_bait_test() {
