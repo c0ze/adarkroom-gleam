@@ -52,3 +52,15 @@ pub fn set_feature_test() {
   let s = state.new() |> state.set_feature("fire", True)
   state.has_feature(s, "fire") |> should.equal(True)
 }
+
+pub fn stores_list_sorted_test() {
+  let s =
+    state.new()
+    |> state.set_store("wood", 2)
+    |> state.set_store("fur", 5)
+  state.stores_list(s) |> should.equal([#("fur", 5), #("wood", 2)])
+}
+
+pub fn stores_list_empty_test() {
+  state.stores_list(state.new()) |> should.equal([])
+}

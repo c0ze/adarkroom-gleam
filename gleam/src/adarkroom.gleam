@@ -11,7 +11,9 @@ import adarkroom/model.{
 }
 import adarkroom/notifications.{type Notifications}
 import adarkroom/room
+import adarkroom/state
 import adarkroom/timer
+import gleam/int
 import gleam/list
 import lustre
 import lustre/attribute
@@ -110,7 +112,33 @@ fn room_panel(m: Model) -> Element(Msg) {
   }
   html.div([attribute.class("location")], [
     html.div([attribute.id("fireButtons")], [fire_button]),
+    stores_view(m.state),
   ])
+}
+
+/// The stores panel — resources and their counts. Hidden until non-empty.
+fn stores_view(s: state.State) -> Element(Msg) {
+  case state.stores_list(s) {
+    [] -> element.none()
+    stores ->
+      html.div(
+        [attribute.id("stores"), attribute.attribute("data-legend", "stores")],
+        [
+          html.div(
+            [attribute.id("resources")],
+            list.map(stores, fn(entry) {
+              let #(name, count) = entry
+              html.div([attribute.class("storeRow")], [
+                html.div([attribute.class("row_key")], [element.text(name)]),
+                html.div([attribute.class("row_val")], [
+                  element.text(int.to_string(count)),
+                ]),
+              ])
+            }),
+          ),
+        ],
+      )
+  }
 }
 
 /// The running message log, newest first.

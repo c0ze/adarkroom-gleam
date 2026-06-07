@@ -66,7 +66,11 @@ pub fn update(model: Model, msg: Msg) -> Model {
           location_key(location),
         ),
       )
-    LightFire -> apply_room(model, room.light_fire(model.state))
+    LightFire -> {
+      let lit = apply_room(model, room.light_fire(model.state))
+      // The first light reveals the forest (wood appears, Outside unlocks).
+      apply_room(lit, room.unlock_forest(lit.state))
+    }
     StokeFire -> apply_room(model, room.stoke_fire(model.state))
     CoolFire -> apply_room(model, room.cool_fire(model.state))
     AdjustTemp -> apply_room(model, room.adjust_temp(model.state))

@@ -101,3 +101,17 @@ pub fn adjust_temp_stable_when_matched_test() {
   room.temperature(s2) |> should.equal(room.Mild)
   msgs |> should.equal([])
 }
+
+pub fn unlock_forest_gives_wood_and_reveals_outside_test() {
+  let #(s, msgs) = room.unlock_forest(state.new())
+  state.get_store(s, "wood") |> should.equal(4)
+  state.has_feature(s, "location.outside") |> should.equal(True)
+  msgs |> should.equal(["the wind howls outside", "the wood is running out"])
+}
+
+pub fn unlock_forest_is_noop_once_unlocked_test() {
+  let s = state.new() |> state.set_feature("location.outside", True)
+  let #(s2, msgs) = room.unlock_forest(s)
+  msgs |> should.equal([])
+  state.get_store(s2, "wood") |> should.equal(0)
+}

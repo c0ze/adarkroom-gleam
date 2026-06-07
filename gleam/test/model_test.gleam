@@ -64,6 +64,19 @@ pub fn navigate_flushes_target_queue_test() {
 pub fn light_fire_msg_lights_and_notifies_test() {
   let m = model.update(model.init(), model.LightFire)
   room.fire(m.state) |> should.equal(room.Burning)
+  // Lighting also reveals the forest, so the log carries those messages too
+  // (newest first).
   notifications.messages(m.notifications)
-  |> should.equal(["the fire is burning."])
+  |> should.equal([
+    "the wood is running out.",
+    "the wind howls outside.",
+    "the fire is burning.",
+  ])
+}
+
+pub fn light_fire_reveals_forest_test() {
+  let m = model.update(model.init(), model.LightFire)
+  state.get_store(m.state, "wood") |> should.equal(4)
+  state.has_feature(m.state, "location.outside") |> should.equal(True)
+  model.unlocked_locations(m) |> should.equal([model.Room, model.Outside])
 }
