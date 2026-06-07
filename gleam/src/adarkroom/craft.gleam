@@ -6,6 +6,7 @@
 //// (tools, weapons, upgrades) are counted in `stores`. Costs are always paid
 //// from `stores`. Trade goods (bought at the trading post) live elsewhere.
 
+import adarkroom/cost
 import adarkroom/room
 import adarkroom/state.{type State}
 import gleam/list
@@ -165,27 +166,13 @@ pub fn build(s: State, name: String) -> #(State, List(String)) {
           case at_maximum(c, count(s, c, name)) {
             True -> #(s, [])
             False ->
-              case try_afford(s, c.cost(s)) {
+              case cost.pay(s, c.cost(s)) {
                 Error(missing) -> #(s, ["not enough " <> missing])
                 Ok(paid) -> #(increment(paid, c, name), [c.build_msg])
               }
           }
       }
     }
-  }
-}
-
-/// Pay a cost from `stores` if every component is affordable; otherwise report
-/// the first component that falls short and spend nothing.
-fn try_afford(s: State, cost: List(#(String, Int))) -> Result(State, String) {
-  case list.find(cost, fn(pair) { state.get_store(s, pair.0) < pair.1 }) {
-    Ok(#(missing, _)) -> Error(missing)
-    Error(Nil) ->
-      Ok(
-        list.fold(cost, s, fn(acc, pair) {
-          state.add_store(acc, pair.0, -pair.1)
-        }),
-      )
   }
 }
 

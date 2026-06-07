@@ -8,14 +8,15 @@ import adarkroom/button
 import adarkroom/clock
 import adarkroom/craft.{type Craftable}
 import adarkroom/model.{
-  type Model, type Msg, AdjustTemp, Build, BuilderProgress, CoolCheck, LightFire,
-  Navigate, StokeFire, Tick,
+  type Model, type Msg, AdjustTemp, Build, BuilderProgress, Buy, CoolCheck,
+  LightFire, Navigate, StokeFire, Tick,
 }
 import adarkroom/notifications.{type Notifications}
 import adarkroom/room
 import adarkroom/save
 import adarkroom/state
 import adarkroom/timer
+import adarkroom/trade.{type Good}
 import gleam/float
 import gleam/int
 import gleam/list
@@ -170,6 +171,7 @@ fn room_panel(m: Model) -> Element(Msg) {
     html.div([attribute.id("fireButtons")], [fire_button]),
     build_section("buildBtns", "build", m.state, builds),
     build_section("craftBtns", "craft", m.state, crafts),
+    buy_section(m.state, trade.visible(m.state)),
     stores_view(m.state),
   ])
 }
@@ -203,6 +205,33 @@ fn build_button(s: state.State, name: String, c: Craftable) -> Element(Msg) {
     disabled: craft.at_maximum(c, craft.count(s, c, name)),
     cooldown: 0.0,
     id: "build_" <> string.replace(name, " ", "-"),
+  ))
+}
+
+/// The trading post's buy section, hidden until something is on offer.
+fn buy_section(s: state.State, goods: List(#(String, Good))) -> Element(Msg) {
+  case goods {
+    [] -> element.none()
+    _ ->
+      html.div(
+        [attribute.id("buyBtns"), attribute.attribute("data-legend", "buy")],
+        list.map(goods, fn(entry) {
+          let #(name, g) = entry
+          buy_button(s, name, g)
+        }),
+      )
+  }
+}
+
+/// One buy button: its cost tooltip, disabled once at its maximum (the compass).
+fn buy_button(s: state.State, name: String, g: Good) -> Element(Msg) {
+  button.button(button.Config(
+    text: name,
+    on_click: Buy(name),
+    cost: g.cost,
+    disabled: trade.at_maximum(g, state.get_store(s, name)),
+    cooldown: 0.0,
+    id: "buy_" <> string.replace(name, " ", "-"),
   ))
 }
 

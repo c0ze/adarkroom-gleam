@@ -8,6 +8,7 @@ import adarkroom/notifications.{type Notifications}
 import adarkroom/room
 import adarkroom/state.{type State}
 import adarkroom/timer
+import adarkroom/trade
 import gleam/list
 import gleam/set.{type Set}
 import lustre/effect.{type Effect}
@@ -40,6 +41,8 @@ pub type Msg {
   BuilderProgress
   /// Build or craft the named structure/item.
   Build(name: String)
+  /// Buy the named trade good at the trading post.
+  Buy(name: String)
 }
 
 pub type Model {
@@ -117,6 +120,11 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
 
     Build(name: name) -> #(
       apply_room(model, craft.build(model.state, name)),
+      effect.none(),
+    )
+
+    Buy(name: name) -> #(
+      apply_room(model, trade.buy(model.state, name)),
       effect.none(),
     )
   }
