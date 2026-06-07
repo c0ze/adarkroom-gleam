@@ -92,12 +92,12 @@ pub fn on_cooldown(model: Model, id: String) -> Bool {
 }
 
 /// The remaining cooldown as a fraction of `duration` (1.0 just started, 0.0
-/// ready) — the cooldown-bar width.
+/// ready) — the cooldown-bar width. A non-positive `duration` yields 0.0.
 pub fn cooldown_fraction(model: Model, id: String, duration: Int) -> Float {
-  case dict.get(model.cooldowns, id) {
-    Ok(deadline) if model.now < deadline ->
+  case dict.get(model.cooldowns, id), duration > 0 {
+    Ok(deadline), True if model.now < deadline ->
       int.to_float(deadline - model.now) /. int.to_float(duration)
-    _ -> 0.0
+    _, _ -> 0.0
   }
 }
 

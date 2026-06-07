@@ -163,7 +163,7 @@ fn outside_panel(m: Model) -> Element(Msg) {
       text: "gather wood",
       on_click: GatherWood,
       cost: [],
-      disabled: False,
+      disabled: model.on_cooldown(m, "gather"),
       cooldown: model.cooldown_fraction(m, "gather", outside.gather_cooldown_ms),
       id: "gatherButton",
     ))

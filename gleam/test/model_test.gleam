@@ -239,6 +239,13 @@ pub fn cooldown_fraction_decreases_with_time_test() {
   |> should.equal(0.5)
 }
 
+pub fn cooldown_fraction_guards_zero_duration_test() {
+  let m = model.Model(..model.init(), now: 0)
+  let after = run(m, model.GatherWood)
+  // A zero (or negative) duration must not divide by zero.
+  model.cooldown_fraction(after, "gather", 0) |> should.equal(0.0)
+}
+
 pub fn buy_message_adds_good_and_spends_fur_test() {
   let base = model.init()
   let m =
