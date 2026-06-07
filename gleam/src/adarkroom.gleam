@@ -1,11 +1,16 @@
 //// A Dark Room — Gleam + Lustre port.
 ////
-//// The Lustre application entry point: wires the MVU model/update with a
-//// periodic game-loop tick (via the timer FFI) and renders the game shell —
-//// location tabs, the current location panel, and the notification log.
+//// The Lustre application entry point: wires the MVU model/update with the
+//// game-loop timers (tick, fire cooling, temperature) and renders the game
+//// shell — location tabs, the current location panel, and the notification log.
 
-import adarkroom/model.{type Model, type Msg, Navigate, Tick}
+import adarkroom/button
+import adarkroom/model.{
+  type Model, type Msg, AdjustTemp, CoolFire, LightFire, Navigate, StokeFire,
+  Tick,
+}
 import adarkroom/notifications.{type Notifications}
+import adarkroom/room
 import adarkroom/timer
 import gleam/list
 import lustre
@@ -17,6 +22,10 @@ import lustre/event
 
 const tick_interval_ms = 1000
 
+const cool_interval_ms = 300_000
+
+const temp_interval_ms = 30_000
+
 pub fn main() -> Nil {
   let app = lustre.application(init, update, view)
   let assert Ok(_) = lustre.start(app, "#app", Nil)
@@ -24,13 +33,21 @@ pub fn main() -> Nil {
 }
 
 fn init(_flags) -> #(Model, Effect(Msg)) {
-  #(model.init(), tick_effect())
+  #(
+    model.init(),
+    effect.batch([
+      interval(tick_interval_ms, Tick),
+      interval(cool_interval_ms, CoolFire),
+      interval(temp_interval_ms, AdjustTemp),
+    ]),
+  )
 }
 
-/// Start the periodic game-loop tick; it runs for the lifetime of the app.
-fn tick_effect() -> Effect(Msg) {
+/// An effect that dispatches `msg` every `ms` milliseconds for the app's
+/// lifetime.
+fn interval(ms: Int, msg: Msg) -> Effect(Msg) {
   effect.from(fn(dispatch) {
-    let _ = timer.set_interval(fn() { dispatch(Tick) }, tick_interval_ms)
+    let _ = timer.set_interval(fn() { dispatch(msg) }, ms)
     Nil
   })
 }
@@ -69,13 +86,31 @@ fn header(m: Model) -> Element(Msg) {
   )
 }
 
-/// The current location's panel. Only the Room has content so far.
 fn location_panel(m: Model) -> Element(Msg) {
-  let body = case m.location {
-    model.Room -> "the fire is dead."
-    other -> model.location_title(other)
+  case m.location {
+    model.Room -> room_panel(m)
+    other ->
+      html.div([attribute.class("location")], [
+        html.div([], [element.text(model.location_title(other))]),
+      ])
   }
-  html.div([attribute.class("location")], [html.div([], [element.text(body)])])
+}
+
+/// The Room panel. For now: the fire control (light when dead, otherwise stoke).
+fn room_panel(m: Model) -> Element(Msg) {
+  let fire_button = case room.fire(m.state) {
+    room.Dead ->
+      button.button(
+        button.Config(..button.new("light fire", LightFire), id: "lightButton"),
+      )
+    _ ->
+      button.button(
+        button.Config(..button.new("stoke fire", StokeFire), id: "stokeButton"),
+      )
+  }
+  html.div([attribute.class("location")], [
+    html.div([attribute.id("fireButtons")], [fire_button]),
+  ])
 }
 
 /// The running message log, newest first.

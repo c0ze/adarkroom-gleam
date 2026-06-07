@@ -91,3 +91,22 @@ pub fn has_feature(state: State, key: String) -> Bool {
 pub fn set_feature(state: State, key: String, value: Bool) -> State {
   State(..state, features: dict.insert(state.features, key, value))
 }
+
+// --- game -------------------------------------------------------------------
+
+/// Read a `game` value, defaulting to `0` when absent.
+pub fn get_game(state: State, key: String) -> Int {
+  dict.get(state.game, key) |> result.unwrap(0)
+}
+
+/// Set a `game` value (no clamping — game values are not stores).
+pub fn set_game(state: State, key: String, value: Int) -> State {
+  State(..state, game: dict.insert(state.game, key, value))
+}
+
+// --- presence ---------------------------------------------------------------
+
+/// Whether a store key has ever been set (distinct from a value of `0`).
+pub fn has_store(state: State, key: String) -> Bool {
+  dict.has_key(state.stores, key)
+}

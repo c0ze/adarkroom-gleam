@@ -3,6 +3,7 @@
 //// that drive updates. `update` is kept pure here.
 
 import adarkroom/notifications.{type Notifications}
+import adarkroom/room
 import adarkroom/state.{type State}
 import gleam/list
 
@@ -22,6 +23,14 @@ pub type Msg {
   Tick
   /// Switch to another location.
   Navigate(to: Location)
+  /// Light the fire.
+  LightFire
+  /// Stoke the fire.
+  StokeFire
+  /// Timer: cool the fire by one level.
+  CoolFire
+  /// Timer: move the temperature toward the fire.
+  AdjustTemp
 }
 
 pub type Model {
@@ -57,7 +66,27 @@ pub fn update(model: Model, msg: Msg) -> Model {
           location_key(location),
         ),
       )
+    LightFire -> apply_room(model, room.light_fire(model.state))
+    StokeFire -> apply_room(model, room.stoke_fire(model.state))
+    CoolFire -> apply_room(model, room.cool_fire(model.state))
+    AdjustTemp -> apply_room(model, room.adjust_temp(model.state))
   }
+}
+
+/// Apply a room transition: adopt the new state and emit its messages to the
+/// Room's notification stream.
+fn apply_room(model: Model, result: #(State, List(String))) -> Model {
+  let #(new_state, messages) = result
+  let notes =
+    list.fold(messages, model.notifications, fn(acc, text) {
+      notifications.notify(
+        acc,
+        current: location_key(model.location),
+        target: "room",
+        text: text,
+      )
+    })
+  Model(..model, state: new_state, notifications: notes)
 }
 
 /// Locations the player has unlocked. The Room is always available; the others

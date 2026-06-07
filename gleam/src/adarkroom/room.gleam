@@ -1,0 +1,170 @@
+//// The Room: fire and temperature.
+////
+//// The fire is lit/stoked with wood and decays over time; the room temperature
+//// drifts toward the fire's level. As in the original, the very first light or
+//// stoke is free — wood has not yet been introduced — until a wood store is
+//// established (which is distinct from a wood count of zero).
+
+import adarkroom/state.{type State}
+
+pub type Fire {
+  Dead
+  Smoldering
+  Flickering
+  Burning
+  Roaring
+}
+
+pub type Temperature {
+  Freezing
+  Cold
+  Mild
+  Warm
+  Hot
+}
+
+const fire_key = "fire"
+
+const temp_key = "temperature"
+
+const light_cost = 5
+
+pub fn fire_to_int(f: Fire) -> Int {
+  case f {
+    Dead -> 0
+    Smoldering -> 1
+    Flickering -> 2
+    Burning -> 3
+    Roaring -> 4
+  }
+}
+
+pub fn fire_from_int(value: Int) -> Fire {
+  case value {
+    _ if value <= 0 -> Dead
+    1 -> Smoldering
+    2 -> Flickering
+    3 -> Burning
+    _ -> Roaring
+  }
+}
+
+pub fn fire_text(f: Fire) -> String {
+  case f {
+    Dead -> "dead"
+    Smoldering -> "smoldering"
+    Flickering -> "flickering"
+    Burning -> "burning"
+    Roaring -> "roaring"
+  }
+}
+
+pub fn temp_to_int(t: Temperature) -> Int {
+  case t {
+    Freezing -> 0
+    Cold -> 1
+    Mild -> 2
+    Warm -> 3
+    Hot -> 4
+  }
+}
+
+pub fn temp_from_int(value: Int) -> Temperature {
+  case value {
+    _ if value <= 0 -> Freezing
+    1 -> Cold
+    2 -> Mild
+    3 -> Warm
+    _ -> Hot
+  }
+}
+
+pub fn temp_text(t: Temperature) -> String {
+  case t {
+    Freezing -> "freezing"
+    Cold -> "cold"
+    Mild -> "mild"
+    Warm -> "warm"
+    Hot -> "hot"
+  }
+}
+
+/// The current fire level.
+pub fn fire(s: State) -> Fire {
+  fire_from_int(state.get_game(s, fire_key))
+}
+
+/// The current room temperature.
+pub fn temperature(s: State) -> Temperature {
+  temp_from_int(state.get_game(s, temp_key))
+}
+
+fn set_fire(s: State, f: Fire) -> State {
+  state.set_game(s, fire_key, fire_to_int(f))
+}
+
+fn fire_message(f: Fire) -> String {
+  "the fire is " <> fire_text(f)
+}
+
+/// Light the fire (to Burning). Costs `light_cost` wood once wood exists; the
+/// very first light (before any wood store) is free.
+pub fn light_fire(s: State) -> #(State, List(String)) {
+  case state.has_store(s, "wood") {
+    False -> #(set_fire(s, Burning), [fire_message(Burning)])
+    True ->
+      case state.get_store(s, "wood") >= light_cost {
+        True -> #(set_fire(state.add_store(s, "wood", -light_cost), Burning), [
+          fire_message(Burning),
+        ])
+        False -> #(s, ["not enough wood to get the fire going"])
+      }
+  }
+}
+
+/// Stoke the fire one level. Costs 1 wood once wood exists; free before.
+pub fn stoke_fire(s: State) -> #(State, List(String)) {
+  let stoked = fire_from_int(state.get_game(s, fire_key) + 1)
+  case state.has_store(s, "wood") {
+    False -> #(set_fire(s, stoked), [fire_message(stoked)])
+    True ->
+      case state.get_store(s, "wood") {
+        0 -> #(s, ["the wood has run out"])
+        _ -> #(set_fire(state.add_store(s, "wood", -1), stoked), [
+          fire_message(stoked),
+        ])
+      }
+  }
+}
+
+/// Cool the fire by one level (driven by a timer). A no-op once Dead.
+pub fn cool_fire(s: State) -> #(State, List(String)) {
+  case fire(s) {
+    Dead -> #(s, [])
+    current -> {
+      let cooled = fire_from_int(fire_to_int(current) - 1)
+      #(set_fire(s, cooled), [fire_message(cooled)])
+    }
+  }
+}
+
+/// Move the temperature one step toward the fire's level (driven by a timer).
+pub fn adjust_temp(s: State) -> #(State, List(String)) {
+  let t = state.get_game(s, temp_key)
+  let f = state.get_game(s, fire_key)
+  case t < f, t > f {
+    True, _ -> {
+      let warmer = temp_from_int(t + 1)
+      #(state.set_game(s, temp_key, temp_to_int(warmer)), [
+        "the room is " <> temp_text(warmer),
+      ])
+    }
+    _, True -> {
+      let cooler = temp_from_int(t - 1)
+      #(state.set_game(s, temp_key, temp_to_int(cooler)), [
+        "the room is " <> temp_text(cooler),
+      ])
+    }
+    _, _ -> #(s, [])
+  }
+}
