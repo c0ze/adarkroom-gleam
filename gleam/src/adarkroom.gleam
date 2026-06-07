@@ -9,7 +9,8 @@ import adarkroom/clock
 import adarkroom/craft.{type Craftable}
 import adarkroom/model.{
   type Model, type Msg, AdjustTemp, Build, BuilderProgress, Buy, CheckTraps,
-  CollectIncome, CoolCheck, GatherWood, LightFire, Navigate, StokeFire, Tick,
+  CollectIncome, CoolCheck, DecreaseWorker, GatherWood, IncreaseWorker,
+  LightFire, Navigate, StokeFire, Tick,
 }
 import adarkroom/notifications.{type Notifications}
 import adarkroom/outside
@@ -191,10 +192,58 @@ fn outside_panel(m: Model) -> Element(Msg) {
   }
   html.div([attribute.class("location"), attribute.id("outsidePanel")], [
     village_view(m.state),
+    workers_view(m.state),
     gather,
     traps,
     stores_view(m.state),
   ])
+}
+
+/// The worker-assignment panel: a gatherer tally plus a row per unlocked role
+/// with buttons to move villagers in (±1/±10). Hidden until a role unlocks.
+fn workers_view(s: state.State) -> Element(Msg) {
+  case outside.unlocked_roles(s) {
+    [] -> element.none()
+    roles -> {
+      let no_free = outside.num_gatherers(s) <= 0
+      let gatherer = worker_row("gatherer", outside.num_gatherers(s), [])
+      let rows =
+        list.map(roles, fn(role) {
+          let count = outside.worker_count(s, role)
+          worker_row(role, count, [
+            worker_btn("upBtn", IncreaseWorker(role, 1), no_free),
+            worker_btn("dnBtn", DecreaseWorker(role, 1), count <= 0),
+            worker_btn("upManyBtn", IncreaseWorker(role, 10), no_free),
+            worker_btn("dnManyBtn", DecreaseWorker(role, 10), count <= 0),
+          ])
+        })
+      html.div(
+        [attribute.id("workers"), attribute.attribute("data-legend", "workers")],
+        [gatherer, ..rows],
+      )
+    }
+  }
+}
+
+fn worker_row(
+  name: String,
+  count: Int,
+  buttons: List(Element(Msg)),
+) -> Element(Msg) {
+  html.div([attribute.class("workerRow")], [
+    html.div([attribute.class("row_key")], [element.text(name)]),
+    html.div([attribute.class("row_val")], [
+      html.span([], [element.text(int.to_string(count))]),
+      ..buttons
+    ]),
+  ])
+}
+
+fn worker_btn(class: String, msg: Msg, disabled: Bool) -> Element(Msg) {
+  case disabled {
+    True -> html.div([attribute.class(class <> " disabled")], [])
+    False -> html.div([attribute.class(class), event.on_click(msg)], [])
+  }
 }
 
 /// The village: the buildings raised and the current population. Shown as a

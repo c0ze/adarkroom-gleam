@@ -46,33 +46,165 @@ pub fn see_forest(s: State) -> #(State, List(String)) {
   }
 }
 
-// --- income -----------------------------------------------------------------
+// --- workers ----------------------------------------------------------------
 
-/// Collect one round of income (the loop runs every 10s). Each active source
-/// applies its store deltas, but only if no store would be driven negative. For
-/// now the only source is the builder, who gathers wood once she is helping;
-/// assigned villagers are added later.
-pub fn collect_income(s: State) -> State {
-  list.fold(income_sources(s), s, fn(acc, source) {
-    apply_income(acc, source.1)
+/// Which villager roles each building unlocks (in display order).
+const role_unlocks = [
+  #("lodge", ["hunter", "trapper"]),
+  #("tannery", ["tanner"]),
+  #("smokehouse", ["charcutier"]),
+]
+
+/// Every assignable role.
+fn all_roles() -> List(String) {
+  list.flat_map(role_unlocks, fn(entry) { entry.1 })
+}
+
+/// The roles the player can currently assign, given the buildings that stand.
+pub fn unlocked_roles(s: State) -> List(String) {
+  list.flat_map(role_unlocks, fn(entry) {
+    case craft.building_count(s, entry.0) > 0 {
+      True -> entry.1
+      False -> []
+    }
   })
 }
 
-/// The active income sources, each as `(name, store-deltas)`.
-fn income_sources(s: State) -> List(#(String, List(#(String, Int)))) {
-  case room.builder_helping(s) {
-    True -> [#("builder", [#("wood", 2)])]
-    False -> []
+/// How many villagers are assigned to a role.
+pub fn worker_count(s: State, role: String) -> Int {
+  state.get_game(s, "worker." <> role)
+}
+
+fn total_workers(s: State) -> Int {
+  list.fold(all_roles(), 0, fn(acc, role) { acc + worker_count(s, role) })
+}
+
+/// Unassigned villagers — they gather wood.
+pub fn num_gatherers(s: State) -> Int {
+  population(s) - total_workers(s)
+}
+
+/// Assign up to `n` free gatherers to a role.
+pub fn increase_worker(s: State, role: String, n: Int) -> State {
+  case num_gatherers(s) {
+    available if available > 0 ->
+      state.set_game(
+        s,
+        "worker." <> role,
+        worker_count(s, role) + int.min(available, n),
+      )
+    _ -> s
   }
 }
 
-/// Apply a source's deltas, but only if every affected store stays non-negative
-/// (faithful to the original's collection guard).
-fn apply_income(s: State, deltas: List(#(String, Int))) -> State {
-  case list.all(deltas, fn(d) { state.get_store(s, d.0) + d.1 >= 0 }) {
-    True -> list.fold(deltas, s, fn(acc, d) { state.add_store(acc, d.0, d.1) })
-    False -> s
+/// Return up to `n` of a role's workers to gathering.
+pub fn decrease_worker(s: State, role: String, n: Int) -> State {
+  case worker_count(s, role) {
+    have if have > 0 ->
+      state.set_game(s, "worker." <> role, have - int.min(have, n))
+    _ -> s
   }
+}
+
+// --- income -----------------------------------------------------------------
+
+/// Collect one round of income (the loop runs every 10s). Each active source
+/// applies its store deltas, guarded so no store is driven negative. Income can
+/// be fractional (a lone hunter yields half a fur), so the sub-unit remainder is
+/// carried in `buffer` between collections; the stores themselves stay whole.
+pub fn collect_income(
+  s: State,
+  buffer: dict.Dict(String, Float),
+) -> #(State, dict.Dict(String, Float)) {
+  let sources = income_sources(s)
+  let names = touched(sources)
+  // The true value of each touched store: its whole amount plus carried fraction.
+  let start =
+    list.fold(names, dict.new(), fn(acc, k) {
+      dict.insert(
+        acc,
+        k,
+        int.to_float(state.get_store(s, k)) +. get_float(buffer, k),
+      )
+    })
+  let totals =
+    list.fold(sources, start, fn(acc, source) { apply_source(acc, source.1) })
+  // Split each total back into a whole store value and a carried remainder.
+  list.fold(names, #(s, buffer), fn(acc, k) {
+    let #(st, buf) = acc
+    let whole = float.floor(get_float(totals, k))
+    #(
+      state.set_store(st, k, float.round(whole)),
+      dict.insert(buf, k, get_float(totals, k) -. whole),
+    )
+  })
+}
+
+/// The active income sources, each as `(name, store-deltas)`, pre-scaled by the
+/// number of contributors.
+fn income_sources(s: State) -> List(#(String, List(#(String, Float)))) {
+  let builder = case room.builder_helping(s) {
+    True -> [#("builder", [#("wood", 2.0)])]
+    False -> []
+  }
+  let gatherers = case num_gatherers(s) {
+    g if g > 0 -> [#("gatherer", scale([#("wood", 1.0)], g))]
+    _ -> []
+  }
+  let workers =
+    list.filter_map(all_roles(), fn(role) {
+      case worker_count(s, role) {
+        n if n > 0 -> Ok(#(role, scale(role_income(role), n)))
+        _ -> Error(Nil)
+      }
+    })
+  list.flatten([builder, gatherers, workers])
+}
+
+/// What one worker of a role yields (and consumes) per collection.
+fn role_income(role: String) -> List(#(String, Float)) {
+  case role {
+    "hunter" -> [#("fur", 0.5), #("meat", 0.5)]
+    "trapper" -> [#("meat", -1.0), #("bait", 1.0)]
+    "tanner" -> [#("fur", -5.0), #("leather", 1.0)]
+    "charcutier" -> [#("meat", -5.0), #("wood", -5.0), #("cured meat", 1.0)]
+    _ -> []
+  }
+}
+
+fn scale(deltas: List(#(String, Float)), n: Int) -> List(#(String, Float)) {
+  list.map(deltas, fn(d) { #(d.0, d.1 *. int.to_float(n)) })
+}
+
+/// Apply a source's deltas to the running totals, but only if every affected
+/// store stays non-negative (the original's per-source collection guard).
+fn apply_source(
+  totals: dict.Dict(String, Float),
+  deltas: List(#(String, Float)),
+) -> dict.Dict(String, Float) {
+  case list.all(deltas, fn(d) { get_float(totals, d.0) +. d.1 >=. 0.0 }) {
+    True ->
+      list.fold(deltas, totals, fn(acc, d) {
+        dict.insert(acc, d.0, get_float(acc, d.0) +. d.1)
+      })
+    False -> totals
+  }
+}
+
+/// Every store name touched by the active sources (deduped).
+fn touched(sources: List(#(String, List(#(String, Float))))) -> List(String) {
+  list.fold(sources, [], fn(acc, source) {
+    list.fold(source.1, acc, fn(names, d) {
+      case list.contains(names, d.0) {
+        True -> names
+        False -> [d.0, ..names]
+      }
+    })
+  })
+}
+
+fn get_float(m: dict.Dict(String, Float), k: String) -> Float {
+  result.unwrap(dict.get(m, k), 0.0)
 }
 
 // --- village & population ---------------------------------------------------

@@ -58,6 +58,10 @@ pub type Msg {
   PopulationIncreased(roll: Float)
   /// Timer: collect one round of income (every 10s).
   CollectIncome
+  /// Assign `by` villagers to a worker role.
+  IncreaseWorker(role: String, by: Int)
+  /// Return `by` of a role's workers to gathering.
+  DecreaseWorker(role: String, by: Int)
 }
 
 pub type Model {
@@ -75,6 +79,9 @@ pub type Model {
     /// Active button cooldowns, by id, as the wall-clock deadline (ms) at which
     /// they expire. Runtime-only: a reloaded game's buttons are ready.
     cooldowns: Dict(String, Int),
+    /// Sub-unit income carried between collections (e.g. a lone hunter's half
+    /// fur), so stores stay whole. Runtime-only.
+    income_buffer: Dict(String, Float),
   )
 }
 
@@ -88,6 +95,7 @@ pub fn init() -> Model {
     revealed: set.new(),
     now: 0,
     cooldowns: dict.new(),
+    income_buffer: dict.new(),
   )
 }
 
@@ -219,8 +227,19 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
       schedule_population(),
     )
 
-    CollectIncome -> #(
-      Model(..model, state: outside.collect_income(model.state)),
+    CollectIncome -> {
+      let #(new_state, buffer) =
+        outside.collect_income(model.state, model.income_buffer)
+      #(Model(..model, state: new_state, income_buffer: buffer), effect.none())
+    }
+
+    IncreaseWorker(role: role, by: by) -> #(
+      Model(..model, state: outside.increase_worker(model.state, role, by)),
+      effect.none(),
+    )
+
+    DecreaseWorker(role: role, by: by) -> #(
+      Model(..model, state: outside.decrease_worker(model.state, role, by)),
       effect.none(),
     )
   }
