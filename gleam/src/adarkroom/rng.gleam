@@ -44,6 +44,8 @@ pub fn next_float(s: Seed) -> #(Float, Seed) {
 }
 
 /// Next integer in the inclusive range `[min, max]` and the new `Seed`.
+///
+/// Requires `min <= max`.
 pub fn next_int(s: Seed, min min: Int, max max: Int) -> #(Int, Seed) {
   let #(f, s2) = next_float(s)
   let span = int.to_float(max - min + 1)

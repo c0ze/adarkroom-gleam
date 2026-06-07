@@ -2,6 +2,13 @@ import adarkroom/rng
 import gleam/list
 import gleeunit/should
 
+// The Math.random wrapper stays within [0.0, 1.0).
+pub fn random_in_unit_interval_test() {
+  let r = rng.random()
+  should.be_true(r >=. 0.0)
+  should.be_true(r <. 1.0)
+}
+
 // The same seed produces the same sequence.
 pub fn deterministic_test() {
   let a = rng.seed(42)
