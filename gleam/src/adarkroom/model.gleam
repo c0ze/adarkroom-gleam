@@ -1,11 +1,14 @@
 //// The MVU model: the persistent `State` plus runtime UI state (the active
 //// location, the notification log, and a loop tick counter), and the messages
-//// that drive updates. `update` is kept pure here.
+//// that drive updates. `update` returns the new model together with any
+//// effects (e.g. one-shot timers for the builder's timed progression).
 
 import adarkroom/notifications.{type Notifications}
 import adarkroom/room
 import adarkroom/state.{type State}
+import adarkroom/timer
 import gleam/list
+import lustre/effect.{type Effect}
 
 /// The screens the player can be on.
 pub type Location {
@@ -31,6 +34,8 @@ pub type Msg {
   CoolFire
   /// Timer: move the temperature toward the fire.
   AdjustTemp
+  /// Timer: advance the builder's arrival/progression.
+  BuilderProgress
 }
 
 pub type Model {
@@ -52,34 +57,69 @@ pub fn init() -> Model {
   )
 }
 
-/// Pure state transition.
-pub fn update(model: Model, msg: Msg) -> Model {
+/// State transition, paired with any effects to run.
+pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
   case msg {
-    Tick -> Model(..model, ticks: model.ticks + 1)
-    Navigate(to: location) ->
+    Tick -> #(Model(..model, ticks: model.ticks + 1), effect.none())
+
+    Navigate(to: location) -> #(
       Model(
         ..model,
-        location: location,
+        location:,
         // Arriving at a location flushes its queued notifications.
         notifications: notifications.flush(
           model.notifications,
           location_key(location),
         ),
-      )
-    LightFire -> {
-      let lit = apply_room(model, room.light_fire(model.state))
-      // A successful first light (Dead -> Burning) reveals the forest; a failed
-      // attempt (not enough wood) leaves it unchanged.
-      case room.fire(model.state), room.fire(lit.state) {
-        room.Dead, room.Burning ->
-          apply_room(lit, room.unlock_forest(lit.state))
-        _, _ -> lit
+      ),
+      effect.none(),
+    )
+
+    LightFire -> fire_action(model, room.light_fire(model.state))
+    StokeFire -> fire_action(model, room.stoke_fire(model.state))
+
+    CoolFire -> #(apply_room(model, room.cool_fire(model.state)), effect.none())
+    AdjustTemp -> #(
+      apply_room(model, room.adjust_temp(model.state)),
+      effect.none(),
+    )
+
+    BuilderProgress -> {
+      let progressed = apply_room(model, room.progress_builder(model.state))
+      let next = case room.builder_up(progressed.state) {
+        True -> effect.none()
+        False -> delayed(room.builder_state_delay_ms, BuilderProgress)
       }
+      #(progressed, next)
     }
-    StokeFire -> apply_room(model, room.stoke_fire(model.state))
-    CoolFire -> apply_room(model, room.cool_fire(model.state))
-    AdjustTemp -> apply_room(model, room.adjust_temp(model.state))
   }
+}
+
+/// Apply a fire change, let the builder react (it is summoned once the room
+/// first glows), and schedule the builder's progression if it just arrived.
+fn fire_action(
+  model: Model,
+  transition: #(State, List(String)),
+) -> #(Model, Effect(Msg)) {
+  let after_fire = apply_room(model, transition)
+  let after_builder =
+    apply_room(after_fire, room.on_fire_change(after_fire.state))
+  let just_arrived =
+    room.builder_level(model.state) < 0
+    && room.builder_level(after_builder.state) == 0
+  let eff = case just_arrived {
+    True -> delayed(room.builder_state_delay_ms, BuilderProgress)
+    False -> effect.none()
+  }
+  #(after_builder, eff)
+}
+
+/// An effect that dispatches `msg` once after `ms` milliseconds.
+fn delayed(ms: Int, msg: Msg) -> Effect(Msg) {
+  effect.from(fn(dispatch) {
+    let _ = timer.set_timeout(fn() { dispatch(msg) }, ms)
+    Nil
+  })
 }
 
 /// Apply a room transition: adopt the new state and emit its messages to the

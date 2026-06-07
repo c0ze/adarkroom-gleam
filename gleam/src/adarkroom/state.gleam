@@ -108,6 +108,11 @@ pub fn get_game(state: State, key: String) -> Int {
   dict.get(state.game, key) |> result.unwrap(0)
 }
 
+/// Read a `game` value with a custom default when absent.
+pub fn get_game_or(state: State, key: String, default: Int) -> Int {
+  dict.get(state.game, key) |> result.unwrap(default)
+}
+
 /// Set a `game` value (no clamping — game values are not stores).
 pub fn set_game(state: State, key: String, value: Int) -> State {
   State(..state, game: dict.insert(state.game, key, value))

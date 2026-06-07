@@ -137,6 +137,67 @@ pub fn unlock_forest(s: State) -> #(State, List(String)) {
   }
 }
 
+// --- the builder ------------------------------------------------------------
+
+const builder_key = "builder"
+
+/// Delay between builder progression steps.
+pub const builder_state_delay_ms = 30_000
+
+/// The builder's progression: `-1` not arrived, `0` summoned, `1` stumbled in,
+/// `2` mumbling, `3` up (able to build).
+pub fn builder_level(s: State) -> Int {
+  state.get_game_or(s, builder_key, -1)
+}
+
+/// Whether the builder has been summoned by the fire.
+pub fn builder_arrived(s: State) -> Bool {
+  builder_level(s) >= 0
+}
+
+/// Whether the builder is up and able to build.
+pub fn builder_up(s: State) -> Bool {
+  builder_level(s) >= 3
+}
+
+fn set_builder(s: State, level: Int) -> State {
+  state.set_game(s, builder_key, level)
+}
+
+/// React to a fire change: once the room glows (Flickering or brighter) the
+/// builder is summoned. A no-op if the fire is dim or the builder has arrived.
+pub fn on_fire_change(s: State) -> #(State, List(String)) {
+  let glowing = fire_to_int(fire(s)) >= fire_to_int(Flickering)
+  case glowing && builder_arrived(s) == False {
+    True -> #(set_builder(s, 0), [
+      "the light from the fire spills from the windows, out into the dark",
+    ])
+    False -> #(s, [])
+  }
+}
+
+/// Advance the builder one step (driven by a timer). The first step (stumbling
+/// in) also reveals the forest; later steps wait until the room is Warm.
+pub fn progress_builder(s: State) -> #(State, List(String)) {
+  let warm = temp_to_int(temperature(s)) >= temp_to_int(Warm)
+  case builder_level(s), warm {
+    0, _ -> {
+      let #(revealed, forest) = unlock_forest(set_builder(s, 1))
+      #(revealed, [
+        "a ragged stranger stumbles through the door and collapses in the corner",
+        ..forest
+      ])
+    }
+    1, True -> #(set_builder(s, 2), [
+      "the stranger shivers, and mumbles quietly. her words are unintelligible.",
+    ])
+    2, True -> #(set_builder(s, 3), [
+      "the stranger in the corner stops shivering. her breathing calms.",
+    ])
+    _, _ -> #(s, [])
+  }
+}
+
 /// Stoke the fire one level. Costs 1 wood once wood exists; free before.
 pub fn stoke_fire(s: State) -> #(State, List(String)) {
   let stoked = fire_from_int(state.get_game(s, fire_key) + 1)

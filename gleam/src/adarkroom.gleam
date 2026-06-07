@@ -55,7 +55,7 @@ fn interval(ms: Int, msg: Msg) -> Effect(Msg) {
 }
 
 fn update(m: Model, msg: Msg) -> #(Model, Effect(Msg)) {
-  #(model.update(m, msg), effect.none())
+  model.update(m, msg)
 }
 
 fn view(m: Model) -> Element(Msg) {
