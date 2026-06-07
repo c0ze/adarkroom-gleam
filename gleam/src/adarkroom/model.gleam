@@ -9,6 +9,7 @@ import adarkroom/room
 import adarkroom/state.{type State}
 import adarkroom/timer
 import gleam/list
+import gleam/set.{type Set}
 import lustre/effect.{type Effect}
 
 /// The screens the player can be on.
@@ -47,6 +48,9 @@ pub type Model {
     location: Location,
     ticks: Int,
     notifications: Notifications,
+    /// Craftables whose buttons have been revealed. Runtime-only (not saved):
+    /// a reloaded game re-derives it from current resources, as the original does.
+    revealed: Set(String),
   )
 }
 
@@ -57,13 +61,19 @@ pub fn init() -> Model {
     location: Room,
     ticks: 0,
     notifications: notifications.new(),
+    revealed: set.new(),
   )
 }
 
 /// State transition, paired with any effects to run.
 pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
   case msg {
-    Tick -> #(Model(..model, ticks: model.ticks + 1), effect.none())
+    Tick -> {
+      // The game loop also reveals any craftables whose conditions are now met.
+      let #(revealed, messages) = craft.reveal(model.state, model.revealed)
+      let ticked = Model(..model, ticks: model.ticks + 1, revealed:)
+      #(notify_room(ticked, messages), effect.none())
+    }
 
     Navigate(to: location) -> {
       let navigated =
@@ -143,6 +153,12 @@ fn delayed(ms: Int, msg: Msg) -> Effect(Msg) {
 /// Room's notification stream.
 fn apply_room(model: Model, result: #(State, List(String))) -> Model {
   let #(new_state, messages) = result
+  notify_room(Model(..model, state: new_state), messages)
+}
+
+/// Emit a list of messages to the Room's notification stream (queued for the
+/// Room if the player is elsewhere).
+fn notify_room(model: Model, messages: List(String)) -> Model {
   let notes =
     list.fold(messages, model.notifications, fn(acc, text) {
       notifications.notify(
@@ -152,7 +168,7 @@ fn apply_room(model: Model, result: #(State, List(String))) -> Model {
         text: text,
       )
     })
-  Model(..model, state: new_state, notifications: notes)
+  Model(..model, notifications: notes)
 }
 
 /// Locations the player has unlocked. The Room is always available; the others
