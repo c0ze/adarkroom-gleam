@@ -87,6 +87,17 @@ pub fn all() -> List(#(String, Craftable)) {
   table()
 }
 
+/// The buildings that have been raised, as `(name, count)` in table order.
+pub fn built(s: State) -> List(#(String, Int)) {
+  list.filter_map(table(), fn(entry) {
+    let #(name, c) = entry
+    case c.kind == Building && building_count(s, name) > 0 {
+      True -> Ok(#(name, building_count(s, name)))
+      False -> Error(Nil)
+    }
+  })
+}
+
 // --- reveal gating ----------------------------------------------------------
 
 /// Reveal any craftables whose conditions are now met, given the set already

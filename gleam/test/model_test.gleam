@@ -246,6 +246,16 @@ pub fn cooldown_fraction_guards_zero_duration_test() {
   model.cooldown_fraction(after, "gather", 0) |> should.equal(0.0)
 }
 
+pub fn population_increased_adds_villagers_test() {
+  let m =
+    model.Model(
+      ..model.init(),
+      state: state.set_game(state.new(), "building.hut", 2),
+    )
+  let after = run(m, model.PopulationIncreased(roll: 0.0))
+  outside.population(after.state) |> should.equal(4)
+}
+
 pub fn check_traps_message_starts_a_cooldown_test() {
   let m =
     model.Model(

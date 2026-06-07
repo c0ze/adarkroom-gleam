@@ -5,6 +5,7 @@
 import adarkroom/craft
 import adarkroom/state.{type State}
 import gleam/dict
+import gleam/float
 import gleam/int
 import gleam/list
 import gleam/result
@@ -41,6 +42,61 @@ pub fn see_forest(s: State) -> #(State, List(String)) {
     False -> #(state.set_feature(s, seen_forest_key, True), [
       "the sky is grey and the wind blows relentlessly",
     ])
+  }
+}
+
+// --- village & population ---------------------------------------------------
+
+/// How many villagers a single hut houses.
+pub const hut_room = 4
+
+/// The most villagers the huts can hold.
+pub fn max_population(s: State) -> Int {
+  craft.building_count(s, "hut") * hut_room
+}
+
+/// The current population.
+pub fn population(s: State) -> Int {
+  state.get_game(s, "population")
+}
+
+/// Newcomers arrive to fill empty huts. Given a roll in `[0.0, 1.0)`, the number
+/// is between half the free space and all of it (at least one), and the note
+/// reflects how many came. A no-op when the huts are full.
+pub fn increase_population(s: State, roll: Float) -> #(State, List(String)) {
+  let space = max_population(s) - population(s)
+  case space > 0 {
+    False -> #(s, [])
+    True -> {
+      let half = int.to_float(space) /. 2.0
+      let num = int.max(float.truncate(roll *. half +. half), 1)
+      #(state.set_game(s, "population", population(s) + num), [
+        arrival_message(num),
+      ])
+    }
+  }
+}
+
+fn arrival_message(num: Int) -> String {
+  case num {
+    1 -> "a stranger arrives in the night"
+    n if n < 5 -> "a weathered family takes up in one of the huts."
+    n if n < 10 -> "a small group arrives, all dust and bones."
+    n if n < 30 -> "a convoy lurches in, equal parts worry and hope."
+    _ -> "the town's booming. word does get around."
+  }
+}
+
+/// The Outside's title, which grows from a silent forest into a village as huts
+/// go up.
+pub fn title(s: State) -> String {
+  case craft.building_count(s, "hut") {
+    0 -> "A Silent Forest"
+    1 -> "A Lonely Hut"
+    n if n <= 4 -> "A Tiny Village"
+    n if n <= 8 -> "A Modest Village"
+    n if n <= 14 -> "A Large Village"
+    _ -> "A Raucous Village"
   }
 }
 
