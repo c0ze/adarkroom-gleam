@@ -1,5 +1,6 @@
 import adarkroom/model.{Navigate, Tick}
 import adarkroom/notifications
+import adarkroom/room
 import adarkroom/state
 import gleeunit/should
 
@@ -58,4 +59,11 @@ pub fn navigate_flushes_target_queue_test() {
   let arrived = model.update(m, Navigate(to: model.Outside))
   notifications.messages(arrived.notifications)
   |> should.equal(["a stranger arrives."])
+}
+
+pub fn light_fire_msg_lights_and_notifies_test() {
+  let m = model.update(model.init(), model.LightFire)
+  room.fire(m.state) |> should.equal(room.Burning)
+  notifications.messages(m.notifications)
+  |> should.equal(["the fire is burning."])
 }
