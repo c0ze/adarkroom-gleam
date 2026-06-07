@@ -36,6 +36,18 @@ pub fn stores_clamp_max_test() {
   state.get_store(s, "wood") |> should.equal(state.max_store)
 }
 
+// Direct set_store boundary tests, so the invariant holds independently of
+// add_store.
+pub fn set_store_clamp_negative_test() {
+  let s = state.new() |> state.set_store("wood", -1)
+  state.get_store(s, "wood") |> should.equal(0)
+}
+
+pub fn set_store_clamp_max_test() {
+  let s = state.new() |> state.set_store("wood", state.max_store + 1)
+  state.get_store(s, "wood") |> should.equal(state.max_store)
+}
+
 pub fn set_feature_test() {
   let s = state.new() |> state.set_feature("fire", True)
   state.has_feature(s, "fire") |> should.equal(True)
