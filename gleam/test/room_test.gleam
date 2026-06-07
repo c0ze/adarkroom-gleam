@@ -115,3 +115,64 @@ pub fn unlock_forest_is_noop_once_unlocked_test() {
   msgs |> should.equal([])
   state.get_store(s2, "wood") |> should.equal(0)
 }
+
+pub fn on_fire_change_summons_builder_when_glowing_test() {
+  let s = state.new() |> state.set_game("fire", 3)
+  let #(s2, msgs) = room.on_fire_change(s)
+  room.builder_level(s2) |> should.equal(0)
+  msgs
+  |> should.equal([
+    "the light from the fire spills from the windows, out into the dark",
+  ])
+}
+
+pub fn on_fire_change_noop_when_dim_test() {
+  let #(s2, msgs) =
+    room.on_fire_change(state.new() |> state.set_game("fire", 1))
+  room.builder_level(s2) |> should.equal(-1)
+  msgs |> should.equal([])
+}
+
+pub fn on_fire_change_noop_when_builder_already_arrived_test() {
+  let s =
+    state.new() |> state.set_game("fire", 3) |> state.set_game("builder", 0)
+  let #(_, msgs) = room.on_fire_change(s)
+  msgs |> should.equal([])
+}
+
+pub fn progress_builder_stumbles_and_reveals_forest_test() {
+  let #(s2, msgs) =
+    room.progress_builder(state.new() |> state.set_game("builder", 0))
+  room.builder_level(s2) |> should.equal(1)
+  state.get_store(s2, "wood") |> should.equal(4)
+  state.has_feature(s2, "location.outside") |> should.equal(True)
+  msgs
+  |> should.equal([
+    "a ragged stranger stumbles through the door and collapses in the corner",
+    "the wind howls outside",
+    "the wood is running out",
+  ])
+}
+
+pub fn progress_builder_waits_for_warmth_test() {
+  let #(s2, msgs) =
+    room.progress_builder(state.new() |> state.set_game("builder", 1))
+  room.builder_level(s2) |> should.equal(1)
+  msgs |> should.equal([])
+}
+
+pub fn progress_builder_advances_when_warm_test() {
+  let s =
+    state.new()
+    |> state.set_game("builder", 1)
+    |> state.set_game("temperature", 3)
+  let #(s2, _) = room.progress_builder(s)
+  room.builder_level(s2) |> should.equal(2)
+}
+
+pub fn builder_up_test() {
+  room.builder_up(state.new() |> state.set_game("builder", 3))
+  |> should.equal(True)
+  room.builder_up(state.new() |> state.set_game("builder", 2))
+  |> should.equal(False)
+}
