@@ -224,6 +224,41 @@ pub fn cool_fire(s: State) -> #(State, List(String)) {
   }
 }
 
+// --- fire-cooling deadline ---------------------------------------------------
+
+const cool_at_key = "coolAt"
+
+/// How long a fire holds before cooling one level.
+pub const fire_cool_delay_ms = 300_000
+
+/// Reset the cooling deadline; the next `tick_cool` re-arms it. Called on every
+/// fire change so a freshly lit/stoked fire gets the full delay.
+pub fn reset_cool(s: State) -> State {
+  state.set_game(s, cool_at_key, 0)
+}
+
+/// Time-driven cooling: re-arm the deadline after a reset, then cool one level
+/// each time `now` (ms since epoch) passes it. A no-op while the fire is Dead.
+pub fn tick_cool(s: State, now: Int) -> #(State, List(String)) {
+  case fire(s) {
+    Dead -> #(s, [])
+    _ -> {
+      let cool_at = state.get_game(s, cool_at_key)
+      case cool_at == 0, now >= cool_at {
+        True, _ -> #(
+          state.set_game(s, cool_at_key, now + fire_cool_delay_ms),
+          [],
+        )
+        _, True -> {
+          let #(cooled, msgs) = cool_fire(s)
+          #(state.set_game(cooled, cool_at_key, now + fire_cool_delay_ms), msgs)
+        }
+        _, _ -> #(s, [])
+      }
+    }
+  }
+}
+
 /// Move the temperature one step toward the fire's level (driven by a timer).
 pub fn adjust_temp(s: State) -> #(State, List(String)) {
   let t = state.get_game(s, temp_key)

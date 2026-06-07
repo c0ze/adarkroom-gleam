@@ -5,8 +5,9 @@
 //// shell — location tabs, the current location panel, and the notification log.
 
 import adarkroom/button
+import adarkroom/clock
 import adarkroom/model.{
-  type Model, type Msg, AdjustTemp, BuilderProgress, CoolFire, LightFire,
+  type Model, type Msg, AdjustTemp, BuilderProgress, CoolCheck, LightFire,
   Navigate, StokeFire, Tick,
 }
 import adarkroom/notifications.{type Notifications}
@@ -14,6 +15,7 @@ import adarkroom/room
 import adarkroom/save
 import adarkroom/state
 import adarkroom/timer
+import gleam/float
 import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
@@ -26,7 +28,7 @@ import lustre/event
 
 const tick_interval_ms = 1000
 
-const cool_interval_ms = 300_000
+const cool_check_ms = 1000
 
 const temp_interval_ms = 30_000
 
@@ -46,7 +48,7 @@ fn init(_flags) -> #(Model, Effect(Msg)) {
     loaded,
     effect.batch([
       interval(tick_interval_ms, Tick),
-      interval(cool_interval_ms, CoolFire),
+      time_interval(cool_check_ms, CoolCheck),
       interval(temp_interval_ms, AdjustTemp),
       resume_builder(loaded),
     ]),
@@ -66,6 +68,19 @@ fn interval(ms: Int, msg: Msg) -> Effect(Msg) {
 fn delayed(ms: Int, msg: Msg) -> Effect(Msg) {
   effect.from(fn(dispatch) {
     let _ = timer.set_timeout(fn() { dispatch(msg) }, ms)
+    Nil
+  })
+}
+
+/// A recurring effect that dispatches `to_msg(now)` every `ms` milliseconds,
+/// where `now` is the current wall-clock time in milliseconds.
+fn time_interval(ms: Int, to_msg: fn(Int) -> Msg) -> Effect(Msg) {
+  effect.from(fn(dispatch) {
+    let _ =
+      timer.set_interval(
+        fn() { dispatch(to_msg(float.round(clock.now()))) },
+        ms,
+      )
     Nil
   })
 }

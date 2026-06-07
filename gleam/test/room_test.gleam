@@ -176,3 +176,38 @@ pub fn builder_up_test() {
   room.builder_up(state.new() |> state.set_game("builder", 2))
   |> should.equal(False)
 }
+
+pub fn reset_cool_zeroes_deadline_test() {
+  let s = room.reset_cool(state.new() |> state.set_game("coolAt", 12_345))
+  state.get_game(s, "coolAt") |> should.equal(0)
+}
+
+pub fn tick_cool_arms_deadline_when_unset_test() {
+  let #(s2, msgs) =
+    room.tick_cool(state.new() |> state.set_game("fire", 3), 1000)
+  state.get_game(s2, "coolAt") |> should.equal(1000 + room.fire_cool_delay_ms)
+  room.fire(s2) |> should.equal(room.Burning)
+  msgs |> should.equal([])
+}
+
+pub fn tick_cool_waits_before_deadline_test() {
+  let s =
+    state.new() |> state.set_game("fire", 3) |> state.set_game("coolAt", 5000)
+  let #(s2, msgs) = room.tick_cool(s, 1000)
+  room.fire(s2) |> should.equal(room.Burning)
+  msgs |> should.equal([])
+}
+
+pub fn tick_cool_cools_once_deadline_passes_test() {
+  let s =
+    state.new() |> state.set_game("fire", 3) |> state.set_game("coolAt", 500)
+  let #(s2, _) = room.tick_cool(s, 1000)
+  room.fire(s2) |> should.equal(room.Flickering)
+  state.get_game(s2, "coolAt") |> should.equal(1000 + room.fire_cool_delay_ms)
+}
+
+pub fn tick_cool_noop_when_dead_test() {
+  let #(s2, msgs) = room.tick_cool(state.new(), 999_999)
+  room.fire(s2) |> should.equal(room.Dead)
+  msgs |> should.equal([])
+}

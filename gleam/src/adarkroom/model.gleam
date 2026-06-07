@@ -30,8 +30,8 @@ pub type Msg {
   LightFire
   /// Stoke the fire.
   StokeFire
-  /// Timer: cool the fire by one level.
-  CoolFire
+  /// Timer: a time-stamped check that cools the fire once its deadline passes.
+  CoolCheck(at: Int)
   /// Timer: move the temperature toward the fire.
   AdjustTemp
   /// Timer: advance the builder's arrival/progression.
@@ -78,7 +78,10 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
     LightFire -> fire_action(model, room.light_fire(model.state))
     StokeFire -> fire_action(model, room.stoke_fire(model.state))
 
-    CoolFire -> #(apply_room(model, room.cool_fire(model.state)), effect.none())
+    CoolCheck(at: now) -> #(
+      apply_room(model, room.tick_cool(model.state, now)),
+      effect.none(),
+    )
     AdjustTemp -> #(
       apply_room(model, room.adjust_temp(model.state)),
       effect.none(),
@@ -104,14 +107,16 @@ fn fire_action(
   let after_fire = apply_room(model, transition)
   let after_builder =
     apply_room(after_fire, room.on_fire_change(after_fire.state))
+  // Any fire change re-arms the cooling deadline (the fire gets the full delay).
+  let result =
+    Model(..after_builder, state: room.reset_cool(after_builder.state))
   let just_arrived =
-    room.builder_level(model.state) < 0
-    && room.builder_level(after_builder.state) == 0
+    room.builder_level(model.state) < 0 && room.builder_level(result.state) == 0
   let eff = case just_arrived {
     True -> delayed(room.builder_state_delay_ms, BuilderProgress)
     False -> effect.none()
   }
-  #(after_builder, eff)
+  #(result, eff)
 }
 
 /// An effect that dispatches `msg` once after `ms` milliseconds.
