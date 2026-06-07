@@ -111,12 +111,13 @@ fn fire_message(f: Fire) -> String {
 /// very first light (before any wood store) is free.
 pub fn light_fire(s: State) -> #(State, List(String)) {
   case state.has_store(s, "wood") {
-    False -> #(set_fire(s, Burning), [fire_message(Burning)])
+    False -> #(reset_cool(set_fire(s, Burning)), [fire_message(Burning)])
     True ->
       case state.get_store(s, "wood") >= light_cost {
-        True -> #(set_fire(state.add_store(s, "wood", -light_cost), Burning), [
-          fire_message(Burning),
-        ])
+        True -> #(
+          reset_cool(set_fire(state.add_store(s, "wood", -light_cost), Burning)),
+          [fire_message(Burning)],
+        )
         False -> #(s, ["not enough wood to get the fire going"])
       }
   }
@@ -202,11 +203,11 @@ pub fn progress_builder(s: State) -> #(State, List(String)) {
 pub fn stoke_fire(s: State) -> #(State, List(String)) {
   let stoked = fire_from_int(state.get_game(s, fire_key) + 1)
   case state.has_store(s, "wood") {
-    False -> #(set_fire(s, stoked), [fire_message(stoked)])
+    False -> #(reset_cool(set_fire(s, stoked)), [fire_message(stoked)])
     True ->
       case state.get_store(s, "wood") {
         0 -> #(s, ["the wood has run out"])
-        _ -> #(set_fire(state.add_store(s, "wood", -1), stoked), [
+        _ -> #(reset_cool(set_fire(state.add_store(s, "wood", -1), stoked)), [
           fire_message(stoked),
         ])
       }

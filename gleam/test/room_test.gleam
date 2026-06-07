@@ -211,3 +211,25 @@ pub fn tick_cool_noop_when_dead_test() {
   room.fire(s2) |> should.equal(room.Dead)
   msgs |> should.equal([])
 }
+
+pub fn light_fire_resets_cool_test() {
+  let #(s2, _) = room.light_fire(state.new() |> state.set_game("coolAt", 9999))
+  state.get_game(s2, "coolAt") |> should.equal(0)
+}
+
+pub fn failed_light_keeps_cool_test() {
+  let s =
+    state.new() |> state.set_store("wood", 3) |> state.set_game("coolAt", 9999)
+  let #(s2, _) = room.light_fire(s)
+  state.get_game(s2, "coolAt") |> should.equal(9999)
+}
+
+pub fn failed_stoke_keeps_cool_test() {
+  let s =
+    state.new()
+    |> state.set_store("wood", 0)
+    |> state.set_game("fire", 3)
+    |> state.set_game("coolAt", 9999)
+  let #(s2, _) = room.stoke_fire(s)
+  state.get_game(s2, "coolAt") |> should.equal(9999)
+}

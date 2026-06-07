@@ -107,16 +107,14 @@ fn fire_action(
   let after_fire = apply_room(model, transition)
   let after_builder =
     apply_room(after_fire, room.on_fire_change(after_fire.state))
-  // Any fire change re-arms the cooling deadline (the fire gets the full delay).
-  let result =
-    Model(..after_builder, state: room.reset_cool(after_builder.state))
   let just_arrived =
-    room.builder_level(model.state) < 0 && room.builder_level(result.state) == 0
+    room.builder_level(model.state) < 0
+    && room.builder_level(after_builder.state) == 0
   let eff = case just_arrived {
     True -> delayed(room.builder_state_delay_ms, BuilderProgress)
     False -> effect.none()
   }
-  #(result, eff)
+  #(after_builder, eff)
 }
 
 /// An effect that dispatches `msg` once after `ms` milliseconds.
