@@ -106,3 +106,11 @@ pub fn failed_light_does_not_summon_builder_test() {
   room.builder_level(after.state) |> should.equal(-1)
   state.has_feature(after.state, "location.outside") |> should.equal(False)
 }
+
+pub fn light_fire_resets_cool_deadline_test() {
+  let base = model.init()
+  let m = model.Model(..base, state: state.set_game(base.state, "coolAt", 9999))
+  let after = run(m, model.LightFire)
+  // fire_action re-arms cooling: the deadline is reset (next CoolCheck re-arms).
+  state.get_game(after.state, "coolAt") |> should.equal(0)
+}

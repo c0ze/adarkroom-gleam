@@ -30,8 +30,8 @@ pub type Msg {
   LightFire
   /// Stoke the fire.
   StokeFire
-  /// Timer: cool the fire by one level.
-  CoolFire
+  /// Timer: a time-stamped check that cools the fire once its deadline passes.
+  CoolCheck(at: Int)
   /// Timer: move the temperature toward the fire.
   AdjustTemp
   /// Timer: advance the builder's arrival/progression.
@@ -78,7 +78,10 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
     LightFire -> fire_action(model, room.light_fire(model.state))
     StokeFire -> fire_action(model, room.stoke_fire(model.state))
 
-    CoolFire -> #(apply_room(model, room.cool_fire(model.state)), effect.none())
+    CoolCheck(at: now) -> #(
+      apply_room(model, room.tick_cool(model.state, now)),
+      effect.none(),
+    )
     AdjustTemp -> #(
       apply_room(model, room.adjust_temp(model.state)),
       effect.none(),

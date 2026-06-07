@@ -111,12 +111,13 @@ fn fire_message(f: Fire) -> String {
 /// very first light (before any wood store) is free.
 pub fn light_fire(s: State) -> #(State, List(String)) {
   case state.has_store(s, "wood") {
-    False -> #(set_fire(s, Burning), [fire_message(Burning)])
+    False -> #(reset_cool(set_fire(s, Burning)), [fire_message(Burning)])
     True ->
       case state.get_store(s, "wood") >= light_cost {
-        True -> #(set_fire(state.add_store(s, "wood", -light_cost), Burning), [
-          fire_message(Burning),
-        ])
+        True -> #(
+          reset_cool(set_fire(state.add_store(s, "wood", -light_cost), Burning)),
+          [fire_message(Burning)],
+        )
         False -> #(s, ["not enough wood to get the fire going"])
       }
   }
@@ -202,11 +203,11 @@ pub fn progress_builder(s: State) -> #(State, List(String)) {
 pub fn stoke_fire(s: State) -> #(State, List(String)) {
   let stoked = fire_from_int(state.get_game(s, fire_key) + 1)
   case state.has_store(s, "wood") {
-    False -> #(set_fire(s, stoked), [fire_message(stoked)])
+    False -> #(reset_cool(set_fire(s, stoked)), [fire_message(stoked)])
     True ->
       case state.get_store(s, "wood") {
         0 -> #(s, ["the wood has run out"])
-        _ -> #(set_fire(state.add_store(s, "wood", -1), stoked), [
+        _ -> #(reset_cool(set_fire(state.add_store(s, "wood", -1), stoked)), [
           fire_message(stoked),
         ])
       }
@@ -220,6 +221,41 @@ pub fn cool_fire(s: State) -> #(State, List(String)) {
     current -> {
       let cooled = fire_from_int(fire_to_int(current) - 1)
       #(set_fire(s, cooled), [fire_message(cooled)])
+    }
+  }
+}
+
+// --- fire-cooling deadline ---------------------------------------------------
+
+const cool_at_key = "coolAt"
+
+/// How long a fire holds before cooling one level.
+pub const fire_cool_delay_ms = 300_000
+
+/// Reset the cooling deadline; the next `tick_cool` re-arms it. Called on every
+/// fire change so a freshly lit/stoked fire gets the full delay.
+pub fn reset_cool(s: State) -> State {
+  state.set_game(s, cool_at_key, 0)
+}
+
+/// Time-driven cooling: re-arm the deadline after a reset, then cool one level
+/// each time `now` (ms since epoch) passes it. A no-op while the fire is Dead.
+pub fn tick_cool(s: State, now: Int) -> #(State, List(String)) {
+  case fire(s) {
+    Dead -> #(s, [])
+    _ -> {
+      let cool_at = state.get_game(s, cool_at_key)
+      case cool_at == 0, now >= cool_at {
+        True, _ -> #(
+          state.set_game(s, cool_at_key, now + fire_cool_delay_ms),
+          [],
+        )
+        _, True -> {
+          let #(cooled, msgs) = cool_fire(s)
+          #(state.set_game(cooled, cool_at_key, now + fire_cool_delay_ms), msgs)
+        }
+        _, _ -> #(s, [])
+      }
     }
   }
 }
