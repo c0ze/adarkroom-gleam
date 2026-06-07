@@ -1,8 +1,10 @@
 import adarkroom/craft
 import adarkroom/model.{Navigate, Tick}
 import adarkroom/notifications
+import adarkroom/outside
 import adarkroom/room
 import adarkroom/state
+import gleam/list
 import gleam/set
 import gleeunit/should
 
@@ -80,8 +82,10 @@ pub fn navigate_flushes_target_queue_test() {
     )
   let m = model.Model(..base, notifications: queued)
   let arrived = run(m, Navigate(to: model.Outside))
+  // The queued note is flushed on arrival (alongside the first-visit forest note).
   notifications.messages(arrived.notifications)
-  |> should.equal(["a stranger arrives."])
+  |> list.contains("a stranger arrives.")
+  |> should.equal(True)
 }
 
 pub fn light_fire_burns_and_notifies_test() {
@@ -191,6 +195,48 @@ pub fn build_message_raises_building_and_notifies_test() {
   state.get_store(after.state, "wood") |> should.equal(40)
   notifications.messages(after.notifications)
   |> should.equal(["more traps to catch more creatures."])
+}
+
+pub fn cool_check_updates_now_test() {
+  let after = run(model.init(), model.CoolCheck(at: 12_345))
+  after.now |> should.equal(12_345)
+}
+
+pub fn gather_wood_message_adds_wood_test() {
+  let after = run(model.init(), model.GatherWood)
+  state.get_store(after.state, "wood") |> should.equal(10)
+}
+
+pub fn gather_wood_starts_a_cooldown_test() {
+  let m = model.Model(..model.init(), now: 1000)
+  let after = run(m, model.GatherWood)
+  model.on_cooldown(after, "gather") |> should.equal(True)
+}
+
+pub fn gather_wood_blocked_while_on_cooldown_test() {
+  let m = model.Model(..model.init(), now: 1000)
+  let once = run(m, model.GatherWood)
+  // Time has not advanced — a second gather is refused, no extra wood.
+  let twice = run(once, model.GatherWood)
+  state.get_store(twice.state, "wood") |> should.equal(10)
+}
+
+pub fn cooldown_expires_once_now_passes_the_deadline_test() {
+  let m = model.Model(..model.init(), now: 1000)
+  let after = run(m, model.GatherWood)
+  model.on_cooldown(after, "gather") |> should.equal(True)
+  let later = model.Model(..after, now: 1000 + outside.gather_cooldown_ms)
+  model.on_cooldown(later, "gather") |> should.equal(False)
+}
+
+pub fn cooldown_fraction_decreases_with_time_test() {
+  let m = model.Model(..model.init(), now: 0)
+  let after = run(m, model.GatherWood)
+  model.cooldown_fraction(after, "gather", outside.gather_cooldown_ms)
+  |> should.equal(1.0)
+  let mid = model.Model(..after, now: 30_000)
+  model.cooldown_fraction(mid, "gather", outside.gather_cooldown_ms)
+  |> should.equal(0.5)
 }
 
 pub fn buy_message_adds_good_and_spends_fur_test() {

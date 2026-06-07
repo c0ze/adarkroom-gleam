@@ -5,10 +5,13 @@
 
 import adarkroom/craft
 import adarkroom/notifications.{type Notifications}
+import adarkroom/outside
 import adarkroom/room
 import adarkroom/state.{type State}
 import adarkroom/timer
 import adarkroom/trade
+import gleam/dict.{type Dict}
+import gleam/int
 import gleam/list
 import gleam/set.{type Set}
 import lustre/effect.{type Effect}
@@ -43,6 +46,8 @@ pub type Msg {
   Build(name: String)
   /// Buy the named trade good at the trading post.
   Buy(name: String)
+  /// Gather wood from the forest (Outside).
+  GatherWood
 }
 
 pub type Model {
@@ -54,6 +59,12 @@ pub type Model {
     /// Craftables whose buttons have been revealed. Runtime-only (not saved):
     /// a reloaded game re-derives it from current resources, as the original does.
     revealed: Set(String),
+    /// Current wall-clock time in ms, refreshed each second — drives the
+    /// cooldown bars.
+    now: Int,
+    /// Active button cooldowns, by id, as the wall-clock deadline (ms) at which
+    /// they expire. Runtime-only: a reloaded game's buttons are ready.
+    cooldowns: Dict(String, Int),
   )
 }
 
@@ -65,6 +76,36 @@ pub fn init() -> Model {
     ticks: 0,
     notifications: notifications.new(),
     revealed: set.new(),
+    now: 0,
+    cooldowns: dict.new(),
+  )
+}
+
+// --- cooldowns --------------------------------------------------------------
+
+/// Whether a button is currently on cooldown.
+pub fn on_cooldown(model: Model, id: String) -> Bool {
+  case dict.get(model.cooldowns, id) {
+    Ok(deadline) -> model.now < deadline
+    Error(Nil) -> False
+  }
+}
+
+/// The remaining cooldown as a fraction of `duration` (1.0 just started, 0.0
+/// ready) — the cooldown-bar width.
+pub fn cooldown_fraction(model: Model, id: String, duration: Int) -> Float {
+  case dict.get(model.cooldowns, id) {
+    Ok(deadline) if model.now < deadline ->
+      int.to_float(deadline - model.now) /. int.to_float(duration)
+    _ -> 0.0
+  }
+}
+
+/// Start (or restart) a cooldown of `duration` ms on a button.
+fn start_cooldown(model: Model, id: String, duration: Int) -> Model {
+  Model(
+    ..model,
+    cooldowns: dict.insert(model.cooldowns, id, model.now + duration),
   )
 }
 
@@ -89,9 +130,11 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
             location_key(location),
           ),
         )
-      // Returning to the Room is when the builder, once up, offers to help.
+      // Returning to the Room is when the builder, once up, offers to help;
+      // the first step Outside notes the bleak forest.
       let arrived = case location {
         Room -> apply_room(navigated, room.become_helper(navigated.state))
+        Outside -> apply_outside(navigated, outside.see_forest(navigated.state))
         _ -> navigated
       }
       #(arrived, effect.none())
@@ -101,7 +144,7 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
     StokeFire -> fire_action(model, room.stoke_fire(model.state))
 
     CoolCheck(at: now) -> #(
-      apply_room(model, room.tick_cool(model.state, now)),
+      apply_room(Model(..model, now:), room.tick_cool(model.state, now)),
       effect.none(),
     )
     AdjustTemp -> #(
@@ -127,6 +170,18 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
       apply_room(model, trade.buy(model.state, name)),
       effect.none(),
     )
+
+    GatherWood ->
+      case on_cooldown(model, "gather") {
+        True -> #(model, effect.none())
+        False -> {
+          let gathered = apply_outside(model, outside.gather_wood(model.state))
+          #(
+            start_cooldown(gathered, "gather", outside.gather_cooldown_ms),
+            effect.none(),
+          )
+        }
+      }
   }
 }
 
@@ -157,26 +212,45 @@ fn delayed(ms: Int, msg: Msg) -> Effect(Msg) {
   })
 }
 
-/// Apply a room transition: adopt the new state and emit its messages to the
-/// Room's notification stream.
-fn apply_room(model: Model, result: #(State, List(String))) -> Model {
+/// Apply a transition: adopt the new state and emit its messages to a
+/// location's notification stream.
+fn apply_at(
+  model: Model,
+  target: String,
+  result: #(State, List(String)),
+) -> Model {
   let #(new_state, messages) = result
-  notify_room(Model(..model, state: new_state), messages)
+  notify_at(Model(..model, state: new_state), target, messages)
 }
 
-/// Emit a list of messages to the Room's notification stream (queued for the
-/// Room if the player is elsewhere).
-fn notify_room(model: Model, messages: List(String)) -> Model {
+/// Apply a Room transition.
+fn apply_room(model: Model, result: #(State, List(String))) -> Model {
+  apply_at(model, "room", result)
+}
+
+/// Apply an Outside transition.
+fn apply_outside(model: Model, result: #(State, List(String))) -> Model {
+  apply_at(model, "outside", result)
+}
+
+/// Emit messages to a location's notification stream (queued there if the
+/// player is elsewhere).
+fn notify_at(model: Model, target: String, messages: List(String)) -> Model {
   let notes =
     list.fold(messages, model.notifications, fn(acc, text) {
       notifications.notify(
         acc,
         current: location_key(model.location),
-        target: "room",
+        target: target,
         text: text,
       )
     })
   Model(..model, notifications: notes)
+}
+
+/// Emit messages to the Room's notification stream.
+fn notify_room(model: Model, messages: List(String)) -> Model {
+  notify_at(model, "room", messages)
 }
 
 /// Locations the player has unlocked. The Room is always available; the others
