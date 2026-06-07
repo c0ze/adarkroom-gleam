@@ -193,6 +193,20 @@ pub fn build_message_raises_building_and_notifies_test() {
   |> should.equal(["more traps to catch more creatures."])
 }
 
+pub fn buy_message_adds_good_and_spends_fur_test() {
+  let base = model.init()
+  let m =
+    model.Model(
+      ..base,
+      state: base.state
+        |> state.set_game("building.trading post", 1)
+        |> state.set_store("fur", 200),
+    )
+  let after = run(m, model.Buy("scales"))
+  state.get_store(after.state, "scales") |> should.equal(1)
+  state.get_store(after.state, "fur") |> should.equal(50)
+}
+
 pub fn light_fire_resets_cool_deadline_test() {
   let base = model.init()
   let m = model.Model(..base, state: state.set_game(base.state, "coolAt", 9999))
