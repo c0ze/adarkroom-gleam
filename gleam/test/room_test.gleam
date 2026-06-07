@@ -141,11 +141,17 @@ pub fn on_fire_change_noop_when_builder_already_arrived_test() {
 }
 
 pub fn progress_builder_stumbles_and_reveals_forest_test() {
-  let #(s2, _) =
+  let #(s2, msgs) =
     room.progress_builder(state.new() |> state.set_game("builder", 0))
   room.builder_level(s2) |> should.equal(1)
   state.get_store(s2, "wood") |> should.equal(4)
   state.has_feature(s2, "location.outside") |> should.equal(True)
+  msgs
+  |> should.equal([
+    "a ragged stranger stumbles through the door and collapses in the corner",
+    "the wind howls outside",
+    "the wood is running out",
+  ])
 }
 
 pub fn progress_builder_waits_for_warmth_test() {

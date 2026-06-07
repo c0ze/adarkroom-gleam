@@ -87,6 +87,15 @@ pub fn builder_progress_stumbles_in_and_reveals_forest_test() {
   state.get_store(m.state, "wood") |> should.equal(4)
   state.has_feature(m.state, "location.outside") |> should.equal(True)
   model.unlocked_locations(m) |> should.equal([model.Room, model.Outside])
+  // Newest first: the forest reveal follows the stumble-in, after lighting.
+  notifications.messages(m.notifications)
+  |> should.equal([
+    "the wood is running out.",
+    "the wind howls outside.",
+    "a ragged stranger stumbles through the door and collapses in the corner.",
+    "the light from the fire spills from the windows, out into the dark.",
+    "the fire is burning.",
+  ])
 }
 
 pub fn failed_light_does_not_summon_builder_test() {
