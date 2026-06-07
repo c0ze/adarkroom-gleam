@@ -30,6 +30,25 @@ pub fn first_arrival_notes_the_forest_once_test() {
   msgs2 |> should.equal([])
 }
 
+// --- income -----------------------------------------------------------------
+
+pub fn collect_income_gives_builder_wood_when_helping_test() {
+  let s = state.new() |> state.set_game("builder", 4)
+  outside.collect_income(s) |> state.get_store("wood") |> should.equal(2)
+}
+
+pub fn collect_income_idle_before_builder_helps_test() {
+  let s = state.new() |> state.set_game("builder", 3)
+  outside.collect_income(s) |> state.get_store("wood") |> should.equal(0)
+}
+
+pub fn collect_income_accumulates_over_collections_test() {
+  let s = state.new() |> state.set_game("builder", 4)
+  outside.collect_income(outside.collect_income(s))
+  |> state.get_store("wood")
+  |> should.equal(4)
+}
+
 // --- village & population ---------------------------------------------------
 
 pub fn max_population_is_four_per_hut_test() {

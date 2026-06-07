@@ -56,6 +56,8 @@ pub type Msg {
   TrapsChecked(rolls: List(Float))
   /// Timer: newcomers arrive (the roll sizes the group); reschedules itself.
   PopulationIncreased(roll: Float)
+  /// Timer: collect one round of income (every 10s).
+  CollectIncome
 }
 
 pub type Model {
@@ -215,6 +217,11 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
       apply_outside(model, outside.increase_population(model.state, roll)),
       // Keep the village growing: schedule the next arrival.
       schedule_population(),
+    )
+
+    CollectIncome -> #(
+      Model(..model, state: outside.collect_income(model.state)),
+      effect.none(),
     )
   }
 }

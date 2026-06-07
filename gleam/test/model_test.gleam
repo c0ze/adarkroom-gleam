@@ -246,6 +246,16 @@ pub fn cooldown_fraction_guards_zero_duration_test() {
   model.cooldown_fraction(after, "gather", 0) |> should.equal(0.0)
 }
 
+pub fn collect_income_message_gives_builder_wood_test() {
+  let m =
+    model.Model(
+      ..model.init(),
+      state: state.set_game(state.new(), "builder", 4),
+    )
+  let after = run(m, model.CollectIncome)
+  state.get_store(after.state, "wood") |> should.equal(2)
+}
+
 pub fn population_increased_adds_villagers_test() {
   let m =
     model.Model(
