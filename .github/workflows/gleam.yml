@@ -1,0 +1,29 @@
+name: gleam CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: gleam
+    steps:
+      - uses: actions/checkout@v4
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: "27"
+          gleam-version: "1.15.2"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: gleam deps download
+      - run: gleam format --check src test
+      - run: gleam build
+      - run: gleam test
