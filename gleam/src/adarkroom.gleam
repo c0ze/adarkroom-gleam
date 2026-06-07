@@ -9,9 +9,10 @@ import adarkroom/clock
 import adarkroom/craft.{type Craftable}
 import adarkroom/model.{
   type Model, type Msg, AdjustTemp, Build, BuilderProgress, Buy, CoolCheck,
-  LightFire, Navigate, StokeFire, Tick,
+  GatherWood, LightFire, Navigate, StokeFire, Tick,
 }
 import adarkroom/notifications.{type Notifications}
+import adarkroom/outside
 import adarkroom/room
 import adarkroom/save
 import adarkroom/state
@@ -147,11 +148,29 @@ fn header(m: Model) -> Element(Msg) {
 fn location_panel(m: Model) -> Element(Msg) {
   case m.location {
     model.Room -> room_panel(m)
+    model.Outside -> outside_panel(m)
     other ->
       html.div([attribute.class("location")], [
         html.div([], [element.text(model.location_title(other))]),
       ])
   }
+}
+
+/// The Outside panel: gather wood (on a cooldown), with the stores alongside.
+fn outside_panel(m: Model) -> Element(Msg) {
+  let gather =
+    button.button(button.Config(
+      text: "gather wood",
+      on_click: GatherWood,
+      cost: [],
+      disabled: model.on_cooldown(m, "gather"),
+      cooldown: model.cooldown_fraction(m, "gather", outside.gather_cooldown_ms),
+      id: "gatherButton",
+    ))
+  html.div([attribute.class("location"), attribute.id("outsidePanel")], [
+    gather,
+    stores_view(m.state),
+  ])
 }
 
 /// The Room panel. For now: the fire control (light when dead, otherwise stoke).
