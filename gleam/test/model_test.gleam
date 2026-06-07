@@ -246,6 +246,40 @@ pub fn cooldown_fraction_guards_zero_duration_test() {
   model.cooldown_fraction(after, "gather", 0) |> should.equal(0.0)
 }
 
+pub fn check_traps_message_starts_a_cooldown_test() {
+  let m =
+    model.Model(
+      ..model.init(),
+      now: 1000,
+      state: state.set_game(state.new(), "building.trap", 2),
+    )
+  let after = run(m, model.CheckTraps)
+  model.on_cooldown(after, "traps") |> should.equal(True)
+}
+
+pub fn check_traps_blocked_while_on_cooldown_test() {
+  let m =
+    model.Model(
+      ..model.init(),
+      now: 1000,
+      state: state.set_game(state.new(), "building.trap", 2),
+    )
+  let once = run(m, model.CheckTraps)
+  // The cooldown deadline does not move on a second, blocked click.
+  let twice = run(once, model.CheckTraps)
+  twice.cooldowns |> should.equal(once.cooldowns)
+}
+
+pub fn traps_checked_applies_drops_test() {
+  let m =
+    model.Model(
+      ..model.init(),
+      state: state.set_game(state.new(), "building.trap", 1),
+    )
+  let after = run(m, model.TrapsChecked(rolls: [0.1]))
+  state.get_store(after.state, "fur") |> should.equal(1)
+}
+
 pub fn buy_message_adds_good_and_spends_fur_test() {
   let base = model.init()
   let m =

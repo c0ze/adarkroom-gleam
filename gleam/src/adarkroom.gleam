@@ -8,8 +8,8 @@ import adarkroom/button
 import adarkroom/clock
 import adarkroom/craft.{type Craftable}
 import adarkroom/model.{
-  type Model, type Msg, AdjustTemp, Build, BuilderProgress, Buy, CoolCheck,
-  GatherWood, LightFire, Navigate, StokeFire, Tick,
+  type Model, type Msg, AdjustTemp, Build, BuilderProgress, Buy, CheckTraps,
+  CoolCheck, GatherWood, LightFire, Navigate, StokeFire, Tick,
 }
 import adarkroom/notifications.{type Notifications}
 import adarkroom/outside
@@ -156,7 +156,8 @@ fn location_panel(m: Model) -> Element(Msg) {
   }
 }
 
-/// The Outside panel: gather wood (on a cooldown), with the stores alongside.
+/// The Outside panel: gather wood and (once traps stand) check them, each on a
+/// cooldown, with the stores alongside.
 fn outside_panel(m: Model) -> Element(Msg) {
   let gather =
     button.button(button.Config(
@@ -167,8 +168,21 @@ fn outside_panel(m: Model) -> Element(Msg) {
       cooldown: model.cooldown_fraction(m, "gather", outside.gather_cooldown_ms),
       id: "gatherButton",
     ))
+  let traps = case craft.building_count(m.state, "trap") > 0 {
+    False -> element.none()
+    True ->
+      button.button(button.Config(
+        text: "check traps",
+        on_click: CheckTraps,
+        cost: [],
+        disabled: model.on_cooldown(m, "traps"),
+        cooldown: model.cooldown_fraction(m, "traps", outside.traps_cooldown_ms),
+        id: "trapsButton",
+      ))
+  }
   html.div([attribute.class("location"), attribute.id("outsidePanel")], [
     gather,
+    traps,
     stores_view(m.state),
   ])
 }
