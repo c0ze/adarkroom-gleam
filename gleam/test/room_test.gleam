@@ -177,6 +177,37 @@ pub fn builder_up_test() {
   |> should.equal(False)
 }
 
+pub fn become_helper_advances_sleeping_builder_test() {
+  let #(s2, msgs) =
+    room.become_helper(state.new() |> state.set_game("builder", 3))
+  room.builder_level(s2) |> should.equal(4)
+  msgs
+  |> should.equal([
+    "the stranger is standing by the fire. she says she can help. says she builds things.",
+  ])
+}
+
+pub fn become_helper_noop_before_sleeping_test() {
+  let #(s2, msgs) =
+    room.become_helper(state.new() |> state.set_game("builder", 2))
+  room.builder_level(s2) |> should.equal(2)
+  msgs |> should.equal([])
+}
+
+pub fn become_helper_noop_when_already_helping_test() {
+  let #(s2, msgs) =
+    room.become_helper(state.new() |> state.set_game("builder", 4))
+  room.builder_level(s2) |> should.equal(4)
+  msgs |> should.equal([])
+}
+
+pub fn builder_helping_test() {
+  room.builder_helping(state.new() |> state.set_game("builder", 4))
+  |> should.equal(True)
+  room.builder_helping(state.new() |> state.set_game("builder", 3))
+  |> should.equal(False)
+}
+
 pub fn reset_cool_zeroes_deadline_test() {
   let s = room.reset_cool(state.new() |> state.set_game("coolAt", 12_345))
   state.get_game(s, "coolAt") |> should.equal(0)

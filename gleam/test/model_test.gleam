@@ -1,3 +1,4 @@
+import adarkroom/craft
 import adarkroom/model.{Navigate, Tick}
 import adarkroom/notifications
 import adarkroom/room
@@ -98,6 +99,52 @@ pub fn builder_progress_stumbles_in_and_reveals_forest_test() {
   ])
 }
 
+pub fn arriving_at_room_makes_sleeping_builder_help_test() {
+  // Builder is "up" (level 3, sleeping) and the player is away; returning to the
+  // Room is when she offers to help (faithful to the original's onArrival).
+  let base = model.init()
+  let m =
+    model.Model(
+      ..base,
+      location: model.Outside,
+      state: state.set_game(base.state, "builder", 3),
+    )
+  let arrived = run(m, Navigate(to: model.Room))
+  room.builder_helping(arrived.state) |> should.equal(True)
+  notifications.messages(arrived.notifications)
+  |> should.equal([
+    "the stranger is standing by the fire. she says she can help. says she builds things.",
+  ])
+}
+
+pub fn arriving_at_room_noop_when_builder_not_sleeping_test() {
+  let base = model.init()
+  let m =
+    model.Model(
+      ..base,
+      location: model.Outside,
+      state: state.set_game(base.state, "builder", 2),
+    )
+  let arrived = run(m, Navigate(to: model.Room))
+  room.builder_level(arrived.state) |> should.equal(2)
+  notifications.messages(arrived.notifications) |> should.equal([])
+}
+
+pub fn arriving_elsewhere_does_not_make_builder_help_test() {
+  let base = model.init()
+  let m =
+    model.Model(
+      ..base,
+      state: state.set_feature(
+        state.set_game(base.state, "builder", 3),
+        "location.outside",
+        True,
+      ),
+    )
+  let arrived = run(m, Navigate(to: model.Outside))
+  room.builder_level(arrived.state) |> should.equal(3)
+}
+
 pub fn failed_light_does_not_summon_builder_test() {
   let base = model.init()
   let m = model.Model(..base, state: state.set_store(base.state, "wood", 3))
@@ -105,6 +152,22 @@ pub fn failed_light_does_not_summon_builder_test() {
   room.fire(after.state) |> should.equal(room.Dead)
   room.builder_level(after.state) |> should.equal(-1)
   state.has_feature(after.state, "location.outside") |> should.equal(False)
+}
+
+pub fn build_message_raises_building_and_notifies_test() {
+  let base = model.init()
+  let m =
+    model.Model(
+      ..base,
+      state: base.state
+        |> state.set_game("temperature", 2)
+        |> state.set_store("wood", 50),
+    )
+  let after = run(m, model.Build("trap"))
+  craft.building_count(after.state, "trap") |> should.equal(1)
+  state.get_store(after.state, "wood") |> should.equal(40)
+  notifications.messages(after.notifications)
+  |> should.equal(["more traps to catch more creatures."])
 }
 
 pub fn light_fire_resets_cool_deadline_test() {

@@ -156,9 +156,26 @@ pub fn builder_arrived(s: State) -> Bool {
   builder_level(s) >= 0
 }
 
-/// Whether the builder is up and able to build.
+/// Whether the builder is up (done shivering); the timed progression stops here.
 pub fn builder_up(s: State) -> Bool {
   builder_level(s) >= 3
+}
+
+/// Whether the builder is helping — standing by the fire, able to build things.
+pub fn builder_helping(s: State) -> Bool {
+  builder_level(s) >= 4
+}
+
+/// The builder offers to help, once she is up and the room is re-entered
+/// (faithful to the original's `onArrival`). Advances level 3 → 4. The wood
+/// income she then provides is part of the income system (a later milestone).
+pub fn become_helper(s: State) -> #(State, List(String)) {
+  case builder_level(s) == 3 {
+    True -> #(set_builder(s, 4), [
+      "the stranger is standing by the fire. she says she can help. says she builds things.",
+    ])
+    False -> #(s, [])
+  }
 }
 
 fn set_builder(s: State, level: Int) -> State {

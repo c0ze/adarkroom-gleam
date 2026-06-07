@@ -3,6 +3,7 @@
 //// that drive updates. `update` returns the new model together with any
 //// effects (e.g. one-shot timers for the builder's timed progression).
 
+import adarkroom/craft
 import adarkroom/notifications.{type Notifications}
 import adarkroom/room
 import adarkroom/state.{type State}
@@ -36,6 +37,8 @@ pub type Msg {
   AdjustTemp
   /// Timer: advance the builder's arrival/progression.
   BuilderProgress
+  /// Build or craft the named structure/item.
+  Build(name: String)
 }
 
 pub type Model {
@@ -62,18 +65,24 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
   case msg {
     Tick -> #(Model(..model, ticks: model.ticks + 1), effect.none())
 
-    Navigate(to: location) -> #(
-      Model(
-        ..model,
-        location:,
-        // Arriving at a location flushes its queued notifications.
-        notifications: notifications.flush(
-          model.notifications,
-          location_key(location),
-        ),
-      ),
-      effect.none(),
-    )
+    Navigate(to: location) -> {
+      let navigated =
+        Model(
+          ..model,
+          location:,
+          // Arriving at a location flushes its queued notifications.
+          notifications: notifications.flush(
+            model.notifications,
+            location_key(location),
+          ),
+        )
+      // Returning to the Room is when the builder, once up, offers to help.
+      let arrived = case location {
+        Room -> apply_room(navigated, room.become_helper(navigated.state))
+        _ -> navigated
+      }
+      #(arrived, effect.none())
+    }
 
     LightFire -> fire_action(model, room.light_fire(model.state))
     StokeFire -> fire_action(model, room.stoke_fire(model.state))
@@ -95,6 +104,11 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
       }
       #(progressed, next)
     }
+
+    Build(name: name) -> #(
+      apply_room(model, craft.build(model.state, name)),
+      effect.none(),
+    )
   }
 }
 
