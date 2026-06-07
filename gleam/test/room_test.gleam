@@ -9,6 +9,13 @@ pub fn fire_from_int_clamps_test() {
   room.fire_from_int(9) |> should.equal(room.Roaring)
 }
 
+pub fn temp_from_int_clamps_test() {
+  room.temp_from_int(-1) |> should.equal(room.Freezing)
+  room.temp_from_int(0) |> should.equal(room.Freezing)
+  room.temp_from_int(2) |> should.equal(room.Mild)
+  room.temp_from_int(9) |> should.equal(room.Hot)
+}
+
 pub fn new_room_is_dead_and_freezing_test() {
   let s = state.new()
   room.fire(s) |> should.equal(room.Dead)
