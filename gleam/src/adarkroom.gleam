@@ -9,7 +9,7 @@ import adarkroom/clock
 import adarkroom/craft.{type Craftable}
 import adarkroom/model.{
   type Model, type Msg, AdjustTemp, Build, BuilderProgress, Buy, CheckTraps,
-  CoolCheck, GatherWood, LightFire, Navigate, StokeFire, Tick,
+  CollectIncome, CoolCheck, GatherWood, LightFire, Navigate, StokeFire, Tick,
 }
 import adarkroom/notifications.{type Notifications}
 import adarkroom/outside
@@ -36,6 +36,8 @@ const cool_check_ms = 1000
 
 const temp_interval_ms = 30_000
 
+const income_interval_ms = 10_000
+
 pub fn main() -> Nil {
   let app = lustre.application(init, update, view)
   let assert Ok(_) = lustre.start(app, "#app", Nil)
@@ -54,6 +56,7 @@ fn init(_flags) -> #(Model, Effect(Msg)) {
       interval(tick_interval_ms, Tick),
       time_interval(cool_check_ms, CoolCheck),
       interval(temp_interval_ms, AdjustTemp),
+      interval(income_interval_ms, CollectIncome),
       resume_builder(loaded),
       model.resume_population(loaded),
     ]),

@@ -3,6 +3,7 @@
 //// village (population) and worker assignment are layered on by later issues.
 
 import adarkroom/craft
+import adarkroom/room
 import adarkroom/state.{type State}
 import gleam/dict
 import gleam/float
@@ -42,6 +43,35 @@ pub fn see_forest(s: State) -> #(State, List(String)) {
     False -> #(state.set_feature(s, seen_forest_key, True), [
       "the sky is grey and the wind blows relentlessly",
     ])
+  }
+}
+
+// --- income -----------------------------------------------------------------
+
+/// Collect one round of income (the loop runs every 10s). Each active source
+/// applies its store deltas, but only if no store would be driven negative. For
+/// now the only source is the builder, who gathers wood once she is helping;
+/// assigned villagers are added later.
+pub fn collect_income(s: State) -> State {
+  list.fold(income_sources(s), s, fn(acc, source) {
+    apply_income(acc, source.1)
+  })
+}
+
+/// The active income sources, each as `(name, store-deltas)`.
+fn income_sources(s: State) -> List(#(String, List(#(String, Int)))) {
+  case room.builder_helping(s) {
+    True -> [#("builder", [#("wood", 2)])]
+    False -> []
+  }
+}
+
+/// Apply a source's deltas, but only if every affected store stays non-negative
+/// (faithful to the original's collection guard).
+fn apply_income(s: State, deltas: List(#(String, Int))) -> State {
+  case list.all(deltas, fn(d) { state.get_store(s, d.0) + d.1 >= 0 }) {
+    True -> list.fold(deltas, s, fn(acc, d) { state.add_store(acc, d.0, d.1) })
+    False -> s
   }
 }
 
