@@ -6,15 +6,17 @@
 
 import adarkroom/button
 import adarkroom/model.{
-  type Model, type Msg, AdjustTemp, CoolFire, LightFire, Navigate, StokeFire,
-  Tick,
+  type Model, type Msg, AdjustTemp, BuilderProgress, CoolFire, LightFire,
+  Navigate, StokeFire, Tick,
 }
 import adarkroom/notifications.{type Notifications}
 import adarkroom/room
+import adarkroom/save
 import adarkroom/state
 import adarkroom/timer
 import gleam/int
 import gleam/list
+import gleam/option.{None, Some}
 import lustre
 import lustre/attribute
 import lustre/effect.{type Effect}
@@ -35,12 +37,18 @@ pub fn main() -> Nil {
 }
 
 fn init(_flags) -> #(Model, Effect(Msg)) {
+  // Resume a saved game if one exists; otherwise start fresh.
+  let loaded = case save.load() {
+    Some(saved) -> model.Model(..model.init(), state: saved)
+    None -> model.init()
+  }
   #(
-    model.init(),
+    loaded,
     effect.batch([
       interval(tick_interval_ms, Tick),
       interval(cool_interval_ms, CoolFire),
       interval(temp_interval_ms, AdjustTemp),
+      resume_builder(loaded),
     ]),
   )
 }
@@ -54,8 +62,38 @@ fn interval(ms: Int, msg: Msg) -> Effect(Msg) {
   })
 }
 
+/// A one-shot effect that dispatches `msg` after `ms` milliseconds.
+fn delayed(ms: Int, msg: Msg) -> Effect(Msg) {
+  effect.from(fn(dispatch) {
+    let _ = timer.set_timeout(fn() { dispatch(msg) }, ms)
+    Nil
+  })
+}
+
+/// Resume the builder's timer if a loaded game left it mid-progression.
+fn resume_builder(m: Model) -> Effect(Msg) {
+  case room.builder_arrived(m.state) && room.builder_up(m.state) == False {
+    True -> delayed(room.builder_state_delay_ms, BuilderProgress)
+    False -> effect.none()
+  }
+}
+
 fn update(m: Model, msg: Msg) -> #(Model, Effect(Msg)) {
-  model.update(m, msg)
+  let #(new, eff) = model.update(m, msg)
+  // Persist whenever the saved state actually changes (not on UI-only messages
+  // like Tick or Navigate).
+  case new.state == m.state {
+    True -> #(new, eff)
+    False -> #(new, effect.batch([eff, save_effect(new.state)]))
+  }
+}
+
+/// An effect that writes the state to localStorage.
+fn save_effect(s: state.State) -> Effect(Msg) {
+  effect.from(fn(_dispatch) {
+    save.save(s)
+    Nil
+  })
 }
 
 fn view(m: Model) -> Element(Msg) {
