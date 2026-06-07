@@ -1,5 +1,6 @@
 import adarkroom/outside
 import adarkroom/state
+import gleam/dict
 import gleeunit/should
 
 pub fn gather_wood_gives_ten_by_hand_test() {
@@ -30,23 +31,125 @@ pub fn first_arrival_notes_the_forest_once_test() {
   msgs2 |> should.equal([])
 }
 
+// --- workers ----------------------------------------------------------------
+
+pub fn num_gatherers_is_population_minus_workers_test() {
+  let s =
+    state.new()
+    |> state.set_game("population", 10)
+    |> state.set_game("worker.hunter", 3)
+    |> state.set_game("worker.trapper", 2)
+  outside.num_gatherers(s) |> should.equal(5)
+}
+
+pub fn increase_worker_moves_villagers_off_gathering_test() {
+  let s = state.new() |> state.set_game("population", 10)
+  let s2 = outside.increase_worker(s, "hunter", 3)
+  outside.worker_count(s2, "hunter") |> should.equal(3)
+  outside.num_gatherers(s2) |> should.equal(7)
+}
+
+pub fn increase_worker_is_capped_by_free_gatherers_test() {
+  let s = state.new() |> state.set_game("population", 2)
+  outside.increase_worker(s, "hunter", 10)
+  |> outside.worker_count("hunter")
+  |> should.equal(2)
+}
+
+pub fn increase_worker_noop_with_no_free_gatherers_test() {
+  let s =
+    state.new()
+    |> state.set_game("population", 2)
+    |> state.set_game("worker.hunter", 2)
+  outside.increase_worker(s, "trapper", 1)
+  |> outside.worker_count("trapper")
+  |> should.equal(0)
+}
+
+pub fn decrease_worker_returns_villagers_to_gathering_test() {
+  let s =
+    state.new()
+    |> state.set_game("population", 10)
+    |> state.set_game("worker.hunter", 4)
+  let s2 = outside.decrease_worker(s, "hunter", 3)
+  outside.worker_count(s2, "hunter") |> should.equal(1)
+  outside.num_gatherers(s2) |> should.equal(9)
+}
+
+pub fn decrease_worker_stops_at_zero_test() {
+  let s =
+    state.new()
+    |> state.set_game("population", 10)
+    |> state.set_game("worker.hunter", 2)
+  outside.decrease_worker(s, "hunter", 10)
+  |> outside.worker_count("hunter")
+  |> should.equal(0)
+}
+
+pub fn unlocked_roles_follow_the_buildings_test() {
+  outside.unlocked_roles(state.new()) |> should.equal([])
+  outside.unlocked_roles(state.new() |> state.set_game("building.lodge", 1))
+  |> should.equal(["hunter", "trapper"])
+  let all =
+    state.new()
+    |> state.set_game("building.lodge", 1)
+    |> state.set_game("building.tannery", 1)
+    |> state.set_game("building.smokehouse", 1)
+  outside.unlocked_roles(all)
+  |> should.equal(["hunter", "trapper", "tanner", "charcutier"])
+}
+
 // --- income -----------------------------------------------------------------
+
+/// Collect once from empty buffers, returning the new state.
+fn collect(s: state.State) -> state.State {
+  outside.collect_income(s, dict.new()).0
+}
 
 pub fn collect_income_gives_builder_wood_when_helping_test() {
   let s = state.new() |> state.set_game("builder", 4)
-  outside.collect_income(s) |> state.get_store("wood") |> should.equal(2)
+  collect(s) |> state.get_store("wood") |> should.equal(2)
 }
 
 pub fn collect_income_idle_before_builder_helps_test() {
   let s = state.new() |> state.set_game("builder", 3)
-  outside.collect_income(s) |> state.get_store("wood") |> should.equal(0)
+  collect(s) |> state.get_store("wood") |> should.equal(0)
 }
 
 pub fn collect_income_accumulates_over_collections_test() {
   let s = state.new() |> state.set_game("builder", 4)
-  outside.collect_income(outside.collect_income(s))
-  |> state.get_store("wood")
-  |> should.equal(4)
+  collect(collect(s)) |> state.get_store("wood") |> should.equal(4)
+}
+
+pub fn collect_income_gatherers_gather_wood_test() {
+  // 3 unassigned villagers gather 1 wood each.
+  let s = state.new() |> state.set_game("population", 3)
+  collect(s) |> state.get_store("wood") |> should.equal(3)
+}
+
+pub fn collect_income_accumulates_fractional_hunter_yield_test() {
+  // One hunter yields fur +0.5 / collection — a whole fur after two.
+  let s =
+    state.new()
+    |> state.set_game("building.lodge", 1)
+    |> state.set_game("population", 1)
+    |> state.set_game("worker.hunter", 1)
+  let #(s1, buf1) = outside.collect_income(s, dict.new())
+  state.get_store(s1, "fur") |> should.equal(0)
+  let #(s2, _) = outside.collect_income(s1, buf1)
+  state.get_store(s2, "fur") |> should.equal(1)
+}
+
+pub fn collect_income_guard_blocks_unaffordable_worker_test() {
+  // A trapper needs 1 meat; with none, the source is skipped (no bait either).
+  let s =
+    state.new()
+    |> state.set_game("building.lodge", 1)
+    |> state.set_game("population", 1)
+    |> state.set_game("worker.trapper", 1)
+  let after = collect(s)
+  state.get_store(after, "meat") |> should.equal(0)
+  state.get_store(after, "bait") |> should.equal(0)
 }
 
 // --- village & population ---------------------------------------------------

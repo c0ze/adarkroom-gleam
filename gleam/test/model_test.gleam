@@ -246,6 +246,29 @@ pub fn cooldown_fraction_guards_zero_duration_test() {
   model.cooldown_fraction(after, "gather", 0) |> should.equal(0.0)
 }
 
+pub fn increase_worker_message_assigns_villagers_test() {
+  let m =
+    model.Model(
+      ..model.init(),
+      state: state.set_game(state.new(), "population", 5),
+    )
+  let after = run(m, model.IncreaseWorker(role: "hunter", by: 2))
+  outside.worker_count(after.state, "hunter") |> should.equal(2)
+  outside.num_gatherers(after.state) |> should.equal(3)
+}
+
+pub fn decrease_worker_message_unassigns_villagers_test() {
+  let m =
+    model.Model(
+      ..model.init(),
+      state: state.new()
+        |> state.set_game("population", 5)
+        |> state.set_game("worker.hunter", 4),
+    )
+  let after = run(m, model.DecreaseWorker(role: "hunter", by: 1))
+  outside.worker_count(after.state, "hunter") |> should.equal(3)
+}
+
 pub fn collect_income_message_gives_builder_wood_test() {
   let m =
     model.Model(
