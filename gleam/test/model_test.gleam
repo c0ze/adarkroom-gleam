@@ -3,6 +3,7 @@ import adarkroom/model.{Navigate, Tick}
 import adarkroom/notifications
 import adarkroom/room
 import adarkroom/state
+import gleam/set
 import gleeunit/should
 
 /// Apply an update and discard the effect.
@@ -19,6 +20,28 @@ pub fn init_starts_in_room_test() {
 pub fn tick_increments_test() {
   let m = run(run(model.init(), Tick), Tick)
   m.ticks |> should.equal(2)
+}
+
+pub fn tick_reveals_buildings_when_builder_helps_test() {
+  let base = model.init()
+  let m =
+    model.Model(
+      ..base,
+      state: base.state
+        |> state.set_game("builder", 4)
+        |> state.set_store("wood", 5),
+    )
+  let after = run(m, Tick)
+  set.contains(after.revealed, "trap") |> should.equal(True)
+  notifications.messages(after.notifications)
+  |> should.equal([
+    "builder says she can make traps to catch any creatures might still be alive out there.",
+  ])
+}
+
+pub fn tick_reveals_nothing_without_helper_test() {
+  let after = run(model.init(), Tick)
+  set.size(after.revealed) |> should.equal(0)
 }
 
 pub fn navigate_changes_location_test() {

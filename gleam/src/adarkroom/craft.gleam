@@ -10,6 +10,7 @@ import adarkroom/room
 import adarkroom/state.{type State}
 import gleam/list
 import gleam/option.{type Option, None, Some}
+import gleam/set.{type Set}
 
 /// What a craftable is, which decides where it is counted and whether it needs
 /// the workshop.
@@ -83,6 +84,69 @@ pub fn get(name: String) -> Result(Craftable, Nil) {
 /// Every craftable, in display order.
 pub fn all() -> List(#(String, Craftable)) {
   table()
+}
+
+// --- reveal gating ----------------------------------------------------------
+
+/// Reveal any craftables whose conditions are now met, given the set already
+/// revealed. Returns the updated set plus the availability messages to show
+/// (only for craftables seen for the first time and not yet built). Faithful to
+/// the original's `craftUnlocked`; the revealed set is runtime-only (not saved),
+/// so a reloaded game re-derives it from the current resources.
+pub fn reveal(s: State, revealed: Set(String)) -> #(Set(String), List(String)) {
+  list.fold(table(), #(revealed, []), fn(acc, entry) {
+    let #(name, c) = entry
+    let #(seen, msgs) = acc
+    case set.contains(seen, name) || !can_reveal(s, c, name) {
+      True -> acc
+      False -> {
+        let announce = count(s, c, name) == 0 && c.available_msg != ""
+        let msgs = case announce {
+          True -> list.append(msgs, [c.available_msg])
+          False -> msgs
+        }
+        #(set.insert(seen, name), msgs)
+      }
+    }
+  })
+}
+
+/// Whether a craftable's button should now appear: the builder must be helping,
+/// the workshop must exist for crafts, and it must be already built or both
+/// half-affordable (in wood) and have every cost component on hand.
+fn can_reveal(s: State, c: Craftable, name: String) -> Bool {
+  let workshop_ok = !needs_workshop(c.kind) || building_count(s, "workshop") > 0
+  case room.builder_helping(s) && workshop_ok {
+    False -> False
+    True ->
+      count(s, c, name) > 0 || { half_wood_met(s, c) && components_seen(s, c) }
+  }
+}
+
+/// Half the wood cost is on hand (or the craftable needs no wood).
+fn half_wood_met(s: State, c: Craftable) -> Bool {
+  case list.key_find(c.cost(s), "wood") {
+    Ok(wood_cost) -> state.get_store(s, "wood") * 2 >= wood_cost
+    Error(Nil) -> True
+  }
+}
+
+/// Every cost component has been seen (a positive amount is on hand).
+fn components_seen(s: State, c: Craftable) -> Bool {
+  list.all(c.cost(s), fn(pair) { state.get_store(s, pair.0) > 0 })
+}
+
+/// The revealed craftables, split into buildings and workshop crafts, each in
+/// table order — ready for the build and craft button sections.
+pub fn visible(
+  revealed: Set(String),
+) -> #(List(#(String, Craftable)), List(#(String, Craftable))) {
+  let shown =
+    list.filter(table(), fn(entry) { set.contains(revealed, entry.0) })
+  list.partition(shown, fn(entry) {
+    let #(_, c) = entry
+    !needs_workshop(c.kind)
+  })
 }
 
 /// Build one of `name`. Faithful to the original: the builder will not work in

@@ -1,11 +1,20 @@
 import adarkroom/craft
 import adarkroom/state
+import gleam/list
+import gleam/set
 import gleeunit/should
 
 /// A room warm enough for the builder to work (Mild or better).
 fn warm() -> state.State {
   state.new() |> state.set_game("temperature", 2)
 }
+
+/// A state where the builder is helping (the crafting gate).
+fn helping() -> state.State {
+  state.new() |> state.set_game("builder", 4)
+}
+
+const trap_available = "builder says she can make traps to catch any creatures might still be alive out there"
 
 pub fn get_known_returns_craftable_test() {
   let assert Ok(c) = craft.get("trap")
@@ -138,4 +147,75 @@ pub fn unknown_build_is_noop_test() {
   let #(s2, msgs) = craft.build(s, "dragon")
   msgs |> should.equal([])
   state.get_store(s2, "wood") |> should.equal(99_999)
+}
+
+// --- reveal gating ----------------------------------------------------------
+
+pub fn reveal_nothing_before_builder_helps_test() {
+  // Plenty of wood, but the builder is only "up" (level 3), not helping.
+  let s =
+    state.new() |> state.set_game("builder", 3) |> state.set_store("wood", 9999)
+  let #(seen, msgs) = craft.reveal(s, set.new())
+  set.size(seen) |> should.equal(0)
+  msgs |> should.equal([])
+}
+
+pub fn reveal_building_when_helping_and_resourced_test() {
+  // trap costs 10 wood; revealed once you hold at least half (5).
+  let s = helping() |> state.set_store("wood", 5)
+  let #(seen, msgs) = craft.reveal(s, set.new())
+  set.contains(seen, "trap") |> should.equal(True)
+  // cart needs 15 (half of 30) — still hidden at 5 wood.
+  set.contains(seen, "cart") |> should.equal(False)
+  list.contains(msgs, trap_available) |> should.equal(True)
+}
+
+pub fn reveal_is_idempotent_and_quiet_once_seen_test() {
+  let s = helping() |> state.set_store("wood", 5)
+  let #(seen1, _) = craft.reveal(s, set.new())
+  let #(seen2, msgs2) = craft.reveal(s, seen1)
+  set.contains(seen2, "trap") |> should.equal(True)
+  list.contains(msgs2, trap_available) |> should.equal(False)
+}
+
+pub fn reveal_requires_all_components_seen_test() {
+  // lodge: wood 200, fur 10, meat 5 — needs half the wood AND some fur AND meat.
+  let wood_only = helping() |> state.set_store("wood", 100)
+  let #(seen, _) = craft.reveal(wood_only, set.new())
+  set.contains(seen, "lodge") |> should.equal(False)
+  let resourced =
+    helping()
+    |> state.set_store("wood", 100)
+    |> state.set_store("fur", 1)
+    |> state.set_store("meat", 1)
+  let #(seen2, _) = craft.reveal(resourced, set.new())
+  set.contains(seen2, "lodge") |> should.equal(True)
+}
+
+pub fn reveal_workshop_crafts_gated_on_workshop_test() {
+  // bone spear (weapon) needs the workshop; trap (building) does not.
+  let s =
+    helping() |> state.set_store("wood", 9999) |> state.set_store("teeth", 9)
+  let #(seen, _) = craft.reveal(s, set.new())
+  set.contains(seen, "trap") |> should.equal(True)
+  set.contains(seen, "bone spear") |> should.equal(False)
+  let with_shop = s |> state.set_game("building.workshop", 1)
+  let #(seen2, _) = craft.reveal(with_shop, set.new())
+  set.contains(seen2, "bone spear") |> should.equal(True)
+}
+
+pub fn reveal_already_built_ignores_resources_and_is_quiet_test() {
+  // A trap already stands, but no wood remains: still shown, no availability note.
+  let s = helping() |> state.set_game("building.trap", 1)
+  let #(seen, msgs) = craft.reveal(s, set.new())
+  set.contains(seen, "trap") |> should.equal(True)
+  list.contains(msgs, trap_available) |> should.equal(False)
+}
+
+pub fn visible_splits_buildings_from_crafts_test() {
+  let revealed = set.from_list(["trap", "cart", "bone spear", "waterskin"])
+  let #(builds, crafts) = craft.visible(revealed)
+  // Each section keeps table order: waterskin (upgrade) precedes bone spear.
+  list.map(builds, fn(p) { p.0 }) |> should.equal(["trap", "cart"])
+  list.map(crafts, fn(p) { p.0 }) |> should.equal(["waterskin", "bone spear"])
 }

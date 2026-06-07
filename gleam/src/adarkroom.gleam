@@ -6,8 +6,9 @@
 
 import adarkroom/button
 import adarkroom/clock
+import adarkroom/craft.{type Craftable}
 import adarkroom/model.{
-  type Model, type Msg, AdjustTemp, BuilderProgress, CoolCheck, LightFire,
+  type Model, type Msg, AdjustTemp, Build, BuilderProgress, CoolCheck, LightFire,
   Navigate, StokeFire, Tick,
 }
 import adarkroom/notifications.{type Notifications}
@@ -19,6 +20,7 @@ import gleam/float
 import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
+import gleam/string
 import lustre
 import lustre/attribute
 import lustre/effect.{type Effect}
@@ -163,10 +165,45 @@ fn room_panel(m: Model) -> Element(Msg) {
         button.Config(..button.new("stoke fire", StokeFire), id: "stokeButton"),
       )
   }
+  let #(builds, crafts) = craft.visible(m.revealed)
   html.div([attribute.class("location")], [
     html.div([attribute.id("fireButtons")], [fire_button]),
+    build_section("buildBtns", "build", m.state, builds),
+    build_section("craftBtns", "craft", m.state, crafts),
     stores_view(m.state),
   ])
+}
+
+/// A fieldset of build/craft buttons, hidden until it has something to show.
+fn build_section(
+  id: String,
+  legend: String,
+  s: state.State,
+  items: List(#(String, Craftable)),
+) -> Element(Msg) {
+  case items {
+    [] -> element.none()
+    _ ->
+      html.div(
+        [attribute.id(id), attribute.attribute("data-legend", legend)],
+        list.map(items, fn(entry) {
+          let #(name, c) = entry
+          build_button(s, name, c)
+        }),
+      )
+  }
+}
+
+/// One build/craft button: its cost tooltip, disabled once at its maximum.
+fn build_button(s: state.State, name: String, c: Craftable) -> Element(Msg) {
+  button.button(button.Config(
+    text: name,
+    on_click: Build(name),
+    cost: c.cost(s),
+    disabled: craft.at_maximum(c, craft.count(s, c, name)),
+    cooldown: 0.0,
+    id: "build_" <> string.replace(name, " ", "-"),
+  ))
 }
 
 /// The stores panel — resources and their counts. Hidden until non-empty.
