@@ -54,10 +54,37 @@ pub fn entering_a_scene_grants_its_reward_and_notification_test() {
       reward: [#("wood", 50)],
       buttons: [],
       combat: False,
+      on_load: None,
     )
   let #(s, msgs) = events.enter_scene(scene, state.new())
   state.get_store(s, "wood") |> should.equal(50)
   msgs |> should.equal(["a cache of wood"])
+}
+
+pub fn entering_a_scene_runs_its_on_load_effect_test() {
+  // The store-room Noises scene computes its reward from current wood.
+  let scene =
+    events.Scene(
+      text: ["the ground is littered with small scales"],
+      notification: None,
+      reward: [],
+      buttons: [],
+      combat: False,
+      on_load: Some(fn(s) {
+        let taken = state.get_store(s, "wood") / 10
+        let s =
+          s
+          |> state.add_store("wood", -taken)
+          |> state.add_store("scales", taken / 5)
+        #(s, ["some wood is missing"])
+      }),
+    )
+  let s0 = state.new() |> state.set_store("wood", 100)
+  let #(s, msgs) = events.enter_scene(scene, s0)
+  // 10% of 100 = 10 wood taken; 10 / 5 = 2 scales.
+  state.get_store(s, "wood") |> should.equal(90)
+  state.get_store(s, "scales") |> should.equal(2)
+  msgs |> should.equal(["some wood is missing"])
 }
 
 pub fn entering_a_plain_scene_changes_nothing_test() {
@@ -68,6 +95,7 @@ pub fn entering_a_plain_scene_changes_nothing_test() {
       reward: [],
       buttons: [],
       combat: False,
+      on_load: None,
     )
   let #(s, msgs) = events.enter_scene(scene, state.new())
   state.get_store(s, "wood") |> should.equal(0)
@@ -219,6 +247,45 @@ pub fn the_nomads_compass_is_gated_to_one_test() {
   events.button_available(compass, state.new()) |> should.equal(True)
   events.button_available(compass, state.new() |> state.set_store("compass", 1))
   |> should.equal(False)
+}
+
+// --- the Noises events ------------------------------------------------------
+
+fn room_event_by_notification(note: String) -> events.Event {
+  let assert Ok(ev) =
+    list.find(events.room_events(), fn(e) {
+      case list.key_find(e.scenes, "start") {
+        Ok(scene) -> scene.notification == Some(note)
+        Error(_) -> False
+      }
+    })
+  ev
+}
+
+pub fn the_room_pool_has_grown_test() {
+  events.room_events() |> list.length |> should.equal(3)
+}
+
+pub fn investigating_wall_noises_branches_on_the_roll_test() {
+  let ev =
+    room_event_by_notification("strange noises can be heard through the walls")
+  let assert Ok(start) = list.key_find(ev.scenes, "start")
+  let assert Ok(investigate) = list.key_find(start.buttons, "investigate")
+  // 0.2 < 0.3 → the good find; 0.5 clears only the 1.0 bucket → nothing.
+  events.resolve_next(investigate.next, 0.2)
+  |> should.equal(events.LoadScene("stuff"))
+  events.resolve_next(investigate.next, 0.5)
+  |> should.equal(events.LoadScene("nothing"))
+}
+
+pub fn the_store_room_scales_scene_scavenges_wood_test() {
+  let ev = room_event_by_notification("something's in the store room")
+  let assert Ok(scales) = list.key_find(ev.scenes, "scales")
+  let s0 = state.new() |> state.set_store("wood", 200)
+  let #(s, _) = events.enter_scene(scales, s0)
+  // 200 / 10 = 20 wood taken; 20 / 5 = 4 scales.
+  state.get_store(s, "wood") |> should.equal(180)
+  state.get_store(s, "scales") |> should.equal(4)
 }
 
 // --- next-event timing (scheduleNextEvent) ----------------------------------
