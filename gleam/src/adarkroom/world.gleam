@@ -67,6 +67,127 @@ fn terrain_prob(t: Tile) -> Float {
   }
 }
 
+/// Generate a full overworld for `seed`: terrain, then every landmark scattered
+/// across it at its allotted distance band.
+pub fn generate_map(seed: Seed) -> Map {
+  let #(terrain, after_terrain) = generate_terrain(seed)
+  let #(map, _) =
+    list.fold(landmarks(), #(terrain, after_terrain), fn(acc, landmark) {
+      let #(tile, count, min_radius, max_radius) = landmark
+      place_n(acc.0, tile, count, min_radius, max_radius, acc.1)
+    })
+  map
+}
+
+/// Each landmark as `(tile, count, min_radius, max_radius)`, in placement order.
+/// (`max = min` pins a landmark to an exact ring; the outpost is placed in play,
+/// not at generation.)
+fn landmarks() -> List(#(Tile, Int, Int, Int)) {
+  [
+    #(IronMine, 1, 5, 5),
+    #(CoalMine, 1, 10, 10),
+    #(SulphurMine, 1, 20, 20),
+    #(House, 10, 0, 45),
+    #(Cave, 5, 3, 10),
+    #(Town, 10, 10, 20),
+    #(City, 20, 20, 45),
+    #(Ship, 1, 28, 28),
+    #(Borehole, 10, 15, 45),
+    #(Battlefield, 5, 18, 45),
+    #(Swamp, 1, 15, 45),
+    #(Executioner, 1, 28, 28),
+  ]
+}
+
+/// Place `count` copies of a landmark.
+fn place_n(
+  map: Map,
+  tile: Tile,
+  count: Int,
+  min_radius: Int,
+  max_radius: Int,
+  seed: Seed,
+) -> #(Map, Seed) {
+  case count <= 0 {
+    True -> #(map, seed)
+    False -> {
+      let #(map, seed) = place_landmark(map, tile, min_radius, max_radius, seed)
+      place_n(map, tile, count - 1, min_radius, max_radius, seed)
+    }
+  }
+}
+
+/// Place one landmark on open terrain, trying random spots within the radius
+/// band until one lands on terrain (faithful to the original's retry loop).
+fn place_landmark(
+  map: Map,
+  tile: Tile,
+  min_radius: Int,
+  max_radius: Int,
+  seed: Seed,
+) -> #(Map, Seed) {
+  let #(pos, seed) = find_spot(map, min_radius, max_radius, seed, 1000)
+  #(dict.insert(map, pos, tile), seed)
+}
+
+fn find_spot(
+  map: Map,
+  min_radius: Int,
+  max_radius: Int,
+  seed: Seed,
+  fuel: Int,
+) -> #(#(Int, Int), Seed) {
+  let #(pos, seed) = candidate(min_radius, max_radius, seed)
+  let terrain = case dict.get(map, pos) {
+    Ok(t) -> is_terrain(t)
+    Error(Nil) -> False
+  }
+  case fuel <= 0 || terrain {
+    True -> #(pos, seed)
+    False -> find_spot(map, min_radius, max_radius, seed, fuel - 1)
+  }
+}
+
+/// A random candidate position within the radius band: a distance, split into x
+/// and y offsets, each independently negated. Four seeded rolls, as in the
+/// original.
+fn candidate(
+  min_radius: Int,
+  max_radius: Int,
+  seed: Seed,
+) -> #(#(Int, Int), Seed) {
+  let #(f1, seed) = rng.next_float(seed)
+  let r =
+    float.truncate(f1 *. int.to_float(max_radius - min_radius)) + min_radius
+  let #(f2, seed) = rng.next_float(seed)
+  let x_off = float.truncate(f2 *. int.to_float(r))
+  let y_off = r - x_off
+  let #(f3, seed) = rng.next_float(seed)
+  let x_off = case f3 <. 0.5 {
+    True -> -x_off
+    False -> x_off
+  }
+  let #(f4, seed) = rng.next_float(seed)
+  let y_off = case f4 <. 0.5 {
+    True -> -y_off
+    False -> y_off
+  }
+  let x = int.clamp(radius + x_off, 0, radius * 2)
+  let y = int.clamp(radius + y_off, 0, radius * 2)
+  #(#(x, y), seed)
+}
+
+/// Every coordinate holding `tile`.
+pub fn positions_of(map: Map, tile: Tile) -> List(#(Int, Int)) {
+  dict.to_list(map)
+  |> list.filter_map(fn(entry) {
+    case entry.1 == tile {
+      True -> Ok(entry.0)
+      False -> Error(Nil)
+    }
+  })
+}
+
 /// Generate the terrain: the village at the centre, then tiles spiralling
 /// outward ring by ring, each chosen from its already-placed neighbours.
 pub fn generate_terrain(seed: Seed) -> #(Map, Seed) {
