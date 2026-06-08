@@ -57,6 +57,9 @@ pub type Scene {
     reward: List(#(String, Int)),
     buttons: List(#(String, SceneButton)),
     combat: Bool,
+    /// Arbitrary effect run on entry (`onLoad`): computed rewards, flags, perks.
+    /// Returns the new state and any extra messages.
+    on_load: Option(fn(state.State) -> #(state.State, List(String))),
   )
 }
 
@@ -111,8 +114,14 @@ pub fn resolve_next(next: NextScene, roll: Float) -> Step {
 /// Enter a scene: grant its reward and surface its notification. Returns the
 /// updated state and any messages to log.
 pub fn enter_scene(scene: Scene, s: state.State) -> #(state.State, List(String)) {
+  // onLoad runs first (it may compute a reward from current stores), then the
+  // static reward, then the scene's notification.
+  let #(s, load_messages) = case scene.on_load {
+    option.Some(f) -> f(s)
+    option.None -> #(s, [])
+  }
   let s = apply_stores(s, scene.reward)
-  #(s, notification_messages(scene.notification))
+  #(s, list.append(load_messages, notification_messages(scene.notification)))
 }
 
 fn notification_messages(notification: Option(String)) -> List(String) {
@@ -185,7 +194,19 @@ pub fn pick(items: List(a), roll: Float) -> Result(a, Nil) {
 
 /// Events available while in the Room.
 pub fn room_events() -> List(Event) {
-  [nomad()]
+  [nomad(), noises_through_walls(), noises_in_store_room()]
+}
+
+/// A plain choice button: just text and where it leads.
+fn choice(text: String, next: NextScene) -> SceneButton {
+  SceneButton(
+    text:,
+    cost: [],
+    reward: [],
+    notification: option.None,
+    available: option.None,
+    next:,
+  )
 }
 
 /// Events available while Outside.
@@ -210,6 +231,7 @@ fn nomad() -> Event {
       notification: option.Some("a nomad arrives, looking to trade"),
       reward: [],
       combat: False,
+      on_load: option.None,
       buttons: [
         #(
           "buyScales",
@@ -275,4 +297,128 @@ fn nomad() -> Event {
     is_available: fn(s) { state.get_store(s, "fur") > 0 },
     scenes: [#("start", start)],
   )
+}
+
+/// Noises through the walls — investigate to find a bundle of wood and fur, or
+/// nothing at all.
+fn noises_through_walls() -> Event {
+  Event(
+    title: "Noises",
+    is_available: fn(s) { state.get_store(s, "wood") > 0 },
+    scenes: [
+      #(
+        "start",
+        Scene(
+          text: [
+            "through the walls, shuffling noises can be heard.",
+            "can't tell what they're up to.",
+          ],
+          notification: option.Some(
+            "strange noises can be heard through the walls",
+          ),
+          reward: [],
+          combat: False,
+          on_load: option.None,
+          buttons: [
+            #(
+              "investigate",
+              choice(
+                "investigate",
+                Branch([#(0.3, "stuff"), #(1.0, "nothing")]),
+              ),
+            ),
+            #("ignore", choice("ignore them", End)),
+          ],
+        ),
+      ),
+      #(
+        "nothing",
+        Scene(
+          text: ["vague shapes move, just out of sight.", "the sounds stop."],
+          notification: option.None,
+          reward: [],
+          combat: False,
+          on_load: option.None,
+          buttons: [#("backinside", choice("go back inside", End))],
+        ),
+      ),
+      #(
+        "stuff",
+        Scene(
+          text: [
+            "a bundle of sticks lies just beyond the threshold, wrapped in coarse furs.",
+            "the night is silent.",
+          ],
+          notification: option.None,
+          reward: [#("wood", 100), #("fur", 10)],
+          combat: False,
+          on_load: option.None,
+          buttons: [#("backinside", choice("go back inside", End))],
+        ),
+      ),
+    ],
+  )
+}
+
+/// Noises in the store room — something is trading wood for scales, teeth, or
+/// cloth (a tenth of the wood becomes a fifth as much of the material).
+fn noises_in_store_room() -> Event {
+  Event(
+    title: "Noises",
+    is_available: fn(s) { state.get_store(s, "wood") > 0 },
+    scenes: [
+      #(
+        "start",
+        Scene(
+          text: [
+            "scratching noises can be heard from the store room.",
+            "something's in there.",
+          ],
+          notification: option.Some("something's in the store room"),
+          reward: [],
+          combat: False,
+          on_load: option.None,
+          buttons: [
+            #(
+              "investigate",
+              choice(
+                "investigate",
+                Branch([#(0.5, "scales"), #(0.8, "teeth"), #(1.0, "cloth")]),
+              ),
+            ),
+            #("ignore", choice("ignore them", End)),
+          ],
+        ),
+      ),
+      #("scales", scavenged_scene("small scales", "scales")),
+      #("teeth", scavenged_scene("small teeth", "teeth")),
+      #("cloth", scavenged_scene("scraps of cloth", "cloth")),
+    ],
+  )
+}
+
+/// A store-room reward scene: some wood vanishes and `material` is left behind.
+fn scavenged_scene(litter: String, material: String) -> Scene {
+  Scene(
+    text: ["some wood is missing.", "the ground is littered with " <> litter],
+    notification: option.None,
+    reward: [],
+    combat: False,
+    on_load: option.Some(scavenge(material)),
+    buttons: [#("leave", choice("leave", End))],
+  )
+}
+
+/// A tenth of the wood (min 1) becomes a fifth as much (min 1) of `material`.
+fn scavenge(material: String) -> fn(state.State) -> #(state.State, List(String)) {
+  fn(s) {
+    let wood = int.max(1, state.get_store(s, "wood") / 10)
+    let got = int.max(1, wood / 5)
+    #(
+      s
+        |> state.add_store("wood", -wood)
+        |> state.add_store(material, got),
+      [],
+    )
+  }
 }
