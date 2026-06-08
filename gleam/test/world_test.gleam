@@ -1,6 +1,7 @@
 import adarkroom/rng
 import adarkroom/world
 import gleam/dict
+import gleam/int
 import gleam/list
 import gleeunit/should
 
@@ -40,4 +41,41 @@ pub fn different_seeds_give_different_terrain_test() {
   let a = world.generate_terrain(rng.seed(1)).0
   let b = world.generate_terrain(rng.seed(99)).0
   { a == b } |> should.equal(False)
+}
+
+fn count(map: world.Map, tile: world.Tile) -> Int {
+  dict.values(map) |> list.filter(fn(t) { t == tile }) |> list.length
+}
+
+pub fn map_places_each_landmark_the_right_number_of_times_test() {
+  let map = world.generate_map(rng.seed(5))
+  count(map, world.IronMine) |> should.equal(1)
+  count(map, world.CoalMine) |> should.equal(1)
+  count(map, world.SulphurMine) |> should.equal(1)
+  count(map, world.Ship) |> should.equal(1)
+  count(map, world.Executioner) |> should.equal(1)
+  count(map, world.House) |> should.equal(10)
+  count(map, world.Cave) |> should.equal(5)
+  count(map, world.Town) |> should.equal(10)
+  count(map, world.City) |> should.equal(20)
+  count(map, world.Borehole) |> should.equal(10)
+  count(map, world.Battlefield) |> should.equal(5)
+  count(map, world.Swamp) |> should.equal(1)
+}
+
+pub fn map_keeps_the_village_at_the_centre_test() {
+  world.tile_at(world.generate_map(rng.seed(5)), 30, 30)
+  |> should.equal(Ok(world.Village))
+}
+
+pub fn map_generation_is_deterministic_test() {
+  world.generate_map(rng.seed(8))
+  |> should.equal(world.generate_map(rng.seed(8)))
+}
+
+pub fn the_crashed_ship_lands_at_radius_28_test() {
+  let map = world.generate_map(rng.seed(5))
+  let assert [pos, ..] = world.positions_of(map, world.Ship)
+  int.absolute_value(pos.0 - 30) + int.absolute_value(pos.1 - 30)
+  |> should.equal(28)
 }
