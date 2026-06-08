@@ -137,8 +137,10 @@ const event_time_min = 3
 const event_time_max = 6
 
 /// The delay until the next random event, in milliseconds. The JS draws
-/// `floor(roll * (max - min)) + min` minutes from `EVENT_TIME_RANGE` ([3, 6]);
-/// `scale` (e.g. `0.5` when no event was available) shortens the wait.
+/// `floor(roll * (max - min)) + min` minutes from `EVENT_TIME_RANGE` ([3, 6]).
+/// The upper bound is exclusive, so the draw is really 3–5 minutes (the JS
+/// never reaches 6 either); the constants mirror the source range. `scale`
+/// (e.g. `0.5` when no event was available) shortens the wait.
 pub fn next_event_delay_ms(roll: Float, scale: Float) -> Int {
   let span = int.to_float(event_time_max - event_time_min)
   let minutes = float.truncate(roll *. span) + event_time_min
