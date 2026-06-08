@@ -8,8 +8,60 @@ import adarkroom/state.{type State}
 import gleam/float
 import gleam/int
 import gleam/list
+import gleam/string
 
 const default_bag_space = 10
+
+/// A carryable item's kind — weapons can fight, tools are used or consumed.
+pub type Kind {
+  Tool
+  Weapon
+}
+
+/// Everything that can be packed for the path, with its kind. (Fabricator
+/// weapons are added with that milestone.)
+fn carryable_items() -> List(#(String, Kind)) {
+  [
+    #("cured meat", Tool),
+    #("bullets", Tool),
+    #("grenade", Weapon),
+    #("bolas", Weapon),
+    #("energy cell", Tool),
+    #("bayonet", Weapon),
+    #("charm", Tool),
+    #("alien alloy", Tool),
+    #("medicine", Tool),
+    #("torch", Tool),
+    #("bone spear", Weapon),
+    #("iron sword", Weapon),
+    #("steel sword", Weapon),
+    #("rifle", Weapon),
+  ]
+}
+
+/// The carryable items the player actually has, sorted by name for display.
+pub fn carryable(s: State) -> List(#(String, Kind)) {
+  carryable_items()
+  |> list.filter(fn(entry) { state.get_store(s, entry.0) > 0 })
+  |> list.sort(fn(a, b) { string.compare(a.0, b.0) })
+}
+
+/// The best armour the player owns (display only on the path).
+pub fn armour(s: State) -> String {
+  let has = fn(item) { state.get_store(s, item) > 0 }
+  case
+    has("kinetic armour"),
+    has("s armour"),
+    has("i armour"),
+    has("l armour")
+  {
+    True, _, _, _ -> "kinetic"
+    _, True, _, _ -> "steel"
+    _, _, True, _ -> "iron"
+    _, _, _, True -> "leather"
+    _, _, _, _ -> "none"
+  }
+}
 
 /// What one of an item weighs. Most things weigh 1; weapons and ammo differ.
 pub fn weight(item: String) -> Float {

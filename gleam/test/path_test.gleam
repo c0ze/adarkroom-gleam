@@ -79,3 +79,34 @@ pub fn decrease_supply_unpacks_down_to_zero_test() {
   |> state.get_outfit("cured meat")
   |> should.equal(0)
 }
+
+import gleam/list
+
+pub fn carryable_lists_owned_tools_and_weapons_test() {
+  let s =
+    state.new()
+    |> state.set_store("cured meat", 5)
+    |> state.set_store("bone spear", 1)
+    |> state.set_store("fur", 99)
+  let names = path.carryable(s) |> list.map(fn(c) { c.0 })
+  list.contains(names, "cured meat") |> should.equal(True)
+  list.contains(names, "bone spear") |> should.equal(True)
+  // Ordinary resources are not carried as supplies.
+  list.contains(names, "fur") |> should.equal(False)
+}
+
+pub fn carryable_is_empty_with_nothing_owned_test() {
+  path.carryable(state.new()) |> should.equal([])
+}
+
+pub fn armour_reflects_the_best_owned_test() {
+  path.armour(state.new()) |> should.equal("none")
+  path.armour(state.new() |> state.set_store("l armour", 1))
+  |> should.equal("leather")
+  path.armour(
+    state.new()
+    |> state.set_store("l armour", 1)
+    |> state.set_store("s armour", 1),
+  )
+  |> should.equal("steel")
+}

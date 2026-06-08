@@ -9,11 +9,12 @@ import adarkroom/clock
 import adarkroom/craft.{type Craftable}
 import adarkroom/model.{
   type Model, type Msg, AdjustTemp, Build, BuilderProgress, Buy, CheckTraps,
-  CollectIncome, CoolCheck, DecreaseWorker, GatherWood, IncreaseWorker,
-  LightFire, Navigate, StokeFire, Tick,
+  CollectIncome, CoolCheck, DecreaseSupply, DecreaseWorker, Embark, GatherWood,
+  IncreaseSupply, IncreaseWorker, LightFire, Navigate, StokeFire, Tick,
 }
 import adarkroom/notifications.{type Notifications}
 import adarkroom/outside
+import adarkroom/path
 import adarkroom/room
 import adarkroom/save
 import adarkroom/state
@@ -159,6 +160,7 @@ fn location_panel(m: Model) -> Element(Msg) {
   case m.location {
     model.Room -> room_panel(m)
     model.Outside -> outside_panel(m)
+    model.Path -> path_panel(m)
     other ->
       html.div([attribute.class("location")], [
         html.div([], [element.text(model.location_title(other))]),
@@ -211,10 +213,10 @@ fn workers_view(s: state.State) -> Element(Msg) {
         list.map(roles, fn(role) {
           let count = outside.worker_count(s, role)
           worker_row(role, count, [
-            worker_btn("upBtn", IncreaseWorker(role, 1), no_free),
-            worker_btn("dnBtn", DecreaseWorker(role, 1), count <= 0),
-            worker_btn("upManyBtn", IncreaseWorker(role, 10), no_free),
-            worker_btn("dnManyBtn", DecreaseWorker(role, 10), count <= 0),
+            arrow_btn("upBtn", IncreaseWorker(role, 1), no_free),
+            arrow_btn("dnBtn", DecreaseWorker(role, 1), count <= 0),
+            arrow_btn("upManyBtn", IncreaseWorker(role, 10), no_free),
+            arrow_btn("dnManyBtn", DecreaseWorker(role, 10), count <= 0),
           ])
         })
       html.div(
@@ -239,11 +241,71 @@ fn worker_row(
   ])
 }
 
-fn worker_btn(class: String, msg: Msg, disabled: Bool) -> Element(Msg) {
+/// A small ±step arrow button (workers and supplies), inert when disabled.
+fn arrow_btn(class: String, msg: Msg, disabled: Bool) -> Element(Msg) {
   case disabled {
     True -> html.div([attribute.class(class <> " disabled")], [])
     False -> html.div([attribute.class(class), event.on_click(msg)], [])
   }
+}
+
+/// The Dusty Path panel: pack supplies (bounded by bag space) and embark.
+fn path_panel(m: Model) -> Element(Msg) {
+  let s = m.state
+  let bagspace =
+    html.div([attribute.id("bagspace")], [
+      element.text(
+        "free "
+        <> int.to_string(float.truncate(path.free_space(s)))
+        <> "/"
+        <> int.to_string(path.capacity(s)),
+      ),
+    ])
+  let armour =
+    html.div([attribute.class("outfitRow")], [
+      html.div([attribute.class("row_key")], [element.text("armour")]),
+      html.div([attribute.class("row_val")], [element.text(path.armour(s))]),
+    ])
+  let supplies =
+    list.map(path.carryable(s), fn(entry) { outfit_row(s, entry.0) })
+  let embark =
+    button.button(button.Config(
+      text: "embark",
+      on_click: Embark,
+      cost: [],
+      disabled: state.get_outfit(s, "cured meat") <= 0,
+      cooldown: 0.0,
+      id: "embarkButton",
+    ))
+  html.div([attribute.class("location"), attribute.id("pathPanel")], [
+    html.div(
+      [
+        attribute.id("outfitting"),
+        attribute.attribute("data-legend", "supplies"),
+      ],
+      [armour, bagspace, ..supplies],
+    ),
+    embark,
+    stores_view(s),
+  ])
+}
+
+/// One supply row: how many are packed, with buttons to pack/unpack ±1/±10.
+fn outfit_row(s: state.State, item: String) -> Element(Msg) {
+  let packed = state.get_outfit(s, item)
+  let full =
+    packed >= state.get_store(s, item)
+    || path.free_space(s) <. path.weight(item)
+  html.div([attribute.class("outfitRow")], [
+    html.div([attribute.class("row_key")], [element.text(item)]),
+    html.div([attribute.class("row_val")], [
+      html.span([], [element.text(int.to_string(packed))]),
+      arrow_btn("upBtn", IncreaseSupply(item, 1), full),
+      arrow_btn("dnBtn", DecreaseSupply(item, 1), packed <= 0),
+      arrow_btn("upManyBtn", IncreaseSupply(item, 10), full),
+      arrow_btn("dnManyBtn", DecreaseSupply(item, 10), packed <= 0),
+    ]),
+  ])
 }
 
 /// The village: the buildings raised and the current population. Shown as a

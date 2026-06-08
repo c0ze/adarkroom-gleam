@@ -337,6 +337,18 @@ pub fn buy_message_adds_good_and_spends_fur_test() {
   state.get_store(after.state, "fur") |> should.equal(50)
 }
 
+pub fn increase_supply_message_packs_the_bag_test() {
+  let m =
+    model.Model(
+      ..model.init(),
+      state: state.set_store(state.new(), "cured meat", 5),
+    )
+  let after = run(m, model.IncreaseSupply(item: "cured meat", by: 3))
+  state.get_outfit(after.state, "cured meat") |> should.equal(3)
+  let removed = run(after, model.DecreaseSupply(item: "cured meat", by: 1))
+  state.get_outfit(removed.state, "cured meat") |> should.equal(2)
+}
+
 pub fn buying_the_compass_reveals_the_path_test() {
   let base = model.init()
   let m =
