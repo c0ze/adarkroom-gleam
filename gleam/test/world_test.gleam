@@ -4,6 +4,7 @@ import adarkroom/world
 import gleam/dict
 import gleam/int
 import gleam/list
+import gleam/set
 import gleeunit/should
 
 pub fn terrain_places_the_village_at_the_centre_test() {
@@ -149,4 +150,52 @@ pub fn enough_starvation_grants_slow_metabolism_test() {
   let r = world.use_supplies(s, v)
   r.alive |> should.equal(False)
   state.has_perk(r.state, "slow metabolism") |> should.equal(True)
+}
+
+// --- expedition: movement & fog ---------------------------------------------
+
+pub fn begin_starts_at_the_village_with_full_vitals_test() {
+  let s = state.new() |> state.set_store("waterskin", 1)
+  let exp = world.begin(world.generate_map(rng.seed(1)), s)
+  exp.pos |> should.equal(#(30, 30))
+  exp.vitals.water |> should.equal(20)
+  exp.vitals.health |> should.equal(10)
+}
+
+pub fn begin_reveals_only_the_starting_diamond_test() {
+  let exp = world.begin(world.generate_map(rng.seed(1)), state.new())
+  set.contains(exp.seen, #(30, 30)) |> should.equal(True)
+  // Manhattan distance 2 is lit; distance 3 is not.
+  set.contains(exp.seen, #(28, 30)) |> should.equal(True)
+  set.contains(exp.seen, #(27, 30)) |> should.equal(False)
+}
+
+pub fn moving_steps_drains_water_and_widens_sight_test() {
+  let s = state.new() |> state.set_outfit("cured meat", 5)
+  let exp = world.begin(world.generate_map(rng.seed(1)), s)
+  let step = world.move(s, exp, world.East)
+  step.expedition.pos |> should.equal(#(31, 30))
+  step.expedition.vitals.water |> should.equal(9)
+  step.alive |> should.equal(True)
+  // Newly-reached ground is now lit.
+  set.contains(step.expedition.seen, #(33, 30)) |> should.equal(True)
+}
+
+pub fn moving_is_blocked_at_the_edge_of_the_world_test() {
+  let s = state.new() |> state.set_outfit("cured meat", 5)
+  let exp =
+    world.Expedition(..world.begin(world.generate_map(rng.seed(1)), s), pos: #(
+      30,
+      0,
+    ))
+  let step = world.move(s, exp, world.North)
+  step.expedition.pos |> should.equal(#(30, 0))
+}
+
+pub fn the_scout_perk_widens_sight_test() {
+  let s = state.new() |> state.add_perk("scout")
+  let exp = world.begin(world.generate_map(rng.seed(1)), s)
+  // Sight radius doubles to 4.
+  set.contains(exp.seen, #(26, 30)) |> should.equal(True)
+  set.contains(exp.seen, #(25, 30)) |> should.equal(False)
 }
