@@ -1,3 +1,4 @@
+import adarkroom/craft
 import adarkroom/events
 import adarkroom/state
 import gleam/list
@@ -263,7 +264,7 @@ fn room_event_by_notification(note: String) -> events.Event {
 }
 
 pub fn the_room_pool_has_grown_test() {
-  events.room_events() |> list.length |> should.equal(3)
+  events.room_events() |> list.length |> should.equal(5)
 }
 
 pub fn investigating_wall_noises_branches_on_the_roll_test() {
@@ -293,6 +294,49 @@ pub fn the_store_room_scenes_scavenge_each_material_test() {
       state.get_store(s, material) |> should.equal(4)
     },
   )
+}
+
+// --- the Beggar -------------------------------------------------------------
+
+pub fn the_beggar_appears_only_with_fur_to_spare_test() {
+  let beggar = room_event_by_notification("a beggar arrives")
+  beggar.is_available(state.new()) |> should.equal(False)
+  beggar.is_available(state.new() |> state.set_store("fur", 1))
+  |> should.equal(True)
+}
+
+pub fn giving_the_beggar_fur_branches_to_a_reward_scene_test() {
+  let beggar = room_event_by_notification("a beggar arrives")
+  let assert Ok(start) = list.key_find(beggar.scenes, "start")
+  let assert Ok(give50) = list.key_find(start.buttons, "50furs")
+  // 50 furs costs 50 fur and routes to scales (<0.5) / teeth (<0.8) / cloth.
+  let s0 = state.new() |> state.set_store("fur", 80)
+  let assert Ok(#(s, _, step)) = events.click_button(give50, s0, 0.2)
+  state.get_store(s, "fur") |> should.equal(30)
+  step |> should.equal(events.LoadScene("scales"))
+  // The reward scene hands over 20 scales.
+  let assert Ok(scales) = list.key_find(beggar.scenes, "scales")
+  let #(s2, _) = events.enter_scene(scales, s)
+  state.get_store(s2, "scales") |> should.equal(20)
+}
+
+// --- the Shady Builder ------------------------------------------------------
+
+pub fn the_shady_builder_appears_with_five_to_twenty_huts_test() {
+  let builder = room_event_by_notification("a shady builder passes through")
+  let huts = fn(n) { state.set_game(state.new(), craft.building_key("hut"), n) }
+  builder.is_available(huts(4)) |> should.equal(False)
+  builder.is_available(huts(5)) |> should.equal(True)
+  builder.is_available(huts(19)) |> should.equal(True)
+  builder.is_available(huts(20)) |> should.equal(False)
+}
+
+pub fn the_shady_builders_build_scene_raises_a_hut_test() {
+  let builder = room_event_by_notification("a shady builder passes through")
+  let assert Ok(build) = list.key_find(builder.scenes, "build")
+  let s0 = state.new() |> state.set_game(craft.building_key("hut"), 6)
+  let #(s, _) = events.enter_scene(build, s0)
+  craft.building_count(s, "hut") |> should.equal(7)
 }
 
 // --- next-event timing (scheduleNextEvent) ----------------------------------
