@@ -1,6 +1,7 @@
 import adarkroom/rng
 import adarkroom/world
 import gleam/dict
+import gleam/int
 import gleam/list
 import gleeunit/should
 
@@ -42,8 +43,6 @@ pub fn different_seeds_give_different_terrain_test() {
   { a == b } |> should.equal(False)
 }
 
-import gleam/int
-
 fn count(map: world.Map, tile: world.Tile) -> Int {
   dict.values(map) |> list.filter(fn(t) { t == tile }) |> list.length
 }
@@ -59,6 +58,9 @@ pub fn map_places_each_landmark_the_right_number_of_times_test() {
   count(map, world.Cave) |> should.equal(5)
   count(map, world.Town) |> should.equal(10)
   count(map, world.City) |> should.equal(20)
+  count(map, world.Borehole) |> should.equal(10)
+  count(map, world.Battlefield) |> should.equal(5)
+  count(map, world.Swamp) |> should.equal(1)
 }
 
 pub fn map_keeps_the_village_at_the_centre_test() {

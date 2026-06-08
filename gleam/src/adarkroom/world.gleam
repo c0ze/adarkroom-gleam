@@ -118,7 +118,9 @@ fn place_n(
 }
 
 /// Place one landmark on open terrain, trying random spots within the radius
-/// band until one lands on terrain (faithful to the original's retry loop).
+/// band until one lands on terrain (faithful to the original's retry loop). If
+/// no open spot turns up within the fuel budget the landmark is skipped rather
+/// than overwriting the village or another landmark.
 fn place_landmark(
   map: Map,
   tile: Tile,
@@ -126,8 +128,10 @@ fn place_landmark(
   max_radius: Int,
   seed: Seed,
 ) -> #(Map, Seed) {
-  let #(pos, seed) = find_spot(map, min_radius, max_radius, seed, 1000)
-  #(dict.insert(map, pos, tile), seed)
+  case find_spot(map, min_radius, max_radius, seed, 1000) {
+    #(Ok(pos), seed) -> #(dict.insert(map, pos, tile), seed)
+    #(Error(Nil), seed) -> #(map, seed)
+  }
 }
 
 fn find_spot(
@@ -136,15 +140,16 @@ fn find_spot(
   max_radius: Int,
   seed: Seed,
   fuel: Int,
-) -> #(#(Int, Int), Seed) {
+) -> #(Result(#(Int, Int), Nil), Seed) {
   let #(pos, seed) = candidate(min_radius, max_radius, seed)
   let terrain = case dict.get(map, pos) {
     Ok(t) -> is_terrain(t)
     Error(Nil) -> False
   }
-  case fuel <= 0 || terrain {
-    True -> #(pos, seed)
-    False -> find_spot(map, min_radius, max_radius, seed, fuel - 1)
+  case terrain, fuel <= 0 {
+    True, _ -> #(Ok(pos), seed)
+    False, True -> #(Error(Nil), seed)
+    False, False -> find_spot(map, min_radius, max_radius, seed, fuel - 1)
   }
 }
 
