@@ -382,7 +382,8 @@ fn eat(s: State, v: Vitals) -> Supplies {
         0 ->
           Supplies(
             state.set_outfit(s, "cured meat", 0),
-            v,
+            // Eating (even the last) breaks any starvation streak.
+            Vitals(..v, starvation: False),
             ["the meat has run out"],
             True,
           )
@@ -429,7 +430,8 @@ fn drink(s: State, v: Vitals, messages: List(String)) -> Supplies {
         0 ->
           Supplies(
             s,
-            Vitals(..v, water: 0),
+            // Drinking (even the last) breaks any thirst streak.
+            Vitals(..v, water: 0, thirst: False),
             list.append(messages, ["there is no more water"]),
             True,
           )
