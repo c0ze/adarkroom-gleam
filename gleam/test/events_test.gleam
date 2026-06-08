@@ -278,14 +278,18 @@ pub fn investigating_wall_noises_branches_on_the_roll_test() {
   |> should.equal(events.LoadScene("nothing"))
 }
 
-pub fn the_store_room_scales_scene_scavenges_wood_test() {
+pub fn the_store_room_scenes_scavenge_each_material_test() {
   let ev = room_event_by_notification("something's in the store room")
-  let assert Ok(scales) = list.key_find(ev.scenes, "scales")
-  let s0 = state.new() |> state.set_store("wood", 200)
-  let #(s, _) = events.enter_scene(scales, s0)
-  // 200 / 10 = 20 wood taken; 20 / 5 = 4 scales.
-  state.get_store(s, "wood") |> should.equal(180)
-  state.get_store(s, "scales") |> should.equal(4)
+  // Each scene routes the same wood→material math to a different material.
+  list.each([#("scales", "scales"), #("teeth", "teeth"), #("cloth", "cloth")], fn(pair) {
+    let #(scene_name, material) = pair
+    let assert Ok(scene) = list.key_find(ev.scenes, scene_name)
+    let s0 = state.new() |> state.set_store("wood", 200)
+    let #(s, _) = events.enter_scene(scene, s0)
+    // 200 / 10 = 20 wood taken; 20 / 5 = 4 of the material.
+    state.get_store(s, "wood") |> should.equal(180)
+    state.get_store(s, material) |> should.equal(4)
+  })
 }
 
 // --- next-event timing (scheduleNextEvent) ----------------------------------
