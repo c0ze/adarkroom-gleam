@@ -6,6 +6,7 @@
 //// next scene), and the next-event timing. The modal UI and the tick-based
 //// scheduler are wired on top in the app layer.
 
+import adarkroom/craft
 import adarkroom/state
 import gleam/float
 import gleam/int
@@ -194,7 +195,13 @@ pub fn pick(items: List(a), roll: Float) -> Result(a, Nil) {
 
 /// Events available while in the Room.
 pub fn room_events() -> List(Event) {
-  [nomad(), noises_through_walls(), noises_in_store_room()]
+  [
+    nomad(),
+    noises_through_walls(),
+    noises_in_store_room(),
+    beggar(),
+    shady_builder(),
+  ]
 }
 
 /// A plain choice button: just text and where it leads.
@@ -202,6 +209,22 @@ fn choice(text: String, next: NextScene) -> SceneButton {
   SceneButton(
     text:,
     cost: [],
+    reward: [],
+    notification: option.None,
+    available: option.None,
+    next:,
+  )
+}
+
+/// A button that spends something on the way to its next scene.
+fn give(
+  text: String,
+  cost: List(#(String, Int)),
+  next: NextScene,
+) -> SceneButton {
+  SceneButton(
+    text:,
+    cost:,
     reward: [],
     notification: option.None,
     available: option.None,
@@ -420,5 +443,136 @@ fn scavenge(material: String) -> fn(state.State) -> #(state.State, List(String))
         |> state.add_store(material, got),
       [],
     )
+  }
+}
+
+/// The Beggar — give furs and he leaves a pile of scales, teeth, or cloth.
+fn beggar() -> Event {
+  Event(
+    title: "The Beggar",
+    is_available: fn(s) { state.get_store(s, "fur") > 0 },
+    scenes: [
+      #(
+        "start",
+        Scene(
+          text: [
+            "a beggar arrives.",
+            "asks for any spare furs to keep him warm at night.",
+          ],
+          notification: option.Some("a beggar arrives"),
+          reward: [],
+          combat: False,
+          on_load: option.None,
+          buttons: [
+            #(
+              "50furs",
+              give(
+                "give 50",
+                [#("fur", 50)],
+                Branch([#(0.5, "scales"), #(0.8, "teeth"), #(1.0, "cloth")]),
+              ),
+            ),
+            #(
+              "100furs",
+              give(
+                "give 100",
+                [#("fur", 100)],
+                Branch([#(0.5, "teeth"), #(0.8, "scales"), #(1.0, "cloth")]),
+              ),
+            ),
+            #("deny", choice("turn him away", End)),
+          ],
+        ),
+      ),
+      #("scales", beggar_thanks("scales", "a pile of small scales")),
+      #("teeth", beggar_thanks("teeth", "a pile of small teeth")),
+      #("cloth", beggar_thanks("cloth", "some scraps of cloth")),
+    ],
+  )
+}
+
+/// A Beggar reward scene: 20 of `material` left behind.
+fn beggar_thanks(material: String, litter: String) -> Scene {
+  Scene(
+    text: [
+      "the beggar expresses his thanks.",
+      "leaves " <> litter <> " behind.",
+    ],
+    notification: option.None,
+    reward: [#(material, 20)],
+    combat: False,
+    on_load: option.None,
+    buttons: [#("leave", choice("say goodbye", End))],
+  )
+}
+
+/// The Shady Builder — pay 300 wood, then he either makes off with it (60%) or
+/// raises a hut. Stops by only once the village has 5–19 huts.
+fn shady_builder() -> Event {
+  Event(
+    title: "The Shady Builder",
+    is_available: fn(s) {
+      let n = craft.building_count(s, "hut")
+      n >= 5 && n < 20
+    },
+    scenes: [
+      #(
+        "start",
+        Scene(
+          text: [
+            "a shady builder passes through",
+            "says he can build you a hut for less wood",
+          ],
+          notification: option.Some("a shady builder passes through"),
+          reward: [],
+          combat: False,
+          on_load: option.None,
+          buttons: [
+            #(
+              "build",
+              give(
+                "300 wood",
+                [#("wood", 300)],
+                Branch([#(0.6, "steal"), #(1.0, "build")]),
+              ),
+            ),
+            #("deny", choice("say goodbye", End)),
+          ],
+        ),
+      ),
+      #(
+        "steal",
+        Scene(
+          text: ["the shady builder has made off with your wood"],
+          notification: option.Some(
+            "the shady builder has made off with your wood",
+          ),
+          reward: [],
+          combat: False,
+          on_load: option.None,
+          buttons: [#("end", choice("go home", End))],
+        ),
+      ),
+      #(
+        "build",
+        Scene(
+          text: ["the shady builder builds a hut"],
+          notification: option.Some("the shady builder builds a hut"),
+          reward: [],
+          combat: False,
+          on_load: option.Some(raise_hut),
+          buttons: [#("end", choice("go home", End))],
+        ),
+      ),
+    ],
+  )
+}
+
+/// Raise one hut, capped at 20 (the JS guard).
+fn raise_hut(s: state.State) -> #(state.State, List(String)) {
+  let n = craft.building_count(s, "hut")
+  case n < 20 {
+    True -> #(state.set_game(s, craft.building_key("hut"), n + 1), [])
+    False -> #(s, [])
   }
 }
