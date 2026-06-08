@@ -10,7 +10,8 @@ import adarkroom/craft.{type Craftable}
 import adarkroom/model.{
   type Model, type Msg, AdjustTemp, Build, BuilderProgress, Buy, CheckTraps,
   CollectIncome, CoolCheck, DecreaseSupply, DecreaseWorker, Embark, GatherWood,
-  IncreaseSupply, IncreaseWorker, LightFire, Navigate, StokeFire, Tick,
+  IncreaseSupply, IncreaseWorker, LightFire, MoveEast, MoveNorth, MoveSouth,
+  MoveWest, Navigate, StokeFire, Tick,
 }
 import adarkroom/notifications.{type Notifications}
 import adarkroom/outside
@@ -20,6 +21,7 @@ import adarkroom/save
 import adarkroom/state
 import adarkroom/timer
 import adarkroom/trade.{type Good}
+import adarkroom/world.{type Expedition}
 import gleam/float
 import gleam/int
 import gleam/list
@@ -161,6 +163,11 @@ fn location_panel(m: Model) -> Element(Msg) {
     model.Room -> room_panel(m)
     model.Outside -> outside_panel(m)
     model.Path -> path_panel(m)
+    model.World ->
+      case m.expedition {
+        Some(exp) -> world_panel(exp)
+        None -> html.div([attribute.class("location")], [])
+      }
     other ->
       html.div([attribute.class("location")], [
         html.div([], [element.text(model.location_title(other))]),
@@ -424,6 +431,53 @@ fn buy_button(s: state.State, name: String, g: Good) -> Element(Msg) {
     disabled: trade.at_maximum(g, state.get_store(s, name)),
     cooldown: 0.0,
     id: "buy_" <> string.replace(name, " ", "-"),
+  ))
+}
+
+/// The world map: the explored ground (the wanderer at its centre), the vitals,
+/// and directional controls.
+fn world_panel(exp: Expedition) -> Element(Msg) {
+  let map =
+    html.div(
+      [
+        attribute.id("map"),
+        attribute.style("white-space", "pre"),
+        attribute.style("font-family", "monospace"),
+        attribute.style("line-height", "1"),
+      ],
+      list.map(world.render(exp), fn(row) { html.div([], [element.text(row)]) }),
+    )
+  let vitals =
+    html.div([attribute.id("worldVitals")], [
+      element.text(
+        "hp "
+        <> int.to_string(exp.vitals.health)
+        <> "   water "
+        <> int.to_string(exp.vitals.water),
+      ),
+    ])
+  let controls =
+    html.div([attribute.id("dirs")], [
+      dir_button("north", MoveNorth),
+      dir_button("west", MoveWest),
+      dir_button("east", MoveEast),
+      dir_button("south", MoveSouth),
+    ])
+  html.div([attribute.class("location"), attribute.id("worldOuter")], [
+    vitals,
+    map,
+    controls,
+  ])
+}
+
+fn dir_button(label: String, msg: Msg) -> Element(Msg) {
+  button.button(button.Config(
+    text: label,
+    on_click: msg,
+    cost: [],
+    disabled: False,
+    cooldown: 0.0,
+    id: "dir_" <> label,
   ))
 }
 

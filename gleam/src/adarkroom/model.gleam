@@ -12,10 +12,12 @@ import adarkroom/room
 import adarkroom/state.{type State}
 import adarkroom/timer
 import adarkroom/trade
+import adarkroom/world.{type Expedition}
 import gleam/dict.{type Dict}
 import gleam/float
 import gleam/int
 import gleam/list
+import gleam/option.{type Option, None, Some}
 import gleam/set.{type Set}
 import lustre/effect.{type Effect}
 
@@ -67,8 +69,15 @@ pub type Msg {
   IncreaseSupply(item: String, by: Int)
   /// Unpack `by` of an item from the path bag.
   DecreaseSupply(item: String, by: Int)
-  /// Set off into the world. (The expedition itself arrives with the world.)
+  /// Set off into the world; rolls a map seed, then dispatches `Embarked`.
   Embark
+  /// Arrive in the world on a freshly-seeded map.
+  Embarked(seed: Int)
+  /// Step through the world.
+  MoveNorth
+  MoveSouth
+  MoveWest
+  MoveEast
 }
 
 pub type Model {
@@ -89,6 +98,8 @@ pub type Model {
     /// Sub-unit income carried between collections (e.g. a lone hunter's half
     /// fur), so stores stay whole. Runtime-only.
     income_buffer: Dict(String, Float),
+    /// The active world expedition, while the player is out exploring.
+    expedition: Option(Expedition),
   )
 }
 
@@ -103,6 +114,7 @@ pub fn init() -> Model {
     now: 0,
     cooldowns: dict.new(),
     income_buffer: dict.new(),
+    expedition: None,
   )
 }
 
@@ -271,10 +283,96 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
       effect.none(),
     )
 
-    // The world expedition itself lands with the world map; embarking is wired
-    // up then.
-    Embark -> #(model, effect.none())
+    // Only embark from the path, and only when not already exploring — guards
+    // against a double-click or a replayed effect re-deducting supplies.
+    Embark ->
+      case model.location, model.expedition {
+        Path, None -> #(model, roll_seed())
+        _, _ -> #(model, effect.none())
+      }
+
+    Embarked(seed: seed) ->
+      case model.location, model.expedition {
+        Path, None -> {
+          // Take the packed supplies out of the village and set out.
+          let stocked =
+            list.fold(state.outfit_list(model.state), model.state, fn(s, item) {
+              state.add_store(s, item.0, -item.1)
+            })
+          let exp = world.begin(world.generate_map(rng.seed(seed)), stocked)
+          #(
+            Model(
+              ..model,
+              state: stocked,
+              location: World,
+              expedition: Some(exp),
+            ),
+            effect.none(),
+          )
+        }
+        _, _ -> #(model, effect.none())
+      }
+
+    MoveNorth -> step(model, world.North)
+    MoveSouth -> step(model, world.South)
+    MoveWest -> step(model, world.West)
+    MoveEast -> step(model, world.East)
   }
+}
+
+/// Take one step in the world, then resolve where it leaves the player: safely
+/// home at the village, dead in the wilds, or still out exploring.
+fn step(model: Model, dir: world.Dir) -> #(Model, Effect(Msg)) {
+  case model.expedition {
+    None -> #(model, effect.none())
+    Some(exp) -> {
+      let s = world.move(model.state, exp, dir)
+      let model = notify_world(Model(..model, state: s.state), s.messages)
+      let on_village =
+        world.tile_at(s.expedition.map, s.expedition.pos.0, s.expedition.pos.1)
+        == Ok(world.Village)
+      case s.alive, on_village {
+        _, True -> #(go_home(model), effect.none())
+        False, _ -> #(die(model), effect.none())
+        True, False -> #(
+          Model(..model, expedition: Some(s.expedition)),
+          effect.none(),
+        )
+      }
+    }
+  }
+}
+
+/// Make it home safe — the expedition ends and the player returns to the room.
+fn go_home(model: Model) -> Model {
+  Model(
+    ..notify_world(model, ["a haze falls over the village"]),
+    location: Room,
+    expedition: None,
+  )
+}
+
+/// Die in the wilds: the supplies are lost and the player wakes in the room.
+fn die(model: Model) -> Model {
+  let model = notify_world(model, ["the world fades"])
+  Model(
+    ..model,
+    state: state.State(..model.state, outfit: dict.new()),
+    location: Room,
+    expedition: None,
+  )
+}
+
+/// An effect that rolls a map seed and dispatches `Embarked`.
+fn roll_seed() -> Effect(Msg) {
+  effect.from(fn(dispatch) {
+    dispatch(Embarked(float.round(rng.random() *. 1_000_000.0)))
+  })
+}
+
+/// Emit messages to the World's notification stream.
+fn notify_world(model: Model, messages: List(String)) -> Model {
+  notify_at(model, "world", messages)
 }
 
 /// An effect that rolls `n` random values and reports them as `TrapsChecked`.

@@ -2,9 +2,12 @@ import adarkroom/craft
 import adarkroom/model.{Navigate, Tick}
 import adarkroom/notifications
 import adarkroom/outside
+import adarkroom/rng
 import adarkroom/room
 import adarkroom/state
+import adarkroom/world
 import gleam/list
+import gleam/option
 import gleam/set
 import gleeunit/should
 
@@ -374,4 +377,81 @@ pub fn light_fire_resets_cool_deadline_test() {
   let after = run(m, model.LightFire)
   // fire_action re-arms cooling: the deadline is reset (next CoolCheck re-arms).
   state.get_game(after.state, "coolAt") |> should.equal(0)
+}
+
+// --- world expedition lifecycle ---------------------------------------------
+
+pub fn embarking_drops_into_the_world_with_supplies_taken_test() {
+  let base = model.init()
+  let m =
+    model.Model(
+      ..base,
+      location: model.Path,
+      state: base.state
+        |> state.set_store("cured meat", 5)
+        |> state.set_outfit("cured meat", 3),
+    )
+  let after = run(m, model.Embarked(seed: 1))
+  after.location |> should.equal(model.World)
+  // The 3 packed meat leave the village stores.
+  state.get_store(after.state, "cured meat") |> should.equal(2)
+  option.is_some(after.expedition) |> should.equal(True)
+}
+
+pub fn moving_keeps_exploring_until_home_or_dead_test() {
+  let base = model.init()
+  let m =
+    model.Model(
+      ..base,
+      location: model.Path,
+      state: state.set_outfit(state.new(), "cured meat", 5),
+    )
+  let embarked = run(m, model.Embarked(seed: 1))
+  let moved = run(embarked, model.MoveEast)
+  moved.location |> should.equal(model.World)
+  option.is_some(moved.expedition) |> should.equal(True)
+}
+
+pub fn reaching_the_village_ends_the_expedition_test() {
+  let base = model.init()
+  let m =
+    model.Model(
+      ..base,
+      location: model.Path,
+      state: state.set_outfit(state.new(), "cured meat", 5),
+    )
+  let embarked = run(m, model.Embarked(seed: 1))
+  // Step out and back onto the village.
+  let home = run(run(embarked, model.MoveEast), model.MoveWest)
+  home.location |> should.equal(model.Room)
+  option.is_none(home.expedition) |> should.equal(True)
+}
+
+pub fn dying_returns_to_the_room_and_drops_the_supplies_test() {
+  let base = model.init()
+  let s = state.set_outfit(state.new(), "cured meat", 5)
+  // Already parched, away from the village — the next step is fatal.
+  let exp =
+    world.Expedition(
+      ..world.begin(world.generate_map(rng.seed(1)), s),
+      pos: #(31, 30),
+      vitals: world.Vitals(
+        water: 0,
+        health: 10,
+        food_move: 0,
+        water_move: 0,
+        starvation: False,
+        thirst: True,
+      ),
+    )
+  let m =
+    model.Model(
+      ..base,
+      state: s,
+      location: model.World,
+      expedition: option.Some(exp),
+    )
+  let after = run(m, model.MoveEast)
+  after.location |> should.equal(model.Room)
+  state.get_outfit(after.state, "cured meat") |> should.equal(0)
 }
