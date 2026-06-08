@@ -190,10 +190,21 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
       #(built, eff)
     }
 
-    Buy(name: name) -> #(
-      apply_room(model, trade.buy(model.state, name)),
-      effect.none(),
-    )
+    Buy(name: name) -> {
+      let bought = apply_room(model, trade.buy(model.state, name))
+      // The compass reveals the dusty path out of the village.
+      let unlocked = case
+        name == "compass" && state.get_store(bought.state, "compass") > 0
+      {
+        True ->
+          Model(
+            ..bought,
+            state: state.set_feature(bought.state, "location.path", True),
+          )
+        False -> bought
+      }
+      #(unlocked, effect.none())
+    }
 
     GatherWood ->
       case on_cooldown(model, "gather") {
