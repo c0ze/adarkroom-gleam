@@ -5,6 +5,7 @@ import gleam/dict
 import gleam/int
 import gleam/list
 import gleam/set
+import gleam/string
 import gleeunit/should
 
 pub fn terrain_places_the_village_at_the_centre_test() {
@@ -198,4 +199,38 @@ pub fn the_scout_perk_widens_sight_test() {
   // Sight radius doubles to 4.
   set.contains(exp.seen, #(26, 30)) |> should.equal(True)
   set.contains(exp.seen, #(25, 30)) |> should.equal(False)
+}
+
+// --- map render -------------------------------------------------------------
+
+pub fn tile_char_maps_tiles_to_their_codes_test() {
+  world.tile_char(world.Village) |> should.equal("A")
+  world.tile_char(world.Forest) |> should.equal(";")
+  world.tile_char(world.Ship) |> should.equal("W")
+  world.tile_char(world.IronMine) |> should.equal("I")
+}
+
+pub fn render_is_sixty_one_rows_test() {
+  let exp = world.begin(world.generate_map(rng.seed(1)), state.new())
+  list.length(world.render(exp)) |> should.equal(61)
+}
+
+pub fn render_marks_the_wanderer_at_the_centre_test() {
+  let exp = world.begin(world.generate_map(rng.seed(1)), state.new())
+  let assert Ok(row) = list.drop(world.render(exp), 30) |> list.first
+  string.slice(row, 30, 1) |> should.equal("@")
+}
+
+pub fn render_shows_the_forest_beside_the_village_test() {
+  let exp = world.begin(world.generate_map(rng.seed(1)), state.new())
+  let assert Ok(row) = list.drop(world.render(exp), 30) |> list.first
+  // The village's orthogonal neighbour is forest, and it is within sight.
+  string.slice(row, 29, 1) |> should.equal(";")
+}
+
+pub fn render_hides_unseen_ground_test() {
+  let exp = world.begin(world.generate_map(rng.seed(1)), state.new())
+  let assert Ok(row) = list.first(world.render(exp))
+  // A far corner has not been seen.
+  string.slice(row, 0, 1) |> should.equal(" ")
 }

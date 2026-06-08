@@ -12,6 +12,7 @@ import gleam/int
 import gleam/list
 import gleam/result
 import gleam/set.{type Set}
+import gleam/string
 
 /// The map reaches `radius` tiles out from the village in every direction.
 pub const radius = 30
@@ -576,5 +577,53 @@ pub fn move(s: State, exp: Expedition, dir: Dir) -> Step {
         )
       Step(supplies.state, moved, supplies.messages, supplies.alive)
     }
+  }
+}
+
+// --- map render -------------------------------------------------------------
+
+/// The single-character glyph for a tile (the original's map codes).
+pub fn tile_char(t: Tile) -> String {
+  case t {
+    Village -> "A"
+    IronMine -> "I"
+    CoalMine -> "C"
+    SulphurMine -> "S"
+    Forest -> ";"
+    Field -> ","
+    Barrens -> "."
+    Road -> "#"
+    House -> "H"
+    Cave -> "V"
+    Town -> "O"
+    City -> "Y"
+    Outpost -> "P"
+    Ship -> "W"
+    Borehole -> "B"
+    Battlefield -> "F"
+    Swamp -> "M"
+    Cache -> "U"
+    Executioner -> "X"
+  }
+}
+
+/// Render the expedition's map as 61 rows of text: the wanderer marked `@`, seen
+/// tiles shown by their glyph, and unseen ground left blank.
+pub fn render(exp: Expedition) -> List(String) {
+  list.map(seq(0, radius * 2 + 1), fn(y) {
+    seq(0, radius * 2 + 1)
+    |> list.map(fn(x) { cell(exp, x, y) })
+    |> string.concat
+  })
+}
+
+fn cell(exp: Expedition, x: Int, y: Int) -> String {
+  case #(x, y) == exp.pos {
+    True -> "@"
+    False ->
+      case set.contains(exp.seen, #(x, y)), dict.get(exp.map, #(x, y)) {
+        True, Ok(t) -> tile_char(t)
+        _, _ -> " "
+      }
   }
 }
