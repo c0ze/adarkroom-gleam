@@ -11,6 +11,7 @@ import gleam/float
 import gleam/int
 import gleam/list
 import gleam/result
+import gleam/set.{type Set}
 
 /// The map reaches `radius` tiles out from the village in every direction.
 pub const radius = 30
@@ -468,5 +469,112 @@ fn note_affliction(s: State, counter: String, perk: String) -> State {
   case count >= 10 && !state.has_perk(s, perk) {
     True -> state.add_perk(s, perk)
     False -> s
+  }
+}
+
+// --- expedition: movement & fog ---------------------------------------------
+
+const light_radius = 2
+
+/// A direction of travel.
+pub type Dir {
+  North
+  South
+  West
+  East
+}
+
+fn offset(dir: Dir) -> #(Int, Int) {
+  case dir {
+    North -> #(0, -1)
+    South -> #(0, 1)
+    West -> #(-1, 0)
+    East -> #(1, 0)
+  }
+}
+
+/// An expedition into the world: where the player stands, the map, the ground
+/// they have seen (the fog mask), and their vitals.
+pub type Expedition {
+  Expedition(pos: #(Int, Int), map: Map, seen: Set(#(Int, Int)), vitals: Vitals)
+}
+
+/// The result of a step: the (possibly changed) state and expedition, any
+/// notices, and whether the player is still alive.
+pub type Step {
+  Step(
+    state: State,
+    expedition: Expedition,
+    messages: List(String),
+    alive: Bool,
+  )
+}
+
+/// How far the player can see (doubled by the scout perk).
+fn sight(s: State) -> Int {
+  light_radius
+  * case state.has_perk(s, "scout") {
+    True -> 2
+    False -> 1
+  }
+}
+
+/// Begin an expedition at the village, with the bag's water/health and the
+/// starting area lit.
+pub fn begin(map: Map, s: State) -> Expedition {
+  let pos = #(radius, radius)
+  Expedition(
+    pos: pos,
+    map: map,
+    seen: uncover(set.new(), pos, sight(s)),
+    vitals: Vitals(
+      water: max_water(s),
+      health: max_health(s),
+      food_move: 0,
+      water_move: 0,
+      starvation: False,
+      thirst: False,
+    ),
+  )
+}
+
+/// Reveal the diamond of tiles within Manhattan distance `r` of `pos`.
+fn uncover(seen: Set(#(Int, Int)), pos: #(Int, Int), r: Int) -> Set(#(Int, Int)) {
+  let #(x, y) = pos
+  list.fold(seq(-r, r + 1), seen, fn(seen, i) {
+    let span = r - int.absolute_value(i)
+    list.fold(seq(-span, span + 1), seen, fn(seen, j) {
+      let p = #(x + i, y + j)
+      case in_bounds(p) {
+        True -> set.insert(seen, p)
+        False -> seen
+      }
+    })
+  })
+}
+
+fn in_bounds(p: #(Int, Int)) -> Bool {
+  p.0 >= 0 && p.0 <= radius * 2 && p.1 >= 0 && p.1 <= radius * 2
+}
+
+/// Take a step. At the edge of the world the step is refused; otherwise the
+/// player moves, the newly-reached ground is lit, and a move's supplies are
+/// spent (which may be fatal).
+pub fn move(s: State, exp: Expedition, dir: Dir) -> Step {
+  let #(dx, dy) = offset(dir)
+  let pos = #(exp.pos.0 + dx, exp.pos.1 + dy)
+  case in_bounds(pos) {
+    False -> Step(s, exp, [], True)
+    True -> {
+      let supplies = use_supplies(s, exp.vitals)
+      let moved =
+        Expedition(
+          ..exp,
+          pos: pos,
+          seen: uncover(exp.seen, pos, sight(s)),
+          vitals: supplies.vitals,
+        )
+      Step(supplies.state, moved, supplies.messages, supplies.alive)
+    }
   }
 }
