@@ -5,6 +5,7 @@
 //// so a given seed always yields the same map. Landmarks are layered on next.
 
 import adarkroom/rng.{type Seed}
+import adarkroom/state.{type State}
 import gleam/dict.{type Dict}
 import gleam/float
 import gleam/int
@@ -276,5 +277,194 @@ fn seq(from: Int, to: Int) -> List(Int) {
   case from < to {
     True -> [from, ..seq(from + 1, to)]
     False -> []
+  }
+}
+
+// --- survival ---------------------------------------------------------------
+
+const base_water = 10
+
+const base_health = 10
+
+const meat_heal_amount = 8
+
+const moves_per_food = 2
+
+const moves_per_water = 1
+
+/// The most water the player can carry, raised by water-storage upgrades.
+pub fn max_water(s: State) -> Int {
+  let has = fn(item) { state.get_store(s, item) > 0 }
+  base_water
+  + case
+    has("fluid recycler"),
+    has("water tank"),
+    has("cask"),
+    has("waterskin")
+  {
+    True, _, _, _ -> 100
+    _, True, _, _ -> 50
+    _, _, True, _ -> 20
+    _, _, _, True -> 10
+    _, _, _, _ -> 0
+  }
+}
+
+/// The player's maximum health, raised by armour.
+pub fn max_health(s: State) -> Int {
+  let has = fn(item) { state.get_store(s, item) > 0 }
+  base_health
+  + case
+    has("kinetic armour"),
+    has("s armour"),
+    has("i armour"),
+    has("l armour")
+  {
+    True, _, _, _ -> 75
+    _, True, _, _ -> 35
+    _, _, True, _ -> 15
+    _, _, _, True -> 5
+    _, _, _, _ -> 0
+  }
+}
+
+/// How much health a meal of cured meat restores (doubled for a gastronome).
+pub fn meat_heal(s: State) -> Int {
+  meat_heal_amount
+  * case state.has_perk(s, "gastronome") {
+    True -> 2
+    False -> 1
+  }
+}
+
+/// The expedition's running vitals — what the world drains as the player moves.
+pub type Vitals {
+  Vitals(
+    water: Int,
+    health: Int,
+    food_move: Int,
+    water_move: Int,
+    starvation: Bool,
+    thirst: Bool,
+  )
+}
+
+/// The result of one move's supply use: the (possibly changed) state, the new
+/// vitals, any notices, and whether the player is still alive.
+pub type Supplies {
+  Supplies(state: State, vitals: Vitals, messages: List(String), alive: Bool)
+}
+
+/// Consume one move's supplies: water drains every move, cured meat every couple
+/// (healing), and running dry brings on thirst or starvation — fatal the second
+/// time. Repeated brushes with each grant a survival perk.
+pub fn use_supplies(s: State, v: Vitals) -> Supplies {
+  let v = Vitals(..v, food_move: v.food_move + 1, water_move: v.water_move + 1)
+  let fed = eat(s, v)
+  case fed.alive {
+    False -> fed
+    True -> drink(fed.state, fed.vitals, fed.messages)
+  }
+}
+
+fn eat(s: State, v: Vitals) -> Supplies {
+  let interval =
+    moves_per_food
+    * case state.has_perk(s, "slow metabolism") {
+      True -> 2
+      False -> 1
+    }
+  case v.food_move >= interval {
+    False -> Supplies(s, v, [], True)
+    True -> {
+      let v = Vitals(..v, food_move: 0)
+      case state.get_outfit(s, "cured meat") - 1 {
+        0 ->
+          Supplies(
+            state.set_outfit(s, "cured meat", 0),
+            v,
+            ["the meat has run out"],
+            True,
+          )
+        remaining if remaining < 0 ->
+          case v.starvation {
+            False ->
+              Supplies(
+                state.set_outfit(s, "cured meat", 0),
+                Vitals(..v, starvation: True),
+                ["starvation sets in"],
+                True,
+              )
+            True -> {
+              let s = note_affliction(s, "starved", "slow metabolism")
+              Supplies(state.set_outfit(s, "cured meat", 0), v, [], False)
+            }
+          }
+        remaining -> {
+          let healed = int.min(v.health + meat_heal(s), max_health(s))
+          Supplies(
+            state.set_outfit(s, "cured meat", remaining),
+            Vitals(..v, health: healed, starvation: False),
+            [],
+            True,
+          )
+        }
+      }
+    }
+  }
+}
+
+fn drink(s: State, v: Vitals, messages: List(String)) -> Supplies {
+  let interval =
+    moves_per_water
+    * case state.has_perk(s, "desert rat") {
+      True -> 2
+      False -> 1
+    }
+  case v.water_move >= interval {
+    False -> Supplies(s, v, messages, True)
+    True -> {
+      let v = Vitals(..v, water_move: 0)
+      case v.water - 1 {
+        0 ->
+          Supplies(
+            s,
+            Vitals(..v, water: 0),
+            list.append(messages, ["there is no more water"]),
+            True,
+          )
+        remaining if remaining < 0 ->
+          case v.thirst {
+            False ->
+              Supplies(
+                s,
+                Vitals(..v, water: 0, thirst: True),
+                list.append(messages, ["the thirst becomes unbearable"]),
+                True,
+              )
+            True -> {
+              let s = note_affliction(s, "dehydrated", "desert rat")
+              Supplies(s, Vitals(..v, water: 0), messages, False)
+            }
+          }
+        remaining ->
+          Supplies(
+            s,
+            Vitals(..v, water: remaining, thirst: False),
+            messages,
+            True,
+          )
+      }
+    }
+  }
+}
+
+/// Record another bout of an affliction; ten of them earn the matching perk.
+fn note_affliction(s: State, counter: String, perk: String) -> State {
+  let count = state.get_character(s, counter) + 1
+  let s = state.set_character(s, counter, count)
+  case count >= 10 && !state.has_perk(s, perk) {
+    True -> state.add_perk(s, perk)
+    False -> s
   }
 }

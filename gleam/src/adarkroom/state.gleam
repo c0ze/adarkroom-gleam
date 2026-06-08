@@ -118,6 +118,28 @@ pub fn set_game(state: State, key: String, value: Int) -> State {
   State(..state, game: dict.insert(state.game, key, value))
 }
 
+// --- character --------------------------------------------------------------
+
+/// Read a `character` value (perks, personal stats), defaulting to `0`.
+pub fn get_character(state: State, key: String) -> Int {
+  dict.get(state.character, key) |> result.unwrap(0)
+}
+
+/// Set a `character` value.
+pub fn set_character(state: State, key: String, value: Int) -> State {
+  State(..state, character: dict.insert(state.character, key, value))
+}
+
+/// Whether the player has earned a perk.
+pub fn has_perk(state: State, perk: String) -> Bool {
+  get_character(state, "perk." <> perk) > 0
+}
+
+/// Grant a perk.
+pub fn add_perk(state: State, perk: String) -> State {
+  set_character(state, "perk." <> perk, 1)
+}
+
 // --- outfit -----------------------------------------------------------------
 
 /// Read how many of an item are packed for the path (defaults to `0`).
