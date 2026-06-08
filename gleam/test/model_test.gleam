@@ -386,6 +386,7 @@ pub fn embarking_drops_into_the_world_with_supplies_taken_test() {
   let m =
     model.Model(
       ..base,
+      location: model.Path,
       state: base.state
         |> state.set_store("cured meat", 5)
         |> state.set_outfit("cured meat", 3),
@@ -400,7 +401,11 @@ pub fn embarking_drops_into_the_world_with_supplies_taken_test() {
 pub fn moving_keeps_exploring_until_home_or_dead_test() {
   let base = model.init()
   let m =
-    model.Model(..base, state: state.set_outfit(state.new(), "cured meat", 5))
+    model.Model(
+      ..base,
+      location: model.Path,
+      state: state.set_outfit(state.new(), "cured meat", 5),
+    )
   let embarked = run(m, model.Embarked(seed: 1))
   let moved = run(embarked, model.MoveEast)
   moved.location |> should.equal(model.World)
@@ -410,7 +415,11 @@ pub fn moving_keeps_exploring_until_home_or_dead_test() {
 pub fn reaching_the_village_ends_the_expedition_test() {
   let base = model.init()
   let m =
-    model.Model(..base, state: state.set_outfit(state.new(), "cured meat", 5))
+    model.Model(
+      ..base,
+      location: model.Path,
+      state: state.set_outfit(state.new(), "cured meat", 5),
+    )
   let embarked = run(m, model.Embarked(seed: 1))
   // Step out and back onto the village.
   let home = run(run(embarked, model.MoveEast), model.MoveWest)

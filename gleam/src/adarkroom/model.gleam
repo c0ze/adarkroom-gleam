@@ -283,21 +283,35 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
       effect.none(),
     )
 
-    Embark -> #(model, roll_seed())
+    // Only embark from the path, and only when not already exploring — guards
+    // against a double-click or a replayed effect re-deducting supplies.
+    Embark ->
+      case model.location, model.expedition {
+        Path, None -> #(model, roll_seed())
+        _, _ -> #(model, effect.none())
+      }
 
-    Embarked(seed: seed) -> {
-      // Take the packed supplies out of the village and set out.
-      let packed = state.outfit_list(model.state)
-      let stocked =
-        list.fold(packed, model.state, fn(s, item) {
-          state.add_store(s, item.0, -item.1)
-        })
-      let exp = world.begin(world.generate_map(rng.seed(seed)), stocked)
-      #(
-        Model(..model, state: stocked, location: World, expedition: Some(exp)),
-        effect.none(),
-      )
-    }
+    Embarked(seed: seed) ->
+      case model.location, model.expedition {
+        Path, None -> {
+          // Take the packed supplies out of the village and set out.
+          let stocked =
+            list.fold(state.outfit_list(model.state), model.state, fn(s, item) {
+              state.add_store(s, item.0, -item.1)
+            })
+          let exp = world.begin(world.generate_map(rng.seed(seed)), stocked)
+          #(
+            Model(
+              ..model,
+              state: stocked,
+              location: World,
+              expedition: Some(exp),
+            ),
+            effect.none(),
+          )
+        }
+        _, _ -> #(model, effect.none())
+      }
 
     MoveNorth -> step(model, world.North)
     MoveSouth -> step(model, world.South)
