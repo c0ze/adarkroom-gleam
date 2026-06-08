@@ -337,6 +337,25 @@ pub fn buy_message_adds_good_and_spends_fur_test() {
   state.get_store(after.state, "fur") |> should.equal(50)
 }
 
+pub fn buying_the_compass_reveals_the_path_test() {
+  let base = model.init()
+  let m =
+    model.Model(
+      ..base,
+      state: base.state
+        |> state.set_game("building.trading post", 1)
+        |> state.set_store("fur", 500)
+        |> state.set_store("scales", 50)
+        |> state.set_store("teeth", 50),
+    )
+  let after = run(m, model.Buy("compass"))
+  state.get_store(after.state, "compass") |> should.equal(1)
+  state.has_feature(after.state, "location.path") |> should.equal(True)
+  model.unlocked_locations(after)
+  |> list.contains(model.Path)
+  |> should.equal(True)
+}
+
 pub fn light_fire_resets_cool_deadline_test() {
   let base = model.init()
   let m = model.Model(..base, state: state.set_game(base.state, "coolAt", 9999))

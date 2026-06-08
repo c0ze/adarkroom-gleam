@@ -118,6 +118,25 @@ pub fn set_game(state: State, key: String, value: Int) -> State {
   State(..state, game: dict.insert(state.game, key, value))
 }
 
+// --- outfit -----------------------------------------------------------------
+
+/// Read how many of an item are packed for the path (defaults to `0`).
+pub fn get_outfit(state: State, key: String) -> Int {
+  dict.get(state.outfit, key) |> result.unwrap(0)
+}
+
+/// Set how many of an item are packed for the path.
+pub fn set_outfit(state: State, key: String, value: Int) -> State {
+  State(..state, outfit: dict.insert(state.outfit, key, value))
+}
+
+/// The packed outfit as `(key, count)` pairs, sorted by key.
+pub fn outfit_list(state: State) -> List(#(String, Int)) {
+  state.outfit
+  |> dict.to_list
+  |> list.sort(fn(a, b) { string.compare(a.0, b.0) })
+}
+
 // --- presence ---------------------------------------------------------------
 
 /// Whether a store key has ever been set (distinct from a value of `0`).
