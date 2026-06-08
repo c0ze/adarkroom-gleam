@@ -98,6 +98,41 @@ pub fn branch_with_nothing_above_the_roll_ends_test() {
   |> should.equal(events.EndEvent)
 }
 
+pub fn stay_remains_on_the_current_scene_test() {
+  // A button with no `nextScene` (e.g. a repeatable trade) keeps the scene.
+  events.resolve_next(events.Stay, 0.5) |> should.equal(events.StayOnScene)
+}
+
+// --- button availability gate -----------------------------------------------
+
+pub fn an_ungated_button_is_always_available_test() {
+  let btn =
+    events.SceneButton(
+      text: "leave",
+      cost: [],
+      reward: [],
+      notification: None,
+      available: None,
+      next: events.End,
+    )
+  events.button_available(btn, state.new()) |> should.equal(True)
+}
+
+pub fn a_gated_button_follows_its_predicate_test() {
+  let btn =
+    events.SceneButton(
+      text: "buy compass",
+      cost: [],
+      reward: [],
+      notification: None,
+      available: Some(fn(s) { state.get_store(s, "compass") < 1 }),
+      next: events.End,
+    )
+  events.button_available(btn, state.new()) |> should.equal(True)
+  events.button_available(btn, state.new() |> state.set_store("compass", 1))
+  |> should.equal(False)
+}
+
 // --- clicking a button ------------------------------------------------------
 
 pub fn affordability_reads_stores_test() {
@@ -114,6 +149,7 @@ pub fn an_unaffordable_button_is_refused_test() {
       cost: [#("fur", 100)],
       reward: [],
       notification: None,
+      available: None,
       next: events.End,
     )
   events.click_button(btn, state.new(), 0.5) |> should.equal(Error(Nil))
@@ -126,6 +162,7 @@ pub fn clicking_pays_cost_takes_reward_and_advances_test() {
       cost: [#("fur", 10)],
       reward: [#("scales", 5)],
       notification: Some("a fair trade"),
+      available: None,
       next: events.Goto("next"),
     )
   let s0 = state.new() |> state.set_store("fur", 30)
@@ -143,11 +180,45 @@ pub fn a_free_button_can_just_end_test() {
       cost: [],
       reward: [],
       notification: None,
+      available: None,
       next: events.End,
     )
   let assert Ok(#(_, msgs, step)) = events.click_button(btn, state.new(), 0.5)
   msgs |> should.equal([])
   step |> should.equal(events.EndEvent)
+}
+
+// --- the Nomad (first ported event) -----------------------------------------
+
+fn nomad() -> events.Event {
+  let assert Ok(e) =
+    list.find(events.room_events(), fn(e) { e.title == "The Nomad" })
+  e
+}
+
+pub fn the_nomad_only_trades_when_you_have_fur_test() {
+  nomad().is_available(state.new()) |> should.equal(False)
+  nomad().is_available(state.new() |> state.set_store("fur", 1))
+  |> should.equal(True)
+}
+
+pub fn buying_scales_from_the_nomad_costs_fur_and_stays_test() {
+  let assert Ok(start) = list.key_find(nomad().scenes, "start")
+  let assert Ok(buy) = list.key_find(start.buttons, "buyScales")
+  let s = state.new() |> state.set_store("fur", 150)
+  let assert Ok(#(s2, _msgs, step)) = events.click_button(buy, s, 0.5)
+  state.get_store(s2, "fur") |> should.equal(50)
+  state.get_store(s2, "scales") |> should.equal(1)
+  // No nextScene on a trade button — you stay and can keep buying.
+  step |> should.equal(events.StayOnScene)
+}
+
+pub fn the_nomads_compass_is_gated_to_one_test() {
+  let assert Ok(start) = list.key_find(nomad().scenes, "start")
+  let assert Ok(compass) = list.key_find(start.buttons, "buyCompass")
+  events.button_available(compass, state.new()) |> should.equal(True)
+  events.button_available(compass, state.new() |> state.set_store("compass", 1))
+  |> should.equal(False)
 }
 
 // --- next-event timing (scheduleNextEvent) ----------------------------------

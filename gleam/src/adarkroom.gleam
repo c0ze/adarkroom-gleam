@@ -7,11 +7,12 @@
 import adarkroom/button
 import adarkroom/clock
 import adarkroom/craft.{type Craftable}
+import adarkroom/events
 import adarkroom/model.{
   type Model, type Msg, AdjustTemp, Build, BuilderProgress, Buy, CheckTraps,
-  CollectIncome, CoolCheck, DecreaseSupply, DecreaseWorker, Embark, GatherWood,
-  IncreaseSupply, IncreaseWorker, LightFire, MoveEast, MoveNorth, MoveSouth,
-  MoveWest, Navigate, StokeFire, Tick,
+  ChooseEvent, CollectIncome, CoolCheck, DecreaseSupply, DecreaseWorker, Embark,
+  GatherWood, IncreaseSupply, IncreaseWorker, LightFire, MoveEast, MoveNorth,
+  MoveSouth, MoveWest, Navigate, StokeFire, Tick,
 }
 import adarkroom/notifications.{type Notifications}
 import adarkroom/outside
@@ -124,17 +125,68 @@ fn save_effect(s: state.State) -> Effect(Msg) {
 }
 
 fn view(m: Model) -> Element(Msg) {
-  html.div([attribute.id("wrapper")], [
-    html.div([attribute.id("content")], [
-      html.div([attribute.id("outerSlider")], [
-        html.div([attribute.id("main")], [
-          header(m),
-          html.div([attribute.id("locationSlider")], [location_panel(m)]),
+  html.div(
+    [attribute.id("wrapper")],
+    list.append(
+      [
+        html.div([attribute.id("content")], [
+          html.div([attribute.id("outerSlider")], [
+            html.div([attribute.id("main")], [
+              header(m),
+              html.div([attribute.id("locationSlider")], [location_panel(m)]),
+            ]),
+          ]),
         ]),
-      ]),
-    ]),
-    notifications_view(m.notifications),
-  ])
+        notifications_view(m.notifications),
+      ],
+      // The random-event modal floats above everything when one is running.
+      event_overlay(m),
+    ),
+  )
+}
+
+/// The event modal, present only while an event is on screen.
+fn event_overlay(m: Model) -> List(Element(Msg)) {
+  case m.active_event {
+    None -> []
+    Some(active) ->
+      case list.key_find(active.event.scenes, active.scene) {
+        Error(_) -> []
+        Ok(scene) -> [
+          html.div([attribute.id("event"), attribute.class("eventPanel")], [
+            html.div([attribute.class("eventTitle")], [
+              element.text(active.event.title),
+            ]),
+            html.div(
+              [attribute.id("description")],
+              list.map(scene.text, fn(line) {
+                html.div([], [element.text(line)])
+              }),
+            ),
+            html.div(
+              [attribute.id("buttons")],
+              list.map(scene.buttons, fn(pair) { event_button(m, pair) }),
+            ),
+          ]),
+        ]
+      }
+  }
+}
+
+/// One event button — disabled when gated out or unaffordable, as the JS does.
+fn event_button(m: Model, pair: #(String, events.SceneButton)) -> Element(Msg) {
+  let #(id, btn) = pair
+  let enabled =
+    events.button_available(btn, m.state)
+    && events.affordable(btn.cost, m.state)
+  case enabled {
+    True ->
+      html.div([attribute.class("button"), event.on_click(ChooseEvent(id))], [
+        element.text(btn.text),
+      ])
+    False ->
+      html.div([attribute.class("button disabled")], [element.text(btn.text)])
+  }
 }
 
 /// The location tabs — one per unlocked location, with the current one marked.

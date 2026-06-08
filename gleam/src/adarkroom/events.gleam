@@ -16,6 +16,9 @@ import gleam/option.{type Option}
 pub type NextScene {
   /// Close the event.
   End
+  /// Stay on the current scene (a button with no `nextScene`, e.g. a repeatable
+  /// trade).
+  Stay
   /// Always load this scene.
   Goto(String)
   /// Pick the lowest-threshold scene whose threshold exceeds the roll, matching
@@ -30,8 +33,19 @@ pub type SceneButton {
     cost: List(#(String, Int)),
     reward: List(#(String, Int)),
     notification: Option(String),
+    /// When present, gates whether the button is offered (`available` in the JS).
+    available: Option(fn(state.State) -> Bool),
     next: NextScene,
   )
+}
+
+/// Whether a button should be offered: its `available` predicate, defaulting to
+/// always-available when there is none.
+pub fn button_available(button: SceneButton, s: state.State) -> Bool {
+  case button.available {
+    option.Some(p) -> p(s)
+    option.None -> True
+  }
 }
 
 /// One screen of an event: prose, an optional notification/reward on entry, and
@@ -70,6 +84,8 @@ fn apply_stores(s: state.State, deltas: List(#(String, Int))) -> state.State {
 pub type Step {
   LoadScene(String)
   EndEvent
+  /// Remain on the current scene.
+  StayOnScene
 }
 
 /// Resolve a `NextScene` into a concrete step, using `roll` for `Branch`. A
@@ -77,6 +93,7 @@ pub type Step {
 pub fn resolve_next(next: NextScene, roll: Float) -> Step {
   case next {
     End -> EndEvent
+    Stay -> StayOnScene
     Goto(name) -> LoadScene(name)
     Branch(branches) ->
       case
@@ -158,4 +175,104 @@ pub fn pick(items: List(a), roll: Float) -> Result(a, Nil) {
       items |> list.drop(idx) |> list.first
     }
   }
+}
+
+// --- event content (the pools) ----------------------------------------------
+// The JS splits its pool by where an event can fire (`Events.Global` / `Room` /
+// `Outside`), each checking `activeModule` in `isAvailable`. We keep that split
+// so availability stays a pure function of `State`. The full pools arrive in a
+// follow-up; for now the Nomad seeds the Room pool.
+
+/// Events available while in the Room.
+pub fn room_events() -> List(Event) {
+  [nomad()]
+}
+
+/// Events available while Outside.
+pub fn outside_events() -> List(Event) {
+  []
+}
+
+/// Events available in any settled location (Room or Outside).
+pub fn global_events() -> List(Event) {
+  []
+}
+
+/// The Nomad — a wandering merchant who buys fur for scales, teeth, bait, and
+/// (once) a compass.
+fn nomad() -> Event {
+  let start =
+    Scene(
+      text: [
+        "a nomad shuffles into view, laden with makeshift bags bound with rough twine.",
+        "won't say from where he came, but it's clear that he's not staying.",
+      ],
+      notification: option.Some("a nomad arrives, looking to trade"),
+      reward: [],
+      combat: False,
+      buttons: [
+        #(
+          "buyScales",
+          SceneButton(
+            text: "buy scales",
+            cost: [#("fur", 100)],
+            reward: [#("scales", 1)],
+            notification: option.None,
+            available: option.None,
+            next: Stay,
+          ),
+        ),
+        #(
+          "buyTeeth",
+          SceneButton(
+            text: "buy teeth",
+            cost: [#("fur", 200)],
+            reward: [#("teeth", 1)],
+            notification: option.None,
+            available: option.None,
+            next: Stay,
+          ),
+        ),
+        #(
+          "buyBait",
+          SceneButton(
+            text: "buy bait",
+            cost: [#("fur", 5)],
+            reward: [#("bait", 1)],
+            notification: option.Some("traps are more effective with bait."),
+            available: option.None,
+            next: Stay,
+          ),
+        ),
+        #(
+          "buyCompass",
+          SceneButton(
+            text: "buy compass",
+            cost: [#("fur", 300), #("scales", 15), #("teeth", 5)],
+            reward: [#("compass", 1)],
+            notification: option.Some(
+              "the old compass is dented and dusty, but it looks to work.",
+            ),
+            available: option.Some(fn(s) { state.get_store(s, "compass") < 1 }),
+            next: Stay,
+          ),
+        ),
+        #(
+          "goodbye",
+          SceneButton(
+            text: "say goodbye",
+            cost: [],
+            reward: [],
+            notification: option.None,
+            available: option.None,
+            next: End,
+          ),
+        ),
+      ],
+    )
+  Event(
+    title: "The Nomad",
+    is_available: fn(s) { state.get_store(s, "fur") > 0 },
+    scenes: [#("start", start)],
+  )
 }

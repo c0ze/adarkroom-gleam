@@ -4,6 +4,7 @@
 //// effects (e.g. one-shot timers for the builder's timed progression).
 
 import adarkroom/craft
+import adarkroom/events
 import adarkroom/notifications.{type Notifications}
 import adarkroom/outside
 import adarkroom/path
@@ -78,6 +79,14 @@ pub type Msg {
   MoveSouth
   MoveWest
   MoveEast
+  /// Schedule the next random event from a delay roll (initial / no-op reschedule).
+  ScheduleEvent(delay: Float)
+  /// A scheduled slot came due: reschedule, and start an event if one is free.
+  TriggerEvent(pick: Float, delay: Float)
+  /// The player pressed an event button; rolls then dispatches `ResolveEvent`.
+  ChooseEvent(id: String)
+  /// Apply the chosen button's outcome (the roll resolves any `Branch`).
+  ResolveEvent(id: String, roll: Float)
 }
 
 pub type Model {
@@ -100,7 +109,17 @@ pub type Model {
     income_buffer: Dict(String, Float),
     /// The active world expedition, while the player is out exploring.
     expedition: Option(Expedition),
+    /// The random event currently on screen, if any. Runtime-only.
+    active_event: Option(ActiveEvent),
+    /// Wall-clock deadline (ms) for the next random event; `0` until first
+    /// scheduled. Runtime-only, like the cooldowns.
+    next_event_at: Int,
   )
+}
+
+/// A random event in progress: the event and the scene currently showing.
+pub type ActiveEvent {
+  ActiveEvent(event: events.Event, scene: String)
 }
 
 /// The initial model for a new game.
@@ -115,6 +134,8 @@ pub fn init() -> Model {
     cooldowns: dict.new(),
     income_buffer: dict.new(),
     expedition: None,
+    active_event: None,
+    next_event_at: 0,
   )
 }
 
@@ -180,10 +201,11 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
     LightFire -> fire_action(model, room.light_fire(model.state))
     StokeFire -> fire_action(model, room.stoke_fire(model.state))
 
-    CoolCheck(at: now) -> #(
-      apply_room(Model(..model, now:), room.tick_cool(model.state, now)),
-      effect.none(),
-    )
+    CoolCheck(at: now) -> {
+      let cooled =
+        apply_room(Model(..model, now:), room.tick_cool(model.state, now))
+      #(cooled, event_schedule_effect(cooled))
+    }
     AdjustTemp -> #(
       apply_room(model, room.adjust_temp(model.state)),
       effect.none(),
@@ -317,6 +339,35 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
     MoveSouth -> step(model, world.South)
     MoveWest -> step(model, world.West)
     MoveEast -> step(model, world.East)
+
+    ScheduleEvent(delay: delay) -> #(
+      reschedule(model, delay, 1.0),
+      effect.none(),
+    )
+
+    TriggerEvent(pick: pick, delay: delay) -> {
+      let available =
+        events.available_events(event_pool(model.location), model.state)
+      case model.active_event, available {
+        // An event is already on screen, or none qualify: just reschedule.
+        Some(_), _ -> #(reschedule(model, delay, 1.0), effect.none())
+        None, [] -> #(reschedule(model, delay, 0.5), effect.none())
+        None, avail -> {
+          let model = reschedule(model, delay, 1.0)
+          case events.pick(avail, pick) {
+            Error(_) -> #(model, effect.none())
+            Ok(event) -> #(start_event(model, event), effect.none())
+          }
+        }
+      }
+    }
+
+    ChooseEvent(id: id) -> #(model, roll_choice(id))
+
+    ResolveEvent(id: id, roll: roll) -> #(
+      resolve_event(model, id, roll),
+      effect.none(),
+    )
   }
 }
 
@@ -368,6 +419,129 @@ fn roll_seed() -> Effect(Msg) {
   effect.from(fn(dispatch) {
     dispatch(Embarked(float.round(rng.random() *. 1_000_000.0)))
   })
+}
+
+// --- random events ----------------------------------------------------------
+
+/// The event pool that can fire at the current location: the global pool plus
+/// the location's own. The World runs its own encounters, so it has none here.
+fn event_pool(location: Location) -> List(events.Event) {
+  let local = case location {
+    Room -> events.room_events()
+    Outside -> events.outside_events()
+    _ -> []
+  }
+  list.append(events.global_events(), local)
+}
+
+/// The effect that drives event scheduling, run each second from `CoolCheck`:
+/// schedule the first event, or fire a slot that has come due.
+fn event_schedule_effect(model: Model) -> Effect(Msg) {
+  case model.next_event_at {
+    0 -> roll_schedule()
+    deadline ->
+      case model.now >= deadline {
+        True -> roll_trigger()
+        False -> effect.none()
+      }
+  }
+}
+
+/// Push the next-event deadline out by a fresh (scaled) delay.
+fn reschedule(model: Model, delay: Float, scale: Float) -> Model {
+  Model(
+    ..model,
+    next_event_at: model.now + events.next_event_delay_ms(delay, scale),
+  )
+}
+
+/// Begin an event on its `start` scene, applying that scene's reward + notice.
+fn start_event(model: Model, event: events.Event) -> Model {
+  case list.key_find(event.scenes, "start") {
+    Error(_) -> model
+    Ok(scene) -> {
+      let #(new_state, messages) = events.enter_scene(scene, model.state)
+      notify_here(
+        Model(
+          ..model,
+          state: new_state,
+          active_event: Some(ActiveEvent(event, "start")),
+        ),
+        messages,
+      )
+    }
+  }
+}
+
+/// Apply a chosen button's outcome to the running event.
+fn resolve_event(model: Model, id: String, roll: Float) -> Model {
+  case model.active_event {
+    None -> model
+    Some(ActiveEvent(event, scene_name)) ->
+      case list.key_find(event.scenes, scene_name) {
+        Error(_) -> model
+        Ok(scene) ->
+          case list.key_find(scene.buttons, id) {
+            Error(_) -> model
+            Ok(button) ->
+              case events.click_button(button, model.state, roll) {
+                // Too expensive: a no-op, like the JS.
+                Error(_) -> model
+                Ok(#(new_state, messages, step)) ->
+                  advance_event(
+                    notify_here(Model(..model, state: new_state), messages),
+                    event,
+                    step,
+                  )
+              }
+          }
+      }
+  }
+}
+
+/// Move the running event along after a button outcome.
+fn advance_event(model: Model, event: events.Event, step: events.Step) -> Model {
+  case step {
+    events.StayOnScene -> model
+    events.EndEvent -> Model(..model, active_event: None)
+    events.LoadScene(next) ->
+      case list.key_find(event.scenes, next) {
+        Error(_) -> Model(..model, active_event: None)
+        Ok(scene) -> {
+          let #(new_state, messages) = events.enter_scene(scene, model.state)
+          notify_here(
+            Model(
+              ..model,
+              state: new_state,
+              active_event: Some(ActiveEvent(event, next)),
+            ),
+            messages,
+          )
+        }
+      }
+  }
+}
+
+/// Emit messages to the current location's notification stream.
+fn notify_here(model: Model, messages: List(String)) -> Model {
+  notify_at(model, location_key(model.location), messages)
+}
+
+/// Roll to pick an event + a reschedule delay, reported as `TriggerEvent`.
+fn roll_trigger() -> Effect(Msg) {
+  effect.from(fn(dispatch) {
+    dispatch(TriggerEvent(rng.random(), rng.random()))
+  })
+}
+
+/// Roll a delay, reported as `ScheduleEvent`.
+fn roll_schedule() -> Effect(Msg) {
+  effect.from(fn(dispatch) { dispatch(ScheduleEvent(rng.random())) })
+}
+
+/// Roll for a button choice (resolves any `Branch`), reported as `ResolveEvent`.
+fn roll_choice(id: String) -> Effect(Msg) {
+  effect.from(fn(dispatch) { dispatch(ResolveEvent(id, rng.random())) })
 }
 
 /// Emit messages to the World's notification stream.

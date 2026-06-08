@@ -1,5 +1,7 @@
 import adarkroom/craft
-import adarkroom/model.{Navigate, Tick}
+import adarkroom/model.{
+  Navigate, ResolveEvent, ScheduleEvent, Tick, TriggerEvent,
+}
 import adarkroom/notifications
 import adarkroom/outside
 import adarkroom/rng
@@ -454,4 +456,58 @@ pub fn dying_returns_to_the_room_and_drops_the_supplies_test() {
   let after = run(m, model.MoveEast)
   after.location |> should.equal(model.Room)
   state.get_outfit(after.state, "cured meat") |> should.equal(0)
+}
+
+// --- random events ----------------------------------------------------------
+
+/// A Room model with a wall clock set and the given fur on hand.
+fn room_with_fur(fur: Int, now: Int) -> model.Model {
+  let base = model.init()
+  model.Model(..base, now: now, state: state.set_store(base.state, "fur", fur))
+}
+
+pub fn trigger_event_starts_an_available_event_test() {
+  // Fur on hand makes the Nomad available; pick 0.0 selects it.
+  let after = run(room_with_fur(10, 1000), TriggerEvent(0.0, 0.0))
+  let assert option.Some(active) = after.active_event
+  active.event.title |> should.equal("The Nomad")
+  active.scene |> should.equal("start")
+}
+
+pub fn trigger_event_stays_idle_when_nothing_qualifies_test() {
+  // No fur: the Nomad isn't available, so no event starts — but a slot is set.
+  let after = run(room_with_fur(0, 1000), TriggerEvent(0.0, 0.0))
+  after.active_event |> should.equal(option.None)
+  { after.next_event_at > 1000 } |> should.equal(True)
+}
+
+pub fn buying_scales_from_the_nomad_updates_stores_and_stays_test() {
+  let started = run(room_with_fur(150, 1000), TriggerEvent(0.0, 0.0))
+  let after = run(started, ResolveEvent("buyScales", 0.5))
+  state.get_store(after.state, "fur") |> should.equal(50)
+  state.get_store(after.state, "scales") |> should.equal(1)
+  // A trade button has no nextScene — the merchant stays open.
+  let assert option.Some(active) = after.active_event
+  active.scene |> should.equal("start")
+}
+
+pub fn an_unaffordable_choice_is_a_no_op_test() {
+  // Scales cost 100 fur; with only 10 the click does nothing.
+  let started = run(room_with_fur(10, 1000), TriggerEvent(0.0, 0.0))
+  let after = run(started, ResolveEvent("buyScales", 0.5))
+  state.get_store(after.state, "fur") |> should.equal(10)
+  after.active_event |> should.not_equal(option.None)
+}
+
+pub fn saying_goodbye_closes_the_event_test() {
+  let started = run(room_with_fur(10, 1000), TriggerEvent(0.0, 0.0))
+  let after = run(started, ResolveEvent("goodbye", 0.5))
+  after.active_event |> should.equal(option.None)
+}
+
+pub fn schedule_event_sets_the_next_deadline_test() {
+  let base = model.init()
+  let m = model.Model(..base, now: 5000)
+  // floor(0.0 * 3) + 3 = 3 minutes = 180_000 ms from now.
+  run(m, ScheduleEvent(0.0)).next_event_at |> should.equal(185_000)
 }
