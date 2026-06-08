@@ -6,6 +6,7 @@
 import adarkroom/craft
 import adarkroom/notifications.{type Notifications}
 import adarkroom/outside
+import adarkroom/path
 import adarkroom/rng
 import adarkroom/room
 import adarkroom/state.{type State}
@@ -62,6 +63,12 @@ pub type Msg {
   IncreaseWorker(role: String, by: Int)
   /// Return `by` of a role's workers to gathering.
   DecreaseWorker(role: String, by: Int)
+  /// Pack `by` more of an item for the path.
+  IncreaseSupply(item: String, by: Int)
+  /// Unpack `by` of an item from the path bag.
+  DecreaseSupply(item: String, by: Int)
+  /// Set off into the world. (The expedition itself arrives with the world.)
+  Embark
 }
 
 pub type Model {
@@ -253,6 +260,20 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
       Model(..model, state: outside.decrease_worker(model.state, role, by)),
       effect.none(),
     )
+
+    IncreaseSupply(item: item, by: by) -> #(
+      Model(..model, state: path.increase_supply(model.state, item, by)),
+      effect.none(),
+    )
+
+    DecreaseSupply(item: item, by: by) -> #(
+      Model(..model, state: path.decrease_supply(model.state, item, by)),
+      effect.none(),
+    )
+
+    // The world expedition itself lands with the world map; embarking is wired
+    // up then.
+    Embark -> #(model, effect.none())
   }
 }
 
