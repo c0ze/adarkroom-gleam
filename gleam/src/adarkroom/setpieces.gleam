@@ -34,6 +34,7 @@ fn setpieces() -> List(#(String, Event)) {
     #("battlefield", battlefield()),
     #("borehole", borehole()),
     #("cave", cave()),
+    #("town", town()),
     #("house", house()),
     #("ship", ship()),
     #("sulphurmine", sulphurmine()),
@@ -369,6 +370,307 @@ fn continue_or_leave(
   next: List(#(Float, String)),
 ) -> List(#(String, SceneButton)) {
   [#("continue", branch("continue", next)), #("leave", leave("leave cave"))]
+}
+
+/// A deserted town: a sprawling suburb of scorched houses, a schoolhouse and an
+/// old clinic. Thugs, scavengers, beasts and a vigilante prowl its three forks;
+/// clear it into an outpost for one of six caches.
+fn town() -> Event {
+  let thug_loot = [
+    combat.LootEntry("cloth", 5, 10, 0.8),
+    combat.LootEntry("leather", 5, 10, 0.8),
+    combat.LootEntry("cured meat", 1, 5, 0.5),
+  ]
+  let beast_loot = [
+    combat.LootEntry("teeth", 1, 5, 1.0),
+    combat.LootEntry("fur", 5, 10, 1.0),
+  ]
+  let panic_loot = [
+    combat.LootEntry("cured meat", 1, 5, 1.0),
+    combat.LootEntry("leather", 5, 10, 0.8),
+    combat.LootEntry("steel sword", 1, 1, 0.5),
+  ]
+  Event(title: "A Deserted Town", is_available: always, scenes: [
+    #(
+      "start",
+      Scene(
+        ..story([
+          "a small suburb lays ahead, empty houses scorched and peeling.",
+          "broken streetlights stand, rusting. light hasn't graced this place in a long time.",
+        ]),
+        notification: Some("the town lies abandoned, its citizens long dead"),
+        buttons: [
+          #(
+            "enter",
+            branch("explore", [#(0.3, "a1"), #(0.7, "a3"), #(1.0, "a2")]),
+          ),
+          #("leave", leave("leave")),
+        ],
+      ),
+    ),
+    #(
+      "a1",
+      Scene(
+        ..story([
+          "where the windows of the schoolhouse aren't shattered, they're blackened with soot.",
+          "the double doors creak endlessly in the wind.",
+        ]),
+        buttons: torch_into([#(0.5, "b1"), #(1.0, "b2")]),
+      ),
+    ),
+    #(
+      "a2",
+      fight(
+        "ambushed on the street.",
+        NoWorldEffect,
+        enemy("thug", "E", 30, 4, 0.8, 2, False, thug_loot),
+        town_choice([#(0.5, "b3"), #(1.0, "b4")]),
+      ),
+    ),
+    #(
+      "a3",
+      Scene(
+        ..story([
+          "a squat building up ahead.",
+          "a green cross barely visible behind grimy windows.",
+        ]),
+        buttons: torch_into([#(0.5, "b5"), #(1.0, "end5")]),
+      ),
+    ),
+    #(
+      "b1",
+      hoard(
+        ["a small cache of supplies is tucked inside a rusting locker."],
+        [
+          combat.LootEntry("cured meat", 1, 5, 1.0),
+          combat.LootEntry("torch", 1, 3, 0.8),
+          combat.LootEntry("bullets", 1, 5, 0.3),
+          combat.LootEntry("medicine", 1, 3, 0.05),
+        ],
+        town_choice([#(0.5, "c1"), #(1.0, "c2")]),
+      ),
+    ),
+    #(
+      "b2",
+      fight(
+        "a scavenger waits just inside the door.",
+        NoWorldEffect,
+        enemy("scavenger", "E", 30, 4, 0.8, 2, False, thug_loot),
+        town_choice([#(0.5, "c2"), #(1.0, "c3")]),
+      ),
+    ),
+    #(
+      "b3",
+      fight(
+        "a beast stands alone in an overgrown park.",
+        NoWorldEffect,
+        enemy("beast", "R", 25, 3, 0.8, 1, False, beast_loot),
+        town_choice([#(0.5, "c4"), #(1.0, "c5")]),
+      ),
+    ),
+    #(
+      "b4",
+      hoard(
+        [
+          "an overturned caravan is spread across the pockmarked street.",
+          "it's been picked over by scavengers, but there's still some things worth taking.",
+        ],
+        [
+          combat.LootEntry("cured meat", 1, 5, 0.8),
+          combat.LootEntry("torch", 1, 3, 0.5),
+          combat.LootEntry("bullets", 1, 5, 0.3),
+          combat.LootEntry("medicine", 1, 3, 0.1),
+        ],
+        town_choice([#(0.5, "c5"), #(1.0, "c6")]),
+      ),
+    ),
+    #(
+      "b5",
+      fight(
+        "a madman attacks, screeching.",
+        NoWorldEffect,
+        enemy("madman", "E", 10, 6, 0.3, 1, False, [
+          combat.LootEntry("cloth", 2, 4, 0.3),
+          combat.LootEntry("cured meat", 1, 5, 0.9),
+          combat.LootEntry("medicine", 1, 2, 0.4),
+        ]),
+        town_choice([#(0.3, "end5"), #(1.0, "end6")]),
+      ),
+    ),
+    #(
+      "c1",
+      fight(
+        "a thug moves out of the shadows.",
+        NoWorldEffect,
+        enemy("thug", "E", 30, 4, 0.8, 2, False, thug_loot),
+        town_choice([#(1.0, "d1")]),
+      ),
+    ),
+    #(
+      "c2",
+      fight(
+        "a beast charges out of a ransacked classroom.",
+        NoWorldEffect,
+        enemy("beast", "R", 25, 3, 0.8, 1, False, beast_loot),
+        town_choice([#(1.0, "d1")]),
+      ),
+    ),
+    #(
+      "c3",
+      Scene(
+        ..story([
+          "through the large gymnasium doors, footsteps can be heard.",
+          "the torchlight casts a flickering glow down the hallway.",
+          "the footsteps stop.",
+        ]),
+        buttons: [
+          #("continue", branch("enter", [#(1.0, "d1")])),
+          #("leave", leave("leave town")),
+        ],
+      ),
+    ),
+    #(
+      "c4",
+      fight(
+        "another beast, draw by the noise, leaps out of a copse of trees.",
+        NoWorldEffect,
+        enemy("beast", "R", 25, 4, 0.8, 1, False, beast_loot),
+        town_choice([#(1.0, "d2")]),
+      ),
+    ),
+    #(
+      "c5",
+      Scene(
+        ..story([
+          "something's causing a commotion a ways down the road.",
+          "a fight, maybe.",
+        ]),
+        buttons: town_choice([#(1.0, "d2")]),
+      ),
+    ),
+    #(
+      "c6",
+      hoard(
+        [
+          "a small basket of food is hidden under a park bench, with a note attached.",
+          "can't read the words.",
+        ],
+        [combat.LootEntry("cured meat", 1, 5, 1.0)],
+        town_choice([#(1.0, "d2")]),
+      ),
+    ),
+    #(
+      "d1",
+      fight(
+        "a panicked scavenger bursts through the door, screaming.",
+        NoWorldEffect,
+        enemy("scavenger", "E", 30, 5, 0.8, 2, False, panic_loot),
+        town_choice([#(0.5, "end1"), #(1.0, "end2")]),
+      ),
+    ),
+    #(
+      "d2",
+      fight(
+        "a man stands over a dead wanderer. notices he's not alone.",
+        NoWorldEffect,
+        enemy("vigilante", "D", 30, 6, 0.8, 2, False, panic_loot),
+        town_choice([#(0.5, "end3"), #(1.0, "end4")]),
+      ),
+    ),
+    #(
+      "end1",
+      town_cleared(
+        [
+          "scavenger had a small camp in the school.",
+          "collected scraps spread across the floor like they fell from heaven.",
+        ],
+        [
+          combat.LootEntry("steel sword", 1, 1, 1.0),
+          combat.LootEntry("steel", 5, 10, 1.0),
+          combat.LootEntry("cured meat", 5, 10, 1.0),
+          combat.LootEntry("bolas", 1, 5, 0.5),
+          combat.LootEntry("medicine", 1, 2, 0.3),
+        ],
+      ),
+    ),
+    #(
+      "end2",
+      town_cleared(
+        [
+          "scavenger'd been looking for supplies in here, it seems.",
+          "a shame to let what he'd found go to waste.",
+        ],
+        [
+          combat.LootEntry("coal", 5, 10, 1.0),
+          combat.LootEntry("cured meat", 5, 10, 1.0),
+          combat.LootEntry("leather", 5, 10, 1.0),
+        ],
+      ),
+    ),
+    #(
+      "end3",
+      town_cleared(
+        [
+          "beneath the wanderer's rags, clutched in one of its many hands, a glint of steel.",
+          "worth killing for, it seems.",
+        ],
+        [
+          combat.LootEntry("rifle", 1, 1, 1.0),
+          combat.LootEntry("bullets", 1, 5, 1.0),
+        ],
+      ),
+    ),
+    #(
+      "end4",
+      town_cleared(
+        [
+          "eye for an eye seems fair.",
+          "always worked before, at least.",
+          "picking the bones finds some useful trinkets.",
+        ],
+        [
+          combat.LootEntry("cured meat", 5, 10, 1.0),
+          combat.LootEntry("iron", 5, 10, 1.0),
+          combat.LootEntry("torch", 1, 5, 1.0),
+          combat.LootEntry("bolas", 1, 5, 0.5),
+          combat.LootEntry("medicine", 1, 2, 0.1),
+        ],
+      ),
+    ),
+    #(
+      "end5",
+      town_cleared(["some medicine abandoned in the drawers."], [
+        combat.LootEntry("medicine", 2, 5, 1.0),
+      ]),
+    ),
+    #(
+      "end6",
+      town_cleared(
+        ["the clinic has been ransacked.", "only dust and stains remain."],
+        [],
+      ),
+    ),
+  ])
+}
+
+/// The town's recurring continue/leave pair (`leave town`).
+fn town_choice(next: List(#(Float, String))) -> List(#(String, SceneButton)) {
+  [#("continue", branch("continue", next)), #("leave", leave("leave town"))]
+}
+
+/// A torch-lit door into one of two scenes, then a way out of the town.
+fn torch_into(next: List(#(Float, String))) -> List(#(String, SceneButton)) {
+  [
+    #("enter", cost_branch("enter", [#("torch", 1)], next)),
+    #("leave", leave("leave town")),
+  ]
+}
+
+/// The back of the town: take the cache and clear the town into an outpost.
+fn town_cleared(text: List(String), loot: List(combat.LootEntry)) -> Scene {
+  Scene(..story(text), setpiece: extra(loot, ClearDungeon), buttons: [
+    #("leave", leave("leave town")),
+  ])
 }
 
 /// A crashed wanderer ship: road it home and note the way off this rock. The

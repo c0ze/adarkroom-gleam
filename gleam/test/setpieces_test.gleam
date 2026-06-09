@@ -19,9 +19,9 @@ pub fn the_registry_has_the_ported_setpieces_test() {
 }
 
 pub fn unported_setpieces_are_absent_test() {
-  // The town and city land in later work.
-  setpieces.setpiece("town") |> should.be_error
+  // The city and the prestige cache land in later work.
   setpieces.setpiece("city") |> should.be_error
+  setpieces.setpiece("cache") |> should.be_error
   setpieces.setpiece("nonsense") |> should.be_error
 }
 
@@ -80,6 +80,29 @@ pub fn the_ship_is_found_and_roaded_home_test() {
     start.setpiece
   effect |> should.equal(events.FoundShip)
   list.key_find(start.buttons, "leave") |> should.be_ok
+}
+
+pub fn the_town_is_a_six_ended_dungeon_test() {
+  let assert Ok(event) = setpieces.setpiece("town")
+  // start, a1-a3, b1-b5, c1-c6, d1-d2, end1-6.
+  list.length(event.scenes) |> should.equal(23)
+}
+
+pub fn the_town_street_ambush_is_a_thug_test() {
+  let a2 = scene("town", "a2")
+  a2.combat |> should.be_true
+  let assert Some(events.SetpieceExtra(enemy: Some(foe), ..)) = a2.setpiece
+  foe.name |> should.equal("thug")
+  foe.health |> should.equal(30)
+}
+
+pub fn the_town_back_rooms_clear_the_dungeon_test() {
+  ["end1", "end2", "end3", "end4", "end5", "end6"]
+  |> list.each(fn(name) {
+    let assert Some(events.SetpieceExtra(world_effect: effect, ..)) =
+      scene("town", name).setpiece
+    effect |> should.equal(events.ClearDungeon)
+  })
 }
 
 pub fn the_cave_descent_costs_a_torch_and_branches_test() {
