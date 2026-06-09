@@ -3,7 +3,7 @@ import adarkroom/events
 import adarkroom/setpieces
 import adarkroom/state
 import gleam/list
-import gleam/option.{Some}
+import gleam/option.{None, Some}
 import gleeunit/should
 
 /// The current scene of a setpiece, by name.
@@ -27,7 +27,7 @@ pub fn unported_setpieces_are_absent_test() {
 
 pub fn the_outpost_refills_water_and_drops_cured_meat_test() {
   let start = scene("outpost", "start")
-  let assert Some(events.SetpieceExtra(loot: loot, world_effect: effect)) =
+  let assert Some(events.SetpieceExtra(loot: loot, world_effect: effect, ..)) =
     start.setpiece
   effect |> should.equal(events.UseOutpost)
   loot
@@ -55,7 +55,7 @@ pub fn the_swamp_cabin_costs_a_charm_to_talk_test() {
 
 pub fn the_battlefield_marks_visited_and_offers_war_loot_test() {
   let start = scene("battlefield", "start")
-  let assert Some(events.SetpieceExtra(loot: loot, world_effect: effect)) =
+  let assert Some(events.SetpieceExtra(loot: loot, world_effect: effect, ..)) =
     start.setpiece
   effect |> should.equal(events.MarkVisited)
   // The six dormant-tech drops.
@@ -67,17 +67,43 @@ pub fn the_battlefield_marks_visited_and_offers_war_loot_test() {
 
 pub fn the_borehole_yields_alien_alloy_test() {
   let start = scene("borehole", "start")
-  let assert Some(events.SetpieceExtra(loot: loot, world_effect: effect)) =
+  let assert Some(events.SetpieceExtra(loot: loot, world_effect: effect, ..)) =
     start.setpiece
   effect |> should.equal(events.MarkVisited)
   loot |> should.equal([combat.LootEntry("alien alloy", 1, 3, 1.0)])
 }
 
-pub fn setpieces_have_no_combat_yet_test() {
-  // #25a is non-combat; the inline-enemy scenes arrive with the cave.
+pub fn the_house_squatter_is_a_combat_scene_test() {
+  let occupied = scene("house", "occupied")
+  occupied.combat |> should.be_true
+  let assert Some(events.SetpieceExtra(enemy: Some(foe), ..)) =
+    occupied.setpiece
+  foe.name |> should.equal("squatter")
+  foe.health |> should.equal(10)
+  foe.ranged |> should.be_false
+  // The loot rides on the enemy (it lands on the win), not the scene.
+  list.length(foe.loot) |> should.equal(3)
+}
+
+pub fn the_house_well_refills_water_on_a_story_scene_test() {
+  let supplies = scene("house", "supplies")
+  supplies.combat |> should.be_false
+  let assert Some(events.SetpieceExtra(world_effect: effect, enemy: None, ..)) =
+    supplies.setpiece
+  effect |> should.equal(events.RefillSupplies)
+}
+
+pub fn the_non_combat_setpieces_carry_no_enemy_test() {
   ["outpost", "swamp", "battlefield", "borehole"]
   |> list.each(fn(name) {
     let assert Ok(event) = setpieces.setpiece(name)
-    list.each(event.scenes, fn(pair) { { pair.1 }.combat |> should.be_false })
+    list.each(event.scenes, fn(pair) {
+      let scene = pair.1
+      scene.combat |> should.be_false
+      case scene.setpiece {
+        Some(extra) -> extra.enemy |> should.equal(None)
+        None -> Nil
+      }
+    })
   })
 }

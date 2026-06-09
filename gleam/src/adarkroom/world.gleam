@@ -601,12 +601,16 @@ pub fn mark_visited(exp: Expedition) -> Expedition {
   Expedition(..exp, visited: set.insert(exp.visited, exp.pos))
 }
 
+/// Refill water to the brim (`World.setWater(getMaxWater())`).
+pub fn refill_water(exp: Expedition, s: State) -> Expedition {
+  Expedition(..exp, vitals: Vitals(..exp.vitals, water: max_water(s)))
+}
+
 /// Use the outpost under the player: refill water to the brim and note it spent,
 /// so it won't refill again this trip (`World.useOutpost`).
 pub fn use_outpost(exp: Expedition, s: State) -> Expedition {
   Expedition(
-    ..exp,
-    vitals: Vitals(..exp.vitals, water: max_water(s)),
+    ..refill_water(exp, s),
     used_outposts: set.insert(exp.used_outposts, exp.pos),
   )
 }

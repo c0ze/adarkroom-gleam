@@ -12,7 +12,8 @@
 import adarkroom/combat
 import adarkroom/events.{
   type Event, type Scene, type SceneButton, type SetpieceExtra, Branch, End,
-  Event, MarkVisited, Scene, SceneButton, SetpieceExtra, UseOutpost,
+  Event, MarkVisited, RefillSupplies, Scene, SceneButton, SetpieceExtra,
+  UseOutpost,
 }
 import adarkroom/state
 import gleam/list
@@ -32,6 +33,7 @@ fn setpieces() -> List(#(String, Event)) {
     #("swamp", swamp()),
     #("battlefield", battlefield()),
     #("borehole", borehole()),
+    #("house", house()),
   ]
 }
 
@@ -150,6 +152,76 @@ fn borehole() -> Event {
   ])
 }
 
+/// An old house: water in the well, medicine under the floorboards, or a
+/// squatter with a rusty blade — the first combat setpiece.
+fn house() -> Event {
+  Event(title: "An Old House", is_available: always, scenes: [
+    #(
+      "start",
+      Scene(
+        ..story([
+          "an old house remains here, once white siding yellowed and peeling.",
+          "the door hangs open.",
+        ]),
+        notification: Some(
+          "the remains of an old house stand as a monument to simpler times",
+        ),
+        buttons: [
+          #(
+            "enter",
+            branch("go inside", [
+              #(0.25, "medicine"),
+              #(0.5, "supplies"),
+              #(1.0, "occupied"),
+            ]),
+          ),
+          #("leave", leave("leave")),
+        ],
+      ),
+    ),
+    #(
+      "supplies",
+      Scene(
+        ..story([
+          "the house is abandoned, but not yet picked over.",
+          "still a few drops of water in the old well.",
+        ]),
+        setpiece: extra(house_loot(), RefillSupplies),
+        buttons: [#("leave", leave("leave"))],
+      ),
+    ),
+    #(
+      "medicine",
+      Scene(
+        ..story([
+          "the house has been ransacked.",
+          "but there is a cache of medicine under the floorboards.",
+        ]),
+        setpiece: extra([combat.LootEntry("medicine", 2, 5, 1.0)], MarkVisited),
+        buttons: [#("leave", leave("leave"))],
+      ),
+    ),
+    #(
+      "occupied",
+      fight(
+        "a man charges down the hall, a rusty blade in his hand",
+        MarkVisited,
+        enemy("squatter", "E", 10, 3, 0.8, 2, False, house_loot()),
+        [#("leave", leave("leave"))],
+      ),
+    ),
+  ])
+}
+
+/// The drops shared by the house's well and its squatter.
+fn house_loot() -> List(combat.LootEntry) {
+  [
+    combat.LootEntry("cured meat", 1, 10, 0.8),
+    combat.LootEntry("leather", 1, 10, 0.2),
+    combat.LootEntry("cloth", 1, 10, 0.5),
+  ]
+}
+
 // --- builders ---------------------------------------------------------------
 
 /// Setpieces are launched by the world on arrival, never by the event
@@ -172,12 +244,13 @@ fn story(text: List(String)) -> Scene {
   )
 }
 
-/// The setpiece extras: a loot table and a world `onLoad` effect.
+/// A story scene's extras: a loot table (granted on entry) and a world `onLoad`
+/// effect. No inline enemy.
 fn extra(
   loot: List(combat.LootEntry),
   world_effect: events.WorldEffect,
 ) -> option.Option(SetpieceExtra) {
-  Some(SetpieceExtra(loot: loot, world_effect: world_effect))
+  Some(SetpieceExtra(loot: loot, world_effect: world_effect, enemy: None))
 }
 
 /// A button that ends the setpiece.
@@ -216,5 +289,64 @@ fn spend(text: String, cost: List(#(String, Int)), scene: String) -> SceneButton
     available: None,
     on_click: None,
     next: Branch([#(1.0, scene)]),
+  )
+}
+
+/// A button that branches to one of several scenes by probability (the JS
+/// `nextScene` map, e.g. `{0.25: a, 0.5: b, 1: c}`).
+fn branch(text: String, targets: List(#(Float, String))) -> SceneButton {
+  SceneButton(
+    text: text,
+    cost: [],
+    reward: [],
+    notification: None,
+    available: None,
+    on_click: None,
+    next: Branch(targets),
+  )
+}
+
+/// A combat scene: entering it begins a fight with `enemy` (whose loot lands on
+/// the win); its world `onLoad` still runs, and the buttons appear once the
+/// fight is won.
+fn fight(
+  notification: String,
+  world_effect: events.WorldEffect,
+  foe: combat.Enemy,
+  buttons: List(#(String, SceneButton)),
+) -> Scene {
+  Scene(
+    text: [],
+    notification: Some(notification),
+    reward: [],
+    buttons: buttons,
+    combat: True,
+    on_load: None,
+    setpiece: Some(SetpieceExtra(loot: [], world_effect:, enemy: Some(foe))),
+  )
+}
+
+/// An inline setpiece enemy. No death message — the scene's buttons take over
+/// once the fight is won.
+fn enemy(
+  name: String,
+  chara: String,
+  health: Int,
+  damage: Int,
+  hit: Float,
+  attack_delay: Int,
+  ranged: Bool,
+  loot: List(combat.LootEntry),
+) -> combat.Enemy {
+  combat.Enemy(
+    name: name,
+    chara: chara,
+    health: health,
+    damage: damage,
+    hit: hit,
+    attack_delay: attack_delay,
+    ranged: ranged,
+    death_message: "",
+    loot: loot,
   )
 }

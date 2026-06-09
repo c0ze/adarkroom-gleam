@@ -55,21 +55,29 @@ pub fn button_available(button: SceneButton, s: state.State) -> Bool {
 
 /// A scene's `onLoad` side effect on the world expedition, beyond what `on_load`
 /// can do to `State`. Setpieces mutate the live expedition — marking a landmark
-/// dealt with, or drinking an outpost dry — which the model applies. (`drawRoad`
-/// / `clearDungeon` join this list with the mines.)
+/// dealt with, drinking an outpost dry — which the model applies. (`drawRoad` /
+/// `clearDungeon` join this list with the mines.)
 pub type WorldEffect {
   NoWorldEffect
   /// `World.markVisited` — the landmark won't fire again this trip.
   MarkVisited
   /// `World.useOutpost` — refill water to the brim, spend the outpost.
   UseOutpost
+  /// The house well (`setWater` + `markVisited`) — refill water and mark the
+  /// landmark dealt with, but it's no reusable outpost.
+  RefillSupplies
 }
 
 /// The extra machinery a setpiece scene carries on top of a plain event scene:
-/// a loot table granted on entry and a world-level `onLoad` effect. Inline
-/// combat enemies join this in the combat-scene work.
+/// a loot table, a world-level `onLoad` effect, and — on a combat scene — the
+/// inline enemy to fight on entry. The loot is granted on entry for a story
+/// scene; for a combat scene it rides on the enemy and lands on the win.
 pub type SetpieceExtra {
-  SetpieceExtra(loot: List(combat.LootEntry), world_effect: WorldEffect)
+  SetpieceExtra(
+    loot: List(combat.LootEntry),
+    world_effect: WorldEffect,
+    enemy: Option(combat.Enemy),
+  )
 }
 
 /// One screen of an event: prose, an optional notification/reward on entry, and

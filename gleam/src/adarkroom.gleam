@@ -233,9 +233,12 @@ fn attack_button(m: Model, name: String, weapon: combat.Weapon) -> Element(Msg) 
 
 /// The event modal, present only while an event is on screen.
 fn event_overlay(m: Model) -> List(Element(Msg)) {
-  case m.active_event {
-    None -> []
-    Some(active) ->
+  case m.active_event, m.combat {
+    // While a setpiece fight is on, the combat screen takes the stage; the
+    // scene's buttons return once it is won.
+    _, Some(_) -> []
+    None, None -> []
+    Some(active), None ->
       case list.key_find(active.event.scenes, active.scene) {
         Error(_) -> []
         Ok(scene) -> [
