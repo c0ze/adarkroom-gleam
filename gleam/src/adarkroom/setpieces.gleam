@@ -12,8 +12,8 @@
 import adarkroom/combat
 import adarkroom/events.{
   type Event, type Scene, type SceneButton, type SetpieceExtra, Branch, End,
-  Event, MarkVisited, RefillSupplies, Scene, SceneButton, SetpieceExtra,
-  UseOutpost,
+  Event, FoundShip, MarkVisited, RefillSupplies, Scene, SceneButton,
+  SetpieceExtra, UseOutpost,
 }
 import adarkroom/state
 import gleam/list
@@ -34,6 +34,7 @@ fn setpieces() -> List(#(String, Event)) {
     #("battlefield", battlefield()),
     #("borehole", borehole()),
     #("house", house()),
+    #("ship", ship()),
   ]
 }
 
@@ -147,6 +148,25 @@ fn borehole() -> Event {
           MarkVisited,
         ),
         buttons: [#("leave", leave("leave"))],
+      ),
+    ),
+  ])
+}
+
+/// A crashed wanderer ship: road it home and note the way off this rock. The
+/// salvage itself (the spaceship) waits for the endgame.
+fn ship() -> Event {
+  Event(title: "A Crashed Ship", is_available: always, scenes: [
+    #(
+      "start",
+      Scene(
+        ..story([
+          "the familiar curves of a wanderer vessel rise up out of the dust and ash.",
+          "lucky that the natives can't work the mechanisms.",
+          "with a little effort, it might fly again.",
+        ]),
+        setpiece: extra([], FoundShip),
+        buttons: [#("leave", leave("salvage"))],
       ),
     ),
   ])

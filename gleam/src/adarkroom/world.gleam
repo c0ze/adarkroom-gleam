@@ -615,6 +615,112 @@ pub fn use_outpost(exp: Expedition, s: State) -> Expedition {
   )
 }
 
+/// Draw a road from the player's tile back to the network (`World.drawRoad`):
+/// find the nearest road/outpost/village and pave an L-shaped path of road over
+/// any terrain between here and there.
+pub fn lay_road(exp: Expedition) -> Expedition {
+  Expedition(..exp, map: draw_road(exp.map, exp.pos))
+}
+
+/// Clear the dungeon under the player into a friendly outpost and connect it to
+/// the road network (`World.clearDungeon`).
+pub fn clear_dungeon(exp: Expedition) -> Expedition {
+  let map = dict.insert(exp.map, exp.pos, Outpost)
+  Expedition(..exp, map: draw_road(map, exp.pos))
+}
+
+/// Pave an L-shaped road from `from` to the nearest existing road, mirroring
+/// `World.drawRoad`: the road runs along one axis to an intersection, then the
+/// other, overwriting only open terrain (never a landmark).
+pub fn draw_road(map: Map, from: #(Int, Int)) -> Map {
+  let closest = find_closest_road(map, from)
+  let x_dist = from.0 - closest.0
+  let y_dist = from.1 - closest.1
+  let #(xi, yi) = case int.absolute_value(x_dist) > int.absolute_value(y_dist) {
+    True -> #(closest.0, closest.1 + y_dist)
+    False -> #(closest.0 + x_dist, closest.1)
+  }
+  let map =
+    list.fold(seq(0, int.absolute_value(x_dist)), map, fn(m, x) {
+      pave(m, #(closest.0 + sign(x_dist) * x, yi))
+    })
+  list.fold(seq(0, int.absolute_value(y_dist)), map, fn(m, y) {
+    pave(m, #(xi, closest.1 + sign(y_dist) * y))
+  })
+}
+
+/// Lay road over a tile only when it is open terrain.
+fn pave(map: Map, p: #(Int, Int)) -> Map {
+  case tile_at(map, p.0, p.1) {
+    Ok(t) ->
+      case is_terrain(t) {
+        True -> dict.insert(map, p, Road)
+        False -> map
+      }
+    Error(_) -> map
+  }
+}
+
+/// The sign of an integer (0 for 0), for stepping toward the road.
+fn sign(n: Int) -> Int {
+  case n {
+    0 -> 0
+    _ -> n / int.absolute_value(n)
+  }
+}
+
+/// Spiral out from `start` along Manhattan contours to the nearest tile that is
+/// road, a connected outpost, or the village — the shortest road's anchor. Falls
+/// back to the village if the bounded search finds nothing (`findClosestRoad`).
+fn find_closest_road(map: Map, start: #(Int, Int)) -> #(Int, Int) {
+  let reach = distance(start) + 2
+  spiral_for_road(map, start, 0, reach * reach, 0, 0, 1, -1)
+}
+
+fn spiral_for_road(
+  map: Map,
+  start: #(Int, Int),
+  i: Int,
+  max_i: Int,
+  x: Int,
+  y: Int,
+  dx: Int,
+  dy: Int,
+) -> #(Int, Int) {
+  case i >= max_i {
+    True -> #(radius, radius)
+    False -> {
+      let sx = start.0 + x
+      let sy = start.1 + y
+      let found = case 0 < sx && sx < radius * 2 && 0 < sy && sy < radius * 2 {
+        True ->
+          case tile_at(map, sx, sy) {
+            Ok(Road) | Ok(Village) -> True
+            // Outposts are connected to roads, but the start tile doesn't count.
+            Ok(Outpost) -> !{ x == 0 && y == 0 }
+            _ -> False
+          }
+        False -> False
+      }
+      case found {
+        True -> #(sx, sy)
+        False -> {
+          // Turn the corner on an axis, then step along the contour.
+          let #(dx, dy) = case x == 0 || y == 0 {
+            True -> #(0 - dy, dx)
+            False -> #(dx, dy)
+          }
+          let #(x, y) = case x == 0 && y <= 0 {
+            True -> #(x + 1, y)
+            False -> #(x + dx, y + dy)
+          }
+          spiral_for_road(map, start, i + 1, max_i, x, y, dx, dy)
+        }
+      }
+    }
+  }
+}
+
 /// Reveal the diamond of tiles within Manhattan distance `r` of `pos`.
 fn uncover(seen: Set(#(Int, Int)), pos: #(Int, Int), r: Int) -> Set(#(Int, Int)) {
   let #(x, y) = pos

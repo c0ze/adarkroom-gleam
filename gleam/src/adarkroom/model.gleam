@@ -910,6 +910,15 @@ fn apply_world_effect(
           ),
           ["water replenished"],
         )
+        events.FoundShip -> #(
+          Model(
+            ..model,
+            expedition: Some(world.mark_visited(world.lay_road(exp))),
+            // A way off this rock — recorded for the endgame (M6).
+            state: state.set_game(model.state, "world.ship", 1),
+          ),
+          [],
+        )
         events.NoWorldEffect -> #(model, [])
       }
     _, _ -> #(model, [])
