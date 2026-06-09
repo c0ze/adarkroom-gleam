@@ -763,15 +763,23 @@ pub fn move(s: State, exp: Expedition, dir: Dir) -> Step {
   case in_bounds(pos) {
     False -> Step(s, exp, [], True)
     True -> {
-      let supplies = use_supplies(s, exp.vitals)
       let moved =
-        Expedition(
-          ..exp,
-          pos: pos,
-          seen: uncover(exp.seen, pos, sight(s)),
-          vitals: supplies.vitals,
-        )
-      Step(supplies.state, moved, supplies.messages, supplies.alive)
+        Expedition(..exp, pos:, seen: uncover(exp.seen, pos, sight(s)))
+      // Stepping home to the village costs no supplies and never kills — the JS
+      // `doSpace` runs `useSupplies` only off the village, so a safe return is
+      // always genuinely safe (and so can't, e.g., wrongly forfeit mine credit).
+      case tile_at(exp.map, pos.0, pos.1) {
+        Ok(Village) -> Step(s, moved, [], True)
+        _ -> {
+          let supplies = use_supplies(s, exp.vitals)
+          Step(
+            supplies.state,
+            Expedition(..moved, vitals: supplies.vitals),
+            supplies.messages,
+            supplies.alive,
+          )
+        }
+      }
     }
   }
 }

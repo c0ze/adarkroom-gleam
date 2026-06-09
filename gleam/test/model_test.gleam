@@ -930,3 +930,32 @@ pub fn a_safe_return_grants_a_cleared_mine_building_test() {
   home.location |> should.equal(model.Room)
   craft.building_count(home.state, "coal mine") |> should.equal(1)
 }
+
+pub fn a_parched_step_onto_the_village_is_a_safe_return_not_a_death_test() {
+  // Bone dry and already thirsty, one step from home, having cleared the iron
+  // mine. The village costs no supplies, so this is a safe return — not a death
+  // that would forfeit the mine.
+  let exp =
+    world.Expedition(
+      pos: #(31, 30),
+      map: dict.from_list([
+        #(#(31, 30), world.Forest),
+        #(#(30, 30), world.Village),
+      ]),
+      seen: set.new(),
+      vitals: world.Vitals(0, 1, 0, 0, False, True),
+      visited: set.new(),
+      used_outposts: set.new(),
+      mines_cleared: set.from_list(["iron mine"]),
+    )
+  let m =
+    model.Model(
+      ..model.init(),
+      location: model.World,
+      expedition: option.Some(exp),
+    )
+  let home = run(m, model.MoveWest)
+  home.location |> should.equal(model.Room)
+  home.expedition |> should.equal(option.None)
+  craft.building_count(home.state, "iron mine") |> should.equal(1)
+}

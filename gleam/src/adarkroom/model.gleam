@@ -649,8 +649,11 @@ fn step(model: Model, dir: world.Dir) -> #(Model, Effect(Msg)) {
         world.tile_at(s.expedition.map, s.expedition.pos.0, s.expedition.pos.1)
         == Ok(world.Village)
       case s.alive, on_village {
-        _, True -> #(go_home(model), effect.none())
+        // Death is checked first; reaching the village costs no supplies (see
+        // `world.move`), so a safe return is always a live one — only then are
+        // cleared mines credited.
         False, _ -> #(die(model), effect.none())
+        True, True -> #(go_home(model), effect.none())
         True, False -> {
           let model = Model(..model, expedition: Some(s.expedition))
           // A landmark launches its setpiece (the `doSpace` order); open ground
