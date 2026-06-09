@@ -101,6 +101,8 @@ pub type Msg {
   ResolveEnemyTurn(roll: Float)
   /// Gather the defeated enemy's loot from the supplied rolls (two per drop).
   CollectLoot(rolls: List(Float))
+  /// Use a healing item (cured meat / medicine / hypo) mid-fight.
+  Heal(item: String)
 }
 
 pub type Model {
@@ -415,6 +417,8 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
     }
 
     CollectLoot(rolls: rolls) -> #(collect_loot(model, rolls), effect.none())
+
+    Heal(item: item) -> #(heal_in_combat(model, item), effect.none())
   }
 }
 
@@ -516,6 +520,56 @@ fn collect_loot(model: Model, rolls: List(Float)) -> Model {
       )
     }
     _, _ -> Model(..model, combat: None)
+  }
+}
+
+/// Use a healing item mid-fight: spend one from the outfit and mend the player,
+/// once its cooldown is up. Cured meat is the gastronome-boosted `meat_heal`;
+/// medicine and hypos mend a fixed amount.
+fn heal_in_combat(model: Model, item: String) -> Model {
+  let #(cd_id, cd_ms) = heal_cooldown(item)
+  let have = state.get_outfit(model.state, item) > 0
+  case model.combat {
+    Some(cs) if have ->
+      case on_cooldown(model, cd_id) {
+        True -> model
+        False -> {
+          let amount = heal_amount(model.state, item)
+          let healed = int.min(cs.player_max, cs.player_hp + amount)
+          let model =
+            Model(
+              ..model,
+              state: state.set_outfit(
+                model.state,
+                item,
+                state.get_outfit(model.state, item) - 1,
+              ),
+              combat: Some(combat.CombatState(..cs, player_hp: healed)),
+            )
+          start_cooldown(model, cd_id, cd_ms)
+        }
+      }
+    _ -> model
+  }
+}
+
+/// How much a healing item mends.
+fn heal_amount(s: State, item: String) -> Int {
+  case item {
+    "cured meat" -> world.meat_heal(s)
+    "medicine" -> 20
+    "hypo" -> 30
+    _ -> 0
+  }
+}
+
+/// The cooldown button id and duration (ms) for a healing item.
+fn heal_cooldown(item: String) -> #(String, Int) {
+  case item {
+    "cured meat" -> #("eat", 5000)
+    "medicine" -> #("meds", 7000)
+    "hypo" -> #("hypo", 7000)
+    _ -> #("heal", 5000)
   }
 }
 

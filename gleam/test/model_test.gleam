@@ -619,3 +619,59 @@ pub fn you_cannot_wander_off_mid_fight_test() {
   after.combat |> should.equal(fighting.combat)
   after.expedition |> should.equal(fighting.expedition)
 }
+
+pub fn eating_meat_in_a_fight_heals_and_spends_a_meat_test() {
+  let base = world_model(3)
+  let m =
+    model.Model(..base, state: state.set_outfit(base.state, "cured meat", 2))
+  let fighting = run(m, MaybeFight(0.0, 0.0))
+  let healed = run(fighting, model.Heal("cured meat"))
+  let assert option.Some(cs) = healed.combat
+  // 3 + 8 meat heal = 11, clamped to the 10 max.
+  cs.player_hp |> should.equal(10)
+  state.get_outfit(healed.state, "cured meat") |> should.equal(1)
+}
+
+pub fn the_eat_cooldown_blocks_a_second_bite_test() {
+  let base = world_model(3)
+  let m =
+    model.Model(..base, state: state.set_outfit(base.state, "cured meat", 5))
+  let fighting = run(m, MaybeFight(0.0, 0.0))
+  let once = run(fighting, model.Heal("cured meat"))
+  // Still on the eat cooldown (now hasn't advanced) — the second bite is refused.
+  let twice = run(once, model.Heal("cured meat"))
+  state.get_outfit(twice.state, "cured meat") |> should.equal(4)
+}
+
+pub fn medicine_mends_twenty_with_room_to_spare_test() {
+  // Kinetic armour lifts the max so the full heal shows (no clamp).
+  let base = world_model(1)
+  let m =
+    model.Model(
+      ..base,
+      state: base.state
+        |> state.set_outfit("medicine", 1)
+        |> state.set_store("kinetic armour", 1),
+    )
+  let healed = run(run(m, MaybeFight(0.0, 0.0)), model.Heal("medicine"))
+  let assert option.Some(cs) = healed.combat
+  cs.player_hp |> should.equal(21)
+  // Medicine has its own cooldown — eating meat is still allowed.
+  model.on_cooldown(healed, "meds") |> should.equal(True)
+  model.on_cooldown(healed, "eat") |> should.equal(False)
+}
+
+pub fn a_hypo_mends_thirty_test() {
+  let base = world_model(1)
+  let m =
+    model.Model(
+      ..base,
+      state: base.state
+        |> state.set_outfit("hypo", 1)
+        |> state.set_store("kinetic armour", 1),
+    )
+  let healed = run(run(m, MaybeFight(0.0, 0.0)), model.Heal("hypo"))
+  let assert option.Some(cs) = healed.combat
+  cs.player_hp |> should.equal(31)
+  model.on_cooldown(healed, "hypo") |> should.equal(True)
+}

@@ -12,8 +12,8 @@ import adarkroom/events
 import adarkroom/model.{
   type Model, type Msg, AdjustTemp, Build, BuilderProgress, Buy, CheckTraps,
   ChooseEvent, CollectIncome, CoolCheck, DecreaseSupply, DecreaseWorker, Embark,
-  GatherWood, IncreaseSupply, IncreaseWorker, LightFire, MoveEast, MoveNorth,
-  MoveSouth, MoveWest, Navigate, StokeFire, StrikeEnemy, Tick,
+  GatherWood, Heal, IncreaseSupply, IncreaseWorker, LightFire, MoveEast,
+  MoveNorth, MoveSouth, MoveWest, Navigate, StokeFire, StrikeEnemy, Tick,
 }
 import adarkroom/notifications.{type Notifications}
 import adarkroom/outside
@@ -161,9 +161,38 @@ fn combat_overlay(m: Model) -> List(Element(Msg)) {
         ]),
         html.div([attribute.id("buttons")], [
           html.div([attribute.id("attackButtons")], attack_buttons(m, cs)),
+          html.div([attribute.id("healButtons")], heal_buttons(m)),
         ]),
       ]),
     ]
+  }
+}
+
+/// The heal buttons a fight offers — one per healing item carried, each on its
+/// own cooldown after use.
+fn heal_buttons(m: Model) -> List(Element(Msg)) {
+  [
+    #("cured meat", "eat meat", "eat"),
+    #("medicine", "use meds", "meds"),
+    #("hypo", "use hypo", "hypo"),
+  ]
+  |> list.filter_map(fn(t) {
+    let #(item, label, cooldown_id) = t
+    case state.get_outfit(m.state, item) > 0 {
+      True -> Ok(heal_button(item, label, model.on_cooldown(m, cooldown_id)))
+      False -> Error(Nil)
+    }
+  })
+}
+
+fn heal_button(item: String, label: String, cooling: Bool) -> Element(Msg) {
+  case cooling {
+    True ->
+      html.div([attribute.class("button disabled")], [element.text(label)])
+    False ->
+      html.div([attribute.class("button"), event.on_click(Heal(item))], [
+        element.text(label),
+      ])
   }
 }
 
