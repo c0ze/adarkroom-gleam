@@ -142,6 +142,7 @@ pub fn an_ungated_button_is_always_available_test() {
       reward: [],
       notification: None,
       available: None,
+      on_click: None,
       next: events.End,
     )
   events.button_available(btn, state.new()) |> should.equal(True)
@@ -155,6 +156,7 @@ pub fn a_gated_button_follows_its_predicate_test() {
       reward: [],
       notification: None,
       available: Some(fn(s) { state.get_store(s, "compass") < 1 }),
+      on_click: None,
       next: events.End,
     )
   events.button_available(btn, state.new()) |> should.equal(True)
@@ -179,6 +181,7 @@ pub fn an_unaffordable_button_is_refused_test() {
       reward: [],
       notification: None,
       available: None,
+      on_click: None,
       next: events.End,
     )
   events.click_button(btn, state.new(), 0.5) |> should.equal(Error(Nil))
@@ -192,6 +195,7 @@ pub fn clicking_pays_cost_takes_reward_and_advances_test() {
       reward: [#("scales", 5)],
       notification: Some("a fair trade"),
       available: None,
+      on_click: None,
       next: events.Goto("next"),
     )
   let s0 = state.new() |> state.set_store("fur", 30)
@@ -202,6 +206,25 @@ pub fn clicking_pays_cost_takes_reward_and_advances_test() {
   step |> should.equal(events.LoadScene("next"))
 }
 
+pub fn clicking_a_button_runs_its_on_click_effect_test() {
+  // The Scout's "learn" button grants a perk via onChoose.
+  let btn =
+    events.SceneButton(
+      text: "learn scouting",
+      cost: [],
+      reward: [],
+      notification: None,
+      available: None,
+      on_click: Some(fn(s) {
+        #(state.add_perk(s, "scout"), ["lessons learned"])
+      }),
+      next: events.End,
+    )
+  let assert Ok(#(s, msgs, _)) = events.click_button(btn, state.new(), 0.5)
+  state.has_perk(s, "scout") |> should.equal(True)
+  msgs |> should.equal(["lessons learned"])
+}
+
 pub fn a_free_button_can_just_end_test() {
   let btn =
     events.SceneButton(
@@ -210,6 +233,7 @@ pub fn a_free_button_can_just_end_test() {
       reward: [],
       notification: None,
       available: None,
+      on_click: None,
       next: events.End,
     )
   let assert Ok(#(_, msgs, step)) = events.click_button(btn, state.new(), 0.5)
@@ -264,7 +288,62 @@ fn room_event_by_notification(note: String) -> events.Event {
 }
 
 pub fn the_room_pool_has_grown_test() {
-  events.room_events() |> list.length |> should.equal(5)
+  events.room_events() |> list.length |> should.equal(8)
+}
+
+// --- the perk teachers + the Sick Man ---------------------------------------
+
+pub fn the_scout_only_visits_the_well_travelled_test() {
+  let scout = room_event_by_notification("a scout stops for the night")
+  scout.is_available(state.new()) |> should.equal(False)
+  scout.is_available(state.new() |> state.set_feature("location.world", True))
+  |> should.equal(True)
+}
+
+pub fn learning_scouting_grants_the_perk_then_hides_the_button_test() {
+  let scout = room_event_by_notification("a scout stops for the night")
+  let assert Ok(start) = list.key_find(scout.scenes, "start")
+  let assert Ok(learn) = list.key_find(start.buttons, "learn")
+  let s0 =
+    state.new()
+    |> state.set_store("fur", 1000)
+    |> state.set_store("scales", 50)
+    |> state.set_store("teeth", 20)
+  let assert Ok(#(s, _, step)) = events.click_button(learn, s0, 0.5)
+  state.has_perk(s, "scout") |> should.equal(True)
+  state.get_store(s, "fur") |> should.equal(0)
+  step |> should.equal(events.EndEvent)
+  // Already learned — no longer offered.
+  events.button_available(learn, s) |> should.equal(False)
+}
+
+pub fn the_master_teaches_a_combat_perk_test() {
+  let master = room_event_by_notification("an old wanderer arrives")
+  let assert Ok(agree) = list.key_find(master.scenes, "agree")
+  let assert Ok(force) = list.key_find(agree.buttons, "force")
+  let assert Ok(#(s, _, _)) = events.click_button(force, state.new(), 0.5)
+  state.has_perk(s, "barbarian") |> should.equal(True)
+}
+
+pub fn the_sick_man_appears_only_with_medicine_test() {
+  let sick = room_event_by_notification("a sick man hobbles up")
+  sick.is_available(state.new()) |> should.equal(False)
+  sick.is_available(state.new() |> state.set_store("medicine", 1))
+  |> should.equal(True)
+}
+
+pub fn helping_the_sick_man_spends_medicine_and_may_reward_test() {
+  let sick = room_event_by_notification("a sick man hobbles up")
+  let assert Ok(start) = list.key_find(sick.scenes, "start")
+  let assert Ok(help) = list.key_find(start.buttons, "help")
+  let s0 = state.new() |> state.set_store("medicine", 2)
+  // 0.05 < 0.1 → the rare alien-alloy reward.
+  let assert Ok(#(s, _, step)) = events.click_button(help, s0, 0.05)
+  state.get_store(s, "medicine") |> should.equal(1)
+  step |> should.equal(events.LoadScene("alloy"))
+  let assert Ok(alloy) = list.key_find(sick.scenes, "alloy")
+  let #(s2, _) = events.enter_scene(alloy, s)
+  state.get_store(s2, "alien alloy") |> should.equal(1)
 }
 
 pub fn investigating_wall_noises_branches_on_the_roll_test() {

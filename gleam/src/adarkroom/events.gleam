@@ -36,6 +36,9 @@ pub type SceneButton {
     notification: Option(String),
     /// When present, gates whether the button is offered (`available` in the JS).
     available: Option(fn(state.State) -> Bool),
+    /// Arbitrary effect run when chosen (`onChoose`/`onClick`): a perk, a flag.
+    /// Runs after the cost/reward, returning the new state and any messages.
+    on_click: Option(fn(state.State) -> #(state.State, List(String))),
     next: NextScene,
   )
 }
@@ -153,7 +156,12 @@ pub fn click_button(
         s
         |> apply_stores(list.map(button.cost, fn(c) { #(c.0, -c.1) }))
         |> apply_stores(button.reward)
-      let messages = notification_messages(button.notification)
+      let #(s, click_messages) = case button.on_click {
+        option.Some(f) -> f(s)
+        option.None -> #(s, [])
+      }
+      let messages =
+        list.append(notification_messages(button.notification), click_messages)
       Ok(#(s, messages, resolve_next(button.next, roll)))
     }
   }
@@ -201,6 +209,9 @@ pub fn room_events() -> List(Event) {
     noises_in_store_room(),
     beggar(),
     shady_builder(),
+    scout(),
+    master(),
+    sick_man(),
   ]
 }
 
@@ -212,6 +223,7 @@ fn choice(text: String, next: NextScene) -> SceneButton {
     reward: [],
     notification: option.None,
     available: option.None,
+    on_click: option.None,
     next:,
   )
 }
@@ -228,7 +240,22 @@ fn give(
     reward: [],
     notification: option.None,
     available: option.None,
+    on_click: option.None,
     next:,
+  )
+}
+
+/// A button that grants a perk (`onChoose: addPerk`) and then ends the event,
+/// shown only while the player lacks the perk.
+fn learn(text: String, cost: List(#(String, Int)), perk: String) -> SceneButton {
+  SceneButton(
+    text:,
+    cost:,
+    reward: [],
+    notification: option.None,
+    available: option.Some(fn(s) { !state.has_perk(s, perk) }),
+    on_click: option.Some(fn(s) { #(state.add_perk(s, perk), []) }),
+    next: End,
   )
 }
 
@@ -264,6 +291,7 @@ fn nomad() -> Event {
             reward: [#("scales", 1)],
             notification: option.None,
             available: option.None,
+            on_click: option.None,
             next: Stay,
           ),
         ),
@@ -275,6 +303,7 @@ fn nomad() -> Event {
             reward: [#("teeth", 1)],
             notification: option.None,
             available: option.None,
+            on_click: option.None,
             next: Stay,
           ),
         ),
@@ -286,6 +315,7 @@ fn nomad() -> Event {
             reward: [#("bait", 1)],
             notification: option.Some("traps are more effective with bait."),
             available: option.None,
+            on_click: option.None,
             next: Stay,
           ),
         ),
@@ -299,6 +329,7 @@ fn nomad() -> Event {
               "the old compass is dented and dusty, but it looks to work.",
             ),
             available: option.Some(fn(s) { state.get_store(s, "compass") < 1 }),
+            on_click: option.None,
             next: Stay,
           ),
         ),
@@ -310,6 +341,7 @@ fn nomad() -> Event {
             reward: [],
             notification: option.None,
             available: option.None,
+            on_click: option.None,
             next: End,
           ),
         ),
@@ -575,4 +607,186 @@ fn raise_hut(s: state.State) -> #(state.State, List(String)) {
     True -> #(state.set_game(s, craft.building_key("hut"), n + 1), [])
     False -> #(s, [])
   }
+}
+
+/// Whether the player has reached the world (set on first embark) — gates the
+/// well-travelled events.
+fn world_reached(s: state.State) -> Bool {
+  state.has_feature(s, "location.world")
+}
+
+/// The Scout — teaches scouting, for a hefty price. (Her map-selling option
+/// awaits world-map persistence.)
+fn scout() -> Event {
+  Event(title: "The Scout", is_available: world_reached, scenes: [
+    #(
+      "start",
+      Scene(
+        text: [
+          "the scout says she's been all over.",
+          "willing to talk about it, for a price.",
+        ],
+        notification: option.Some("a scout stops for the night"),
+        reward: [],
+        combat: False,
+        on_load: option.None,
+        buttons: [
+          #(
+            "learn",
+            learn(
+              "learn scouting",
+              [#("fur", 1000), #("scales", 50), #("teeth", 20)],
+              "scout",
+            ),
+          ),
+          #("leave", choice("say goodbye", End)),
+        ],
+      ),
+    ),
+  ])
+}
+
+/// The Master — lodge him for the night and he teaches one of three combat
+/// perks.
+fn master() -> Event {
+  Event(title: "The Master", is_available: world_reached, scenes: [
+    #(
+      "start",
+      Scene(
+        text: [
+          "an old wanderer arrives.",
+          "he smiles warmly and asks for lodgings for the night.",
+        ],
+        notification: option.Some("an old wanderer arrives"),
+        reward: [],
+        combat: False,
+        on_load: option.None,
+        buttons: [
+          #(
+            "agree",
+            give(
+              "agree",
+              [#("cured meat", 100), #("fur", 100), #("torch", 1)],
+              Goto("agree"),
+            ),
+          ),
+          #("deny", choice("turn him away", End)),
+        ],
+      ),
+    ),
+    #(
+      "agree",
+      Scene(
+        text: ["in exchange, the wanderer offers his wisdom."],
+        notification: option.None,
+        reward: [],
+        combat: False,
+        on_load: option.None,
+        buttons: [
+          #("evasion", learn("evasion", [], "evasive")),
+          #("precision", learn("precision", [], "precise")),
+          #("force", learn("force", [], "barbarian")),
+          #("nothing", choice("nothing", End)),
+        ],
+      ),
+    ),
+  ])
+}
+
+/// The Sick Man — spare a medicine and he may leave a reward.
+fn sick_man() -> Event {
+  Event(
+    title: "The Sick Man",
+    is_available: fn(s) { state.get_store(s, "medicine") > 0 },
+    scenes: [
+      #(
+        "start",
+        Scene(
+          text: ["a man hobbles up, coughing.", "he begs for medicine."],
+          notification: option.Some("a sick man hobbles up"),
+          reward: [],
+          combat: False,
+          on_load: option.None,
+          buttons: [
+            #(
+              "help",
+              SceneButton(
+                text: "give 1 medicine",
+                cost: [#("medicine", 1)],
+                reward: [],
+                notification: option.Some(
+                  "the man swallows the medicine eagerly",
+                ),
+                available: option.None,
+                on_click: option.None,
+                next: Branch([
+                  #(0.1, "alloy"),
+                  #(0.3, "cells"),
+                  #(0.5, "scales"),
+                  #(1.0, "nothing"),
+                ]),
+              ),
+            ),
+            #("ignore", choice("tell him to leave", End)),
+          ],
+        ),
+      ),
+      #(
+        "alloy",
+        sick_reward(
+          [
+            "the man is thankful.",
+            "he leaves a reward.",
+            "some weird metal he picked up on his travels.",
+          ],
+          [#("alien alloy", 1)],
+        ),
+      ),
+      #(
+        "cells",
+        sick_reward(
+          [
+            "the man is thankful.",
+            "he leaves a reward.",
+            "some weird glowing boxes he picked up on his travels.",
+          ],
+          [#("energy cell", 3)],
+        ),
+      ),
+      #(
+        "scales",
+        sick_reward(
+          [
+            "the man is thankful.",
+            "he leaves a reward.",
+            "all he has are some scales.",
+          ],
+          [#("scales", 5)],
+        ),
+      ),
+      #(
+        "nothing",
+        Scene(
+          text: ["the man expresses his thanks and hobbles off."],
+          notification: option.None,
+          reward: [],
+          combat: False,
+          on_load: option.None,
+          buttons: [#("bye", choice("say goodbye", End))],
+        ),
+      ),
+    ],
+  )
+}
+
+/// A Sick Man reward scene: thanks plus the given stores.
+fn sick_reward(text: List(String), reward: List(#(String, Int))) -> Scene {
+  Scene(
+    text:,
+    notification: option.None,
+    reward:,
+    combat: False,
+    on_load: option.None,
+    buttons: [#("bye", choice("say goodbye", End))],
+  )
 }

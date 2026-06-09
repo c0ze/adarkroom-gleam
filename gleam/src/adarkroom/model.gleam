@@ -316,11 +316,14 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
     Embarked(seed: seed) ->
       case model.location, model.expedition {
         Path, None -> {
-          // Take the packed supplies out of the village and set out.
+          // Take the packed supplies out of the village and set out. Reaching
+          // the world unlocks the events that only the well-travelled can draw
+          // (the Scout, the Master).
           let stocked =
             list.fold(state.outfit_list(model.state), model.state, fn(s, item) {
               state.add_store(s, item.0, -item.1)
             })
+            |> state.set_feature("location.world", True)
           let exp = world.begin(world.generate_map(rng.seed(seed)), stocked)
           #(
             Model(

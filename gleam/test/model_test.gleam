@@ -505,6 +505,18 @@ pub fn saying_goodbye_closes_the_event_test() {
   after.active_event |> should.equal(option.None)
 }
 
+pub fn embarking_marks_the_world_as_reached_test() {
+  let base = model.init()
+  let m =
+    model.Model(
+      ..base,
+      location: model.Path,
+      state: base.state |> state.set_outfit("cured meat", 5),
+    )
+  let after = run(m, model.Embarked(42))
+  state.has_feature(after.state, "location.world") |> should.equal(True)
+}
+
 pub fn schedule_event_sets_the_next_deadline_test() {
   let base = model.init()
   let m = model.Model(..base, now: 5000)
