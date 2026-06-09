@@ -6,13 +6,14 @@
 
 import adarkroom/button
 import adarkroom/clock
+import adarkroom/combat
 import adarkroom/craft.{type Craftable}
 import adarkroom/events
 import adarkroom/model.{
   type Model, type Msg, AdjustTemp, Build, BuilderProgress, Buy, CheckTraps,
   ChooseEvent, CollectIncome, CoolCheck, DecreaseSupply, DecreaseWorker, Embark,
   GatherWood, IncreaseSupply, IncreaseWorker, LightFire, MoveEast, MoveNorth,
-  MoveSouth, MoveWest, Navigate, StokeFire, Tick,
+  MoveSouth, MoveWest, Navigate, StokeFire, StrikeEnemy, Tick,
 }
 import adarkroom/notifications.{type Notifications}
 import adarkroom/outside
@@ -139,10 +140,64 @@ fn view(m: Model) -> Element(Msg) {
         ]),
         notifications_view(m.notifications),
       ],
-      // The random-event modal floats above everything when one is running.
-      event_overlay(m),
+      // The event modal or, out in the world, the combat screen floats above
+      // everything when active (at most one at a time).
+      list.append(event_overlay(m), combat_overlay(m)),
     ),
   )
+}
+
+/// The combat screen, shown while a world fight is underway.
+fn combat_overlay(m: Model) -> List(Element(Msg)) {
+  case m.combat {
+    None -> []
+    Some(cs) -> [
+      html.div([attribute.id("event"), attribute.class("eventPanel")], [
+        html.div([attribute.id("description")], [
+          html.div([attribute.id("fight")], [
+            fighter_div("wanderer", "@", cs.player_hp, cs.player_max),
+            fighter_div("enemy", cs.enemy.chara, cs.enemy_hp, cs.enemy.health),
+          ]),
+        ]),
+        html.div([attribute.id("buttons")], [
+          html.div([attribute.id("attackButtons")], attack_buttons(m, cs)),
+        ]),
+      ]),
+    ]
+  }
+}
+
+/// One fighter: a glyph and its HP, as `createFighterDiv` builds.
+fn fighter_div(id: String, label: String, hp: Int, max: Int) -> Element(Msg) {
+  html.div([attribute.id(id), attribute.class("fighter")], [
+    html.div([attribute.class("label")], [element.text(label)]),
+    html.div([attribute.class("hp")], [
+      element.text(int.to_string(hp) <> "/" <> int.to_string(max)),
+    ]),
+  ])
+}
+
+/// The attack buttons a fight offers — one per usable weapon, disabled when its
+/// ammo has run dry.
+fn attack_buttons(m: Model, _cs: combat.CombatState) -> List(Element(Msg)) {
+  list.filter_map(combat.attack_options(m.state), fn(name) {
+    case combat.get_weapon(name) {
+      Ok(weapon) ->
+        Ok(attack_button(name, combat.can_attack_with(weapon, m.state)))
+      Error(_) -> Error(Nil)
+    }
+  })
+}
+
+fn attack_button(name: String, usable: Bool) -> Element(Msg) {
+  case usable {
+    True ->
+      html.div([attribute.class("button"), event.on_click(StrikeEnemy(name))], [
+        element.text(name),
+      ])
+    False ->
+      html.div([attribute.class("button disabled")], [element.text(name)])
+  }
 }
 
 /// The event modal, present only while an event is on screen.

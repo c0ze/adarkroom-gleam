@@ -395,10 +395,11 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
       effect.none(),
     )
 
-    MaybeFight(fight_roll: fight_roll, pick_roll: pick_roll) -> #(
-      maybe_start_fight(model, fight_roll, pick_roll),
-      effect.none(),
-    )
+    MaybeFight(fight_roll: fight_roll, pick_roll: pick_roll) -> {
+      let model = maybe_start_fight(model, fight_roll, pick_roll)
+      // If a fight just began, set the enemy's attack ticking.
+      #(model, enemy_timer(model.combat))
+    }
 
     StrikeEnemy(weapon: weapon) -> #(model, roll_strike(weapon))
 
@@ -407,10 +408,11 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
 
     EnemyTurn -> #(model, roll_enemy_turn())
 
-    ResolveEnemyTurn(roll: roll) -> #(
-      resolve_enemy_turn(model, roll),
-      effect.none(),
-    )
+    ResolveEnemyTurn(roll: roll) -> {
+      let model = resolve_enemy_turn(model, roll)
+      // The enemy keeps attacking on its delay until the fight ends.
+      #(model, enemy_timer(model.combat))
+    }
 
     CollectLoot(rolls: rolls) -> #(collect_loot(model, rolls), effect.none())
   }
@@ -530,6 +532,15 @@ fn roll_strike(weapon: String) -> Effect(Msg) {
 /// An effect that rolls the enemy's hit and reports it as `ResolveEnemyTurn`.
 fn roll_enemy_turn() -> Effect(Msg) {
   effect.from(fn(dispatch) { dispatch(ResolveEnemyTurn(rng.random())) })
+}
+
+/// Schedule the enemy's next attack while a fight is on; nothing once it ends.
+/// Re-armed after each enemy turn, so the timer naturally stops on win or death.
+fn enemy_timer(combat: Option(combat.CombatState)) -> Effect(Msg) {
+  case combat {
+    Some(cs) -> delayed(cs.enemy.attack_delay * 1000, EnemyTurn)
+    None -> effect.none()
+  }
 }
 
 /// An effect that rolls a defeated enemy's loot (two samples per drop).
