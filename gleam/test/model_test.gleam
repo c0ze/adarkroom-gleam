@@ -563,6 +563,7 @@ fn forest_expedition(dist: Int, health: Int) -> world.Expedition {
     ),
     visited: set.new(),
     used_outposts: set.new(),
+    mines_cleared: set.new(),
   )
 }
 
@@ -714,6 +715,7 @@ fn at_landmark(tile: world.Tile) -> model.Model {
       vitals: world.Vitals(10, 10, 0, 0, False, False),
       visited: set.new(),
       used_outposts: set.new(),
+      mines_cleared: set.new(),
     )
   model.Model(
     ..model.init(),
@@ -881,4 +883,79 @@ pub fn finding_the_ship_marks_it_and_records_the_way_off_test() {
   let assert option.Some(exp) = after.expedition
   set.contains(exp.visited, exp.pos) |> should.be_true
   state.get_game(after.state, "world.ship") |> should.equal(1)
+}
+
+pub fn clearing_the_iron_mine_flags_its_building_test() {
+  let base = at_landmark(world.IronMine)
+  let ready =
+    model.Model(..base, state: state.set_store(base.state, "torch", 1))
+  // Pay the torch to enter; the matriarch lunges.
+  let fighting = run(run(ready, model.MoveEast), ResolveEvent("enter", 0.5))
+  let assert option.Some(cs) = fighting.combat
+  cs.enemy.name |> should.equal("beastly matriarch")
+  // Two steel-sword blows fell the 10-hp matriarch; collect, then push on.
+  let cleared =
+    fighting
+    |> run(ResolveStrike("steel sword", 0.5))
+    |> run(ResolveStrike("steel sword", 0.5))
+    |> run(CollectLoot(list.repeat(0.0, 6)))
+    |> run(ResolveEvent("leave", 0.5))
+  let assert option.Some(exp) = cleared.expedition
+  set.contains(exp.mines_cleared, "iron mine") |> should.be_true
+}
+
+pub fn a_safe_return_grants_a_cleared_mine_building_test() {
+  // Out in the world, one step east of the village, having cleared the coal mine.
+  let exp =
+    world.Expedition(
+      pos: #(31, 30),
+      map: dict.from_list([
+        #(#(31, 30), world.Forest),
+        #(#(30, 30), world.Village),
+      ]),
+      seen: set.new(),
+      vitals: world.Vitals(10, 10, 0, 0, False, False),
+      visited: set.new(),
+      used_outposts: set.new(),
+      mines_cleared: set.from_list(["coal mine"]),
+    )
+  let m =
+    model.Model(
+      ..model.init(),
+      location: model.World,
+      expedition: option.Some(exp),
+    )
+  // Step west onto the village — home safe.
+  let home = run(m, model.MoveWest)
+  home.location |> should.equal(model.Room)
+  craft.building_count(home.state, "coal mine") |> should.equal(1)
+}
+
+pub fn a_parched_step_onto_the_village_is_a_safe_return_not_a_death_test() {
+  // Bone dry and already thirsty, one step from home, having cleared the iron
+  // mine. The village costs no supplies, so this is a safe return — not a death
+  // that would forfeit the mine.
+  let exp =
+    world.Expedition(
+      pos: #(31, 30),
+      map: dict.from_list([
+        #(#(31, 30), world.Forest),
+        #(#(30, 30), world.Village),
+      ]),
+      seen: set.new(),
+      vitals: world.Vitals(0, 1, 0, 0, False, True),
+      visited: set.new(),
+      used_outposts: set.new(),
+      mines_cleared: set.from_list(["iron mine"]),
+    )
+  let m =
+    model.Model(
+      ..model.init(),
+      location: model.World,
+      expedition: option.Some(exp),
+    )
+  let home = run(m, model.MoveWest)
+  home.location |> should.equal(model.Room)
+  home.expedition |> should.equal(option.None)
+  craft.building_count(home.state, "iron mine") |> should.equal(1)
 }

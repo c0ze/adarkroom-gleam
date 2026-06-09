@@ -515,6 +515,10 @@ pub type Expedition {
     vitals: Vitals,
     visited: Set(#(Int, Int)),
     used_outposts: Set(#(Int, Int)),
+    /// The mines cleared this trip, by building name (`"iron mine"`, …). The JS
+    /// flags these on the world and grants the building on a safe return home;
+    /// we credit them in `go_home`.
+    mines_cleared: Set(String),
   )
 }
 
@@ -556,6 +560,7 @@ pub fn begin(map: Map, s: State) -> Expedition {
     ),
     visited: set.new(),
     used_outposts: set.new(),
+    mines_cleared: set.new(),
   )
 }
 
@@ -627,6 +632,15 @@ pub fn lay_road(exp: Expedition) -> Expedition {
 pub fn clear_dungeon(exp: Expedition) -> Expedition {
   let map = dict.insert(exp.map, exp.pos, Outpost)
   Expedition(..exp, map: draw_road(map, exp.pos))
+}
+
+/// Clear the mine under the player: road it home, mark it dealt with, and flag
+/// its `building` so `go_home` grants it on a safe return (`World.state.<mine>`).
+pub fn clear_mine(exp: Expedition, building: String) -> Expedition {
+  Expedition(
+    ..mark_visited(lay_road(exp)),
+    mines_cleared: set.insert(exp.mines_cleared, building),
+  )
 }
 
 /// Pave an L-shaped road from `from` to the nearest existing road, mirroring
@@ -749,15 +763,23 @@ pub fn move(s: State, exp: Expedition, dir: Dir) -> Step {
   case in_bounds(pos) {
     False -> Step(s, exp, [], True)
     True -> {
-      let supplies = use_supplies(s, exp.vitals)
       let moved =
-        Expedition(
-          ..exp,
-          pos: pos,
-          seen: uncover(exp.seen, pos, sight(s)),
-          vitals: supplies.vitals,
-        )
-      Step(supplies.state, moved, supplies.messages, supplies.alive)
+        Expedition(..exp, pos:, seen: uncover(exp.seen, pos, sight(s)))
+      // Stepping home to the village costs no supplies and never kills — the JS
+      // `doSpace` runs `useSupplies` only off the village, so a safe return is
+      // always genuinely safe (and so can't, e.g., wrongly forfeit mine credit).
+      case tile_at(exp.map, pos.0, pos.1) {
+        Ok(Village) -> Step(s, moved, [], True)
+        _ -> {
+          let supplies = use_supplies(s, exp.vitals)
+          Step(
+            supplies.state,
+            Expedition(..moved, vitals: supplies.vitals),
+            supplies.messages,
+            supplies.alive,
+          )
+        }
+      }
     }
   }
 }

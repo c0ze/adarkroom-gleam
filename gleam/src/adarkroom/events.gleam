@@ -69,6 +69,9 @@ pub type WorldEffect {
   /// The crashed ship (`markVisited` + `drawRoad` + `state.ship`) — mark it
   /// dealt with, road it home, and record that a way off this rock was found.
   FoundShip
+  /// A cleared mine (`drawRoad` + `state.<mine>` + `markVisited`) — road it home
+  /// and flag the named building for a safe return to grant.
+  ClearMine(building: String)
 }
 
 /// The extra machinery a setpiece scene carries on top of a plain event scene:

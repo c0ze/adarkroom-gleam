@@ -11,9 +11,9 @@
 
 import adarkroom/combat
 import adarkroom/events.{
-  type Event, type Scene, type SceneButton, type SetpieceExtra, Branch, End,
-  Event, FoundShip, MarkVisited, RefillSupplies, Scene, SceneButton,
-  SetpieceExtra, UseOutpost,
+  type Event, type Scene, type SceneButton, type SetpieceExtra, Branch,
+  ClearMine, End, Event, FoundShip, MarkVisited, NoWorldEffect, RefillSupplies,
+  Scene, SceneButton, SetpieceExtra, UseOutpost,
 }
 import adarkroom/state
 import gleam/list
@@ -35,6 +35,9 @@ fn setpieces() -> List(#(String, Event)) {
     #("borehole", borehole()),
     #("house", house()),
     #("ship", ship()),
+    #("sulphurmine", sulphurmine()),
+    #("coalmine", coalmine()),
+    #("ironmine", ironmine()),
   ]
 }
 
@@ -240,6 +243,178 @@ fn house_loot() -> List(combat.LootEntry) {
     combat.LootEntry("leather", 1, 10, 0.2),
     combat.LootEntry("cloth", 1, 10, 0.5),
   ]
+}
+
+// --- the mines --------------------------------------------------------------
+
+/// The sulphur mine: a military perimeter — two soldiers and a veteran stand
+/// between you and the deposit.
+fn sulphurmine() -> Event {
+  let soldier_loot = [
+    combat.LootEntry("cured meat", 1, 5, 0.8),
+    combat.LootEntry("bullets", 1, 5, 0.5),
+    combat.LootEntry("rifle", 1, 1, 0.2),
+  ]
+  let soldier = fn(notification, next) {
+    fight(
+      notification,
+      NoWorldEffect,
+      enemy("soldier", "D", 50, 8, 0.8, 2, True, soldier_loot),
+      [#("continue", to("continue", next)), #("run", leave("run"))],
+    )
+  }
+  Event(title: "The Sulphur Mine", is_available: always, scenes: [
+    #(
+      "start",
+      Scene(
+        ..story([
+          "the military is already set up at the mine's entrance.",
+          "soldiers patrol the perimeter, rifles slung over their shoulders.",
+        ]),
+        notification: Some("a military perimeter is set up around the mine."),
+        buttons: [
+          #("attack", to("attack", "a1")),
+          #("leave", leave("leave")),
+        ],
+      ),
+    ),
+    #("a1", soldier("a soldier, alerted, opens fire.", "a2")),
+    #("a2", soldier("a second soldier joins the fight.", "a3")),
+    #(
+      "a3",
+      fight(
+        "a grizzled soldier attacks, waving a bayonet.",
+        NoWorldEffect,
+        enemy("veteran", "D", 65, 10, 0.8, 2, False, [
+          combat.LootEntry("bayonet", 1, 1, 0.5),
+          combat.LootEntry("cured meat", 1, 5, 0.8),
+        ]),
+        [#("continue", to("continue", "cleared"))],
+      ),
+    ),
+    #(
+      "cleared",
+      cleared(
+        [
+          "the military presence has been cleared.",
+          "the mine is now safe for workers.",
+        ],
+        "the sulphur mine is clear of dangers",
+        "sulphur mine",
+      ),
+    ),
+  ])
+}
+
+/// The coal mine: a camp of armed men, led by their chief.
+fn coalmine() -> Event {
+  let man_loot = [
+    combat.LootEntry("cured meat", 1, 5, 0.8),
+    combat.LootEntry("cloth", 1, 5, 0.8),
+  ]
+  let man = fn(next) {
+    fight(
+      "a man joins the fight",
+      NoWorldEffect,
+      enemy("man", "E", 10, 3, 0.8, 2, False, man_loot),
+      [#("continue", to("continue", next)), #("run", leave("run"))],
+    )
+  }
+  Event(title: "The Coal Mine", is_available: always, scenes: [
+    #(
+      "start",
+      Scene(
+        ..story([
+          "camp fires burn by the entrance to the mine.",
+          "men mill about, weapons at the ready.",
+        ]),
+        notification: Some("this old mine is not abandoned"),
+        buttons: [
+          #("attack", to("attack", "a1")),
+          #("leave", leave("leave")),
+        ],
+      ),
+    ),
+    #("a1", man("a2")),
+    #("a2", man("a3")),
+    #(
+      "a3",
+      fight(
+        "only the chief remains.",
+        NoWorldEffect,
+        enemy("chief", "D", 20, 5, 0.8, 2, False, [
+          combat.LootEntry("cured meat", 5, 10, 1.0),
+          combat.LootEntry("cloth", 5, 10, 0.8),
+          combat.LootEntry("iron", 1, 5, 0.8),
+        ]),
+        [#("continue", to("continue", "cleared"))],
+      ),
+    ),
+    #(
+      "cleared",
+      cleared(
+        [
+          "the camp is still, save for the crackling of the fires.",
+          "the mine is now safe for workers.",
+        ],
+        "the coal mine is clear of dangers",
+        "coal mine",
+      ),
+    ),
+  ])
+}
+
+/// The iron mine: a single feral beast lairs in the dark — bring a torch.
+fn ironmine() -> Event {
+  Event(title: "The Iron Mine", is_available: always, scenes: [
+    #(
+      "start",
+      Scene(
+        ..story([
+          "an old iron mine sits here, tools abandoned and left to rust.",
+          "bleached bones are strewn about the entrance. many, deeply scored with jagged grooves.",
+          "feral howls echo out of the darkness.",
+        ]),
+        notification: Some("the path leads to an abandoned mine"),
+        buttons: [
+          #("enter", spend("go inside", [#("torch", 1)], "enter")),
+          #("leave", leave("leave")),
+        ],
+      ),
+    ),
+    #(
+      "enter",
+      fight(
+        "a large creature lunges, muscles rippling in the torchlight",
+        NoWorldEffect,
+        enemy("beastly matriarch", "T", 10, 4, 0.8, 2, False, [
+          combat.LootEntry("teeth", 5, 10, 1.0),
+          combat.LootEntry("scales", 5, 10, 0.8),
+          combat.LootEntry("cloth", 5, 10, 0.5),
+        ]),
+        [#("leave", to("leave", "cleared"))],
+      ),
+    ),
+    #(
+      "cleared",
+      cleared(
+        ["the beast is dead.", "the mine is now safe for workers."],
+        "the iron mine is clear of dangers",
+        "iron mine",
+      ),
+    ),
+  ])
+}
+
+/// A mine's final scene: road it home, flag the building for the trip home to
+/// grant, and mark the landmark dealt with.
+fn cleared(text: List(String), notification: String, mine: String) -> Scene {
+  Scene(
+    ..story(text),
+    notification: Some(notification),
+    setpiece: extra([], ClearMine(mine)),
+    buttons: [#("leave", leave("leave"))],
+  )
 }
 
 // --- builders ---------------------------------------------------------------

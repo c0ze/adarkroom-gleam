@@ -82,6 +82,37 @@ pub fn the_ship_is_found_and_roaded_home_test() {
   list.key_find(start.buttons, "leave") |> should.be_ok
 }
 
+pub fn each_mine_clears_into_its_building_test() {
+  [
+    #("sulphurmine", "sulphur mine"),
+    #("coalmine", "coal mine"),
+    #("ironmine", "iron mine"),
+  ]
+  |> list.each(fn(pair) {
+    let cleared = scene(pair.0, "cleared")
+    let assert Some(events.SetpieceExtra(
+      world_effect: events.ClearMine(building),
+      ..,
+    )) = cleared.setpiece
+    building |> should.equal(pair.1)
+  })
+}
+
+pub fn the_sulphur_mine_soldiers_are_ranged_test() {
+  let a1 = scene("sulphurmine", "a1")
+  a1.combat |> should.be_true
+  let assert Some(events.SetpieceExtra(enemy: Some(foe), ..)) = a1.setpiece
+  foe.name |> should.equal("soldier")
+  foe.ranged |> should.be_true
+  foe.health |> should.equal(50)
+}
+
+pub fn the_iron_mine_costs_a_torch_to_enter_test() {
+  let start = scene("ironmine", "start")
+  let assert Ok(enter) = list.key_find(start.buttons, "enter")
+  enter.cost |> should.equal([#("torch", 1)])
+}
+
 pub fn the_house_squatter_is_a_combat_scene_test() {
   let occupied = scene("house", "occupied")
   occupied.combat |> should.be_true

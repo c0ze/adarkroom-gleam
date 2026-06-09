@@ -649,8 +649,11 @@ fn step(model: Model, dir: world.Dir) -> #(Model, Effect(Msg)) {
         world.tile_at(s.expedition.map, s.expedition.pos.0, s.expedition.pos.1)
         == Ok(world.Village)
       case s.alive, on_village {
-        _, True -> #(go_home(model), effect.none())
+        // Death is checked first; reaching the village costs no supplies (see
+        // `world.move`), so a safe return is always a live one — only then are
+        // cleared mines credited.
         False, _ -> #(die(model), effect.none())
+        True, True -> #(go_home(model), effect.none())
         True, False -> {
           let model = Model(..model, expedition: Some(s.expedition))
           // A landmark launches its setpiece (the `doSpace` order); open ground
@@ -682,13 +685,28 @@ fn setpiece_at(exp: Expedition) -> Result(events.Event, Nil) {
 /// Make it home safe — the carried supplies and loot are unloaded, then the
 /// expedition ends and the player returns to the room.
 fn go_home(model: Model) -> Model {
+  // Mines cleared this trip are credited now that the player is home safe.
+  let cleared = case model.expedition {
+    Some(exp) -> set.to_list(exp.mines_cleared)
+    None -> []
+  }
+  let state = list.fold(cleared, return_outfit(model.state), grant_mine)
   Model(
     ..notify_world(model, ["a haze falls over the village"]),
-    state: return_outfit(model.state),
+    state: state,
     location: Room,
     expedition: None,
     combat: None,
   )
+}
+
+/// Raise a cleared mine's building on a safe return, the first time only — it
+/// opens up its workers in the village (`goHome`).
+fn grant_mine(s: State, building: String) -> State {
+  case craft.building_count(s, building) {
+    0 -> state.set_game(s, craft.building_key(building), 1)
+    _ -> s
+  }
 }
 
 /// Unload the outfit on returning home (`returnOutfit`): every carried item is
@@ -917,6 +935,10 @@ fn apply_world_effect(
             // A way off this rock — recorded for the endgame (M6).
             state: state.set_game(model.state, "world.ship", 1),
           ),
+          [],
+        )
+        events.ClearMine(building) -> #(
+          Model(..model, expedition: Some(world.clear_mine(exp, building))),
           [],
         )
         events.NoWorldEffect -> #(model, [])
