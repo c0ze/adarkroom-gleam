@@ -243,3 +243,88 @@ fn do_roll_loot(
       }
   }
 }
+
+// --- a fight in progress ----------------------------------------------------
+
+/// An enemy in a fight — the combat half of an encounter's scene.
+pub type Enemy {
+  Enemy(
+    name: String,
+    chara: String,
+    health: Int,
+    damage: Int,
+    hit: Float,
+    attack_delay: Int,
+    ranged: Bool,
+    death_message: String,
+    loot: List(LootEntry),
+  )
+}
+
+/// A fight in progress.
+pub type CombatState {
+  CombatState(
+    enemy: Enemy,
+    enemy_hp: Int,
+    player_hp: Int,
+    player_max: Int,
+    won: Bool,
+    enemy_stunned: Bool,
+  )
+}
+
+/// Start a fight: the enemy at full health, the player at the given health.
+pub fn begin_combat(
+  enemy: Enemy,
+  player_hp: Int,
+  player_max: Int,
+) -> CombatState {
+  CombatState(
+    enemy:,
+    enemy_hp: enemy.health,
+    player_hp:,
+    player_max:,
+    won: False,
+    enemy_stunned: False,
+  )
+}
+
+/// Resolve a player attack on the enemy. A stun makes it skip its next turn;
+/// numeric damage lowers its HP and may win the fight.
+pub fn player_strike(
+  cs: CombatState,
+  weapon: Weapon,
+  s: state.State,
+  hit_roll: Float,
+) -> CombatState {
+  case player_attack(weapon, s, hit_roll) {
+    Miss -> cs
+    StunHit -> CombatState(..cs, enemy_stunned: True)
+    Damage(d) -> {
+      let hp = apply_damage(cs.enemy_hp, cs.enemy.health, d)
+      CombatState(..cs, enemy_hp: hp, won: hp <= 0)
+    }
+  }
+}
+
+/// Resolve the enemy's attack on the player. A stunned enemy whiffs and spends
+/// the stun.
+pub fn enemy_strike(
+  cs: CombatState,
+  s: state.State,
+  hit_roll: Float,
+) -> CombatState {
+  case cs.enemy_stunned {
+    True -> CombatState(..cs, enemy_stunned: False)
+    False ->
+      case enemy_attack(cs.enemy.hit, cs.enemy.damage, s, hit_roll) {
+        Damage(d) ->
+          CombatState(
+            ..cs,
+            player_hp: apply_damage(cs.player_hp, cs.player_max, d),
+          )
+        Miss -> cs
+        StunHit -> cs
+      }
+  }
+}

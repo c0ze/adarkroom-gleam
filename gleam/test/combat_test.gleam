@@ -269,3 +269,81 @@ pub fn offered_weapons_keep_table_order_test() {
   |> combat.attack_options
   |> should.equal(["iron sword", "bayonet"])
 }
+
+// --- a fight in progress ----------------------------------------------------
+
+fn beast() -> combat.Enemy {
+  combat.Enemy(
+    name: "snarling beast",
+    chara: "R",
+    health: 5,
+    damage: 1,
+    hit: 0.8,
+    attack_delay: 1,
+    ranged: False,
+    death_message: "the snarling beast is dead",
+    loot: [combat.LootEntry("fur", 1, 3, 1.0)],
+  )
+}
+
+fn weapon_named(name: String) -> combat.Weapon {
+  let assert Ok(w) = combat.get_weapon(name)
+  w
+}
+
+pub fn a_fight_starts_with_both_fighters_at_their_health_test() {
+  let cs = combat.begin_combat(beast(), 10, 10)
+  cs.enemy_hp |> should.equal(5)
+  cs.player_hp |> should.equal(10)
+  cs.won |> should.equal(False)
+  cs.enemy_stunned |> should.equal(False)
+}
+
+pub fn a_landed_strike_wounds_the_enemy_test() {
+  let cs = combat.begin_combat(beast(), 10, 10)
+  // iron sword 4; a 0.5 roll lands (<= 0.8): 5 - 4 = 1.
+  let after =
+    combat.player_strike(cs, weapon_named("iron sword"), state.new(), 0.5)
+  after.enemy_hp |> should.equal(1)
+  after.won |> should.equal(False)
+}
+
+pub fn a_missed_strike_leaves_the_enemy_unhurt_test() {
+  let cs = combat.begin_combat(beast(), 10, 10)
+  let after = combat.player_strike(cs, weapon_named("fists"), state.new(), 0.9)
+  after.enemy_hp |> should.equal(5)
+}
+
+pub fn killing_the_enemy_wins_the_fight_test() {
+  let cs = combat.begin_combat(beast(), 10, 10)
+  // steel sword 6 > 5 health.
+  let after =
+    combat.player_strike(cs, weapon_named("steel sword"), state.new(), 0.5)
+  after.enemy_hp |> should.equal(0)
+  after.won |> should.equal(True)
+}
+
+pub fn a_stun_weapon_makes_the_enemy_skip_its_next_attack_test() {
+  let cs = combat.begin_combat(beast(), 10, 10)
+  let stunned =
+    combat.player_strike(cs, weapon_named("bolas"), state.new(), 0.5)
+  stunned.enemy_stunned |> should.equal(True)
+  stunned.enemy_hp |> should.equal(5)
+  // The stunned enemy can't connect, and the stun is spent.
+  let after = combat.enemy_strike(stunned, state.new(), 0.0)
+  after.player_hp |> should.equal(10)
+  after.enemy_stunned |> should.equal(False)
+}
+
+pub fn an_enemy_strike_wounds_the_player_test() {
+  let cs = combat.begin_combat(beast(), 10, 10)
+  // enemy damage 1, hit 0.8; a 0.5 roll lands: 10 - 1 = 9.
+  let after = combat.enemy_strike(cs, state.new(), 0.5)
+  after.player_hp |> should.equal(9)
+}
+
+pub fn an_enemy_miss_spares_the_player_test() {
+  let cs = combat.begin_combat(beast(), 10, 10)
+  let after = combat.enemy_strike(cs, state.new(), 0.9)
+  after.player_hp |> should.equal(10)
+}
