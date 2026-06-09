@@ -73,6 +73,15 @@ pub fn the_borehole_yields_alien_alloy_test() {
   loot |> should.equal([combat.LootEntry("alien alloy", 1, 3, 1.0)])
 }
 
+pub fn the_ship_is_found_and_roaded_home_test() {
+  let start = scene("ship", "start")
+  start.combat |> should.be_false
+  let assert Some(events.SetpieceExtra(world_effect: effect, ..)) =
+    start.setpiece
+  effect |> should.equal(events.FoundShip)
+  list.key_find(start.buttons, "leave") |> should.be_ok
+}
+
 pub fn the_house_squatter_is_a_combat_scene_test() {
   let occupied = scene("house", "occupied")
   occupied.combat |> should.be_true

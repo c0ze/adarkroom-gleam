@@ -66,6 +66,9 @@ pub type WorldEffect {
   /// The house well (`setWater` + `markVisited`) — refill water and mark the
   /// landmark dealt with, but it's no reusable outpost.
   RefillSupplies
+  /// The crashed ship (`markVisited` + `drawRoad` + `state.ship`) — mark it
+  /// dealt with, road it home, and record that a way off this rock was found.
+  FoundShip
 }
 
 /// The extra machinery a setpiece scene carries on top of a plain event scene:

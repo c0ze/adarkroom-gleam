@@ -872,3 +872,13 @@ pub fn the_house_floorboards_hide_medicine_test() {
   let looted = run(medicine, model.SetpieceLoot([0.0, 0.0]))
   state.get_outfit(looted.state, "medicine") |> should.equal(2)
 }
+
+pub fn finding_the_ship_marks_it_and_records_the_way_off_test() {
+  let after = run(at_landmark(world.Ship), model.MoveEast)
+  let assert option.Some(active) = after.active_event
+  active.event.title |> should.equal("A Crashed Ship")
+  // The landmark is dealt with, and the ship is recorded for the endgame.
+  let assert option.Some(exp) = after.expedition
+  set.contains(exp.visited, exp.pos) |> should.be_true
+  state.get_game(after.state, "world.ship") |> should.equal(1)
+}
