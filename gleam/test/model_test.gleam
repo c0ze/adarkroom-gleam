@@ -642,3 +642,36 @@ pub fn the_eat_cooldown_blocks_a_second_bite_test() {
   let twice = run(once, model.Heal("cured meat"))
   state.get_outfit(twice.state, "cured meat") |> should.equal(4)
 }
+
+pub fn medicine_mends_twenty_with_room_to_spare_test() {
+  // Kinetic armour lifts the max so the full heal shows (no clamp).
+  let base = world_model(1)
+  let m =
+    model.Model(
+      ..base,
+      state: base.state
+        |> state.set_outfit("medicine", 1)
+        |> state.set_store("kinetic armour", 1),
+    )
+  let healed = run(run(m, MaybeFight(0.0, 0.0)), model.Heal("medicine"))
+  let assert option.Some(cs) = healed.combat
+  cs.player_hp |> should.equal(21)
+  // Medicine has its own cooldown — eating meat is still allowed.
+  model.on_cooldown(healed, "meds") |> should.equal(True)
+  model.on_cooldown(healed, "eat") |> should.equal(False)
+}
+
+pub fn a_hypo_mends_thirty_test() {
+  let base = world_model(1)
+  let m =
+    model.Model(
+      ..base,
+      state: base.state
+        |> state.set_outfit("hypo", 1)
+        |> state.set_store("kinetic armour", 1),
+    )
+  let healed = run(run(m, MaybeFight(0.0, 0.0)), model.Heal("hypo"))
+  let assert option.Some(cs) = healed.combat
+  cs.player_hp |> should.equal(31)
+  model.on_cooldown(healed, "hypo") |> should.equal(True)
+}
