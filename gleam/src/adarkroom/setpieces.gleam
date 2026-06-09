@@ -12,8 +12,8 @@
 import adarkroom/combat
 import adarkroom/events.{
   type Event, type Scene, type SceneButton, type SetpieceExtra, Branch,
-  ClearMine, End, Event, FoundShip, MarkVisited, NoWorldEffect, RefillSupplies,
-  Scene, SceneButton, SetpieceExtra, UseOutpost,
+  ClearDungeon, ClearMine, End, Event, FoundShip, MarkVisited, NoWorldEffect,
+  RefillSupplies, Scene, SceneButton, SetpieceExtra, UseOutpost,
 }
 import adarkroom/state
 import gleam/list
@@ -33,6 +33,7 @@ fn setpieces() -> List(#(String, Event)) {
     #("swamp", swamp()),
     #("battlefield", battlefield()),
     #("borehole", borehole()),
+    #("cave", cave()),
     #("house", house()),
     #("ship", ship()),
     #("sulphurmine", sulphurmine()),
@@ -154,6 +155,220 @@ fn borehole() -> Event {
       ),
     ),
   ])
+}
+
+/// A damp cave: the deepest of the wild dungeons. Spend a torch to delve, fight
+/// through beasts and lizards, and clear it into an outpost for one of three
+/// hoards at the back.
+fn cave() -> Event {
+  let beast = fn(hp, loot, next) {
+    fight(
+      "a startled beast defends its home",
+      NoWorldEffect,
+      enemy("beast", "R", hp, 1, 0.8, 1, False, loot),
+      continue_or_leave(next),
+    )
+  }
+  Event(title: "A Damp Cave", is_available: always, scenes: [
+    #(
+      "start",
+      Scene(
+        ..story([
+          "the mouth of the cave is wide and dark.",
+          "can't see what's inside.",
+        ]),
+        notification: Some(
+          "the earth here is split, as if bearing an ancient wound",
+        ),
+        buttons: [
+          #(
+            "enter",
+            cost_branch("go inside", [#("torch", 1)], [
+              #(0.3, "a1"),
+              #(0.6, "a2"),
+              #(1.0, "a3"),
+            ]),
+          ),
+          #("leave", leave("leave")),
+        ],
+      ),
+    ),
+    #(
+      "a1",
+      beast(
+        5,
+        [
+          combat.LootEntry("fur", 1, 10, 1.0),
+          combat.LootEntry("teeth", 1, 5, 0.8),
+        ],
+        [#(0.5, "b1"), #(1.0, "b2")],
+      ),
+    ),
+    #(
+      "a2",
+      Scene(
+        ..story([
+          "the cave narrows a few feet in.",
+          "the walls are moist and moss-covered",
+        ]),
+        buttons: continue_or_leave([#(0.5, "b2"), #(1.0, "b3")]),
+      ),
+    ),
+    #(
+      "a3",
+      hoard(
+        [
+          "the remains of an old camp sits just inside the cave.",
+          "bedrolls, torn and blackened, lay beneath a thin layer of dust.",
+        ],
+        [
+          combat.LootEntry("cured meat", 1, 5, 1.0),
+          combat.LootEntry("torch", 1, 5, 0.5),
+          combat.LootEntry("leather", 1, 5, 0.3),
+        ],
+        continue_or_leave([#(0.5, "b3"), #(1.0, "b4")]),
+      ),
+    ),
+    #(
+      "b1",
+      hoard(
+        [
+          "the body of a wanderer lies in a small cavern.",
+          "rot's been to work on it, and some of the pieces are missing.",
+          "can't tell what left it here.",
+        ],
+        [
+          combat.LootEntry("iron sword", 1, 1, 1.0),
+          combat.LootEntry("cured meat", 1, 5, 0.8),
+          combat.LootEntry("torch", 1, 3, 0.5),
+          combat.LootEntry("medicine", 1, 2, 0.1),
+        ],
+        continue_or_leave([#(1.0, "c1")]),
+      ),
+    ),
+    #(
+      "b2",
+      Scene(
+        ..story([
+          "the torch sputters and dies in the damp air",
+          "the darkness is absolute",
+        ]),
+        notification: Some("the torch goes out"),
+        buttons: [
+          #("continue", spend("continue", [#("torch", 1)], "c1")),
+          #("leave", leave("leave cave")),
+        ],
+      ),
+    ),
+    #(
+      "b3",
+      beast(
+        5,
+        [
+          combat.LootEntry("fur", 1, 3, 1.0),
+          combat.LootEntry("teeth", 1, 2, 0.8),
+        ],
+        [#(1.0, "c2")],
+      ),
+    ),
+    #(
+      "b4",
+      fight(
+        "a cave lizard attacks",
+        NoWorldEffect,
+        enemy("cave lizard", "R", 6, 3, 0.8, 2, False, [
+          combat.LootEntry("scales", 1, 3, 1.0),
+          combat.LootEntry("teeth", 1, 2, 0.8),
+        ]),
+        continue_or_leave([#(1.0, "c2")]),
+      ),
+    ),
+    #(
+      "c1",
+      fight(
+        "a large beast charges out of the dark",
+        NoWorldEffect,
+        enemy("beast", "R", 10, 3, 0.8, 2, False, [
+          combat.LootEntry("fur", 1, 3, 1.0),
+          combat.LootEntry("teeth", 1, 3, 1.0),
+        ]),
+        continue_or_leave([#(0.5, "end1"), #(1.0, "end2")]),
+      ),
+    ),
+    #(
+      "c2",
+      fight(
+        "a giant lizard shambles forward",
+        NoWorldEffect,
+        enemy("lizard", "T", 10, 4, 0.8, 2, False, [
+          combat.LootEntry("scales", 1, 3, 1.0),
+          combat.LootEntry("teeth", 1, 3, 1.0),
+        ]),
+        continue_or_leave([#(0.7, "end2"), #(1.0, "end3")]),
+      ),
+    ),
+    #(
+      "end1",
+      cleared_cave(
+        ["the nest of a large animal lies at the back of the cave."],
+        [
+          combat.LootEntry("meat", 5, 10, 1.0),
+          combat.LootEntry("fur", 5, 10, 1.0),
+          combat.LootEntry("scales", 5, 10, 1.0),
+          combat.LootEntry("teeth", 5, 10, 1.0),
+          combat.LootEntry("cloth", 5, 10, 0.5),
+        ],
+      ),
+    ),
+    #(
+      "end2",
+      cleared_cave(["a small supply cache is hidden at the back of the cave."], [
+        combat.LootEntry("cloth", 5, 10, 1.0),
+        combat.LootEntry("leather", 5, 10, 1.0),
+        combat.LootEntry("iron", 5, 10, 1.0),
+        combat.LootEntry("cured meat", 5, 10, 1.0),
+        combat.LootEntry("steel", 5, 10, 0.5),
+        combat.LootEntry("bolas", 1, 3, 0.3),
+        combat.LootEntry("medicine", 1, 4, 0.15),
+      ]),
+    ),
+    #(
+      "end3",
+      cleared_cave(
+        [
+          "an old case is wedged behind a rock, covered in a thick layer of dust.",
+        ],
+        [
+          combat.LootEntry("steel sword", 1, 1, 1.0),
+          combat.LootEntry("bolas", 1, 3, 0.5),
+          combat.LootEntry("medicine", 1, 3, 0.3),
+        ],
+      ),
+    ),
+  ])
+}
+
+/// A cave room with loot taken on entry, then a continue/leave choice.
+fn hoard(
+  text: List(String),
+  loot: List(combat.LootEntry),
+  buttons: List(#(String, SceneButton)),
+) -> Scene {
+  Scene(..story(text), setpiece: extra(loot, NoWorldEffect), buttons:)
+}
+
+/// The back of the cave: take the hoard and clear the cave into an outpost.
+fn cleared_cave(text: List(String), loot: List(combat.LootEntry)) -> Scene {
+  Scene(..story(text), setpiece: extra(loot, ClearDungeon), buttons: [
+    #("leave", leave("leave cave")),
+  ])
+}
+
+/// The cave's recurring pair of buttons: press on (by probability) or leave.
+fn continue_or_leave(
+  next: List(#(Float, String)),
+) -> List(#(String, SceneButton)) {
+  [#("continue", branch("continue", next)), #("leave", leave("leave cave"))]
 }
 
 /// A crashed wanderer ship: road it home and note the way off this rock. The
@@ -493,6 +708,24 @@ fn branch(text: String, targets: List(#(Float, String))) -> SceneButton {
   SceneButton(
     text: text,
     cost: [],
+    reward: [],
+    notification: None,
+    available: None,
+    on_click: None,
+    next: Branch(targets),
+  )
+}
+
+/// A button that spends a cost on the way to one of several scenes by
+/// probability (the cave's torch-lit descent).
+fn cost_branch(
+  text: String,
+  cost: List(#(String, Int)),
+  targets: List(#(Float, String)),
+) -> SceneButton {
+  SceneButton(
+    text: text,
+    cost: cost,
     reward: [],
     notification: None,
     available: None,

@@ -72,6 +72,9 @@ pub type WorldEffect {
   /// A cleared mine (`drawRoad` + `state.<mine>` + `markVisited`) — road it home
   /// and flag the named building for a safe return to grant.
   ClearMine(building: String)
+  /// A cleared dungeon (`World.clearDungeon`) — turn the tile into a friendly
+  /// outpost and road it home.
+  ClearDungeon
 }
 
 /// The extra machinery a setpiece scene carries on top of a plain event scene:

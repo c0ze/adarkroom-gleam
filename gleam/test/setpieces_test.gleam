@@ -19,8 +19,8 @@ pub fn the_registry_has_the_ported_setpieces_test() {
 }
 
 pub fn unported_setpieces_are_absent_test() {
-  // The combat dungeons land in later work.
-  setpieces.setpiece("cave") |> should.be_error
+  // The town and city land in later work.
+  setpieces.setpiece("town") |> should.be_error
   setpieces.setpiece("city") |> should.be_error
   setpieces.setpiece("nonsense") |> should.be_error
 }
@@ -80,6 +80,29 @@ pub fn the_ship_is_found_and_roaded_home_test() {
     start.setpiece
   effect |> should.equal(events.FoundShip)
   list.key_find(start.buttons, "leave") |> should.be_ok
+}
+
+pub fn the_cave_descent_costs_a_torch_and_branches_test() {
+  let start = scene("cave", "start")
+  let assert Ok(enter) = list.key_find(start.buttons, "enter")
+  enter.cost |> should.equal([#("torch", 1)])
+}
+
+pub fn the_cave_first_chamber_is_a_beast_fight_test() {
+  let a1 = scene("cave", "a1")
+  a1.combat |> should.be_true
+  let assert Some(events.SetpieceExtra(enemy: Some(foe), ..)) = a1.setpiece
+  foe.name |> should.equal("beast")
+  foe.health |> should.equal(5)
+}
+
+pub fn the_cave_back_rooms_clear_the_dungeon_test() {
+  ["end1", "end2", "end3"]
+  |> list.each(fn(name) {
+    let assert Some(events.SetpieceExtra(world_effect: effect, ..)) =
+      scene("cave", name).setpiece
+    effect |> should.equal(events.ClearDungeon)
+  })
 }
 
 pub fn each_mine_clears_into_its_building_test() {
