@@ -931,6 +931,36 @@ pub fn a_safe_return_grants_a_cleared_mine_building_test() {
   craft.building_count(home.state, "coal mine") |> should.equal(1)
 }
 
+pub fn delving_the_cave_clears_it_into_an_outpost_test() {
+  let base = at_landmark(world.Cave)
+  let ready =
+    model.Model(..base, state: state.set_store(base.state, "torch", 2))
+  let start = run(ready, model.MoveEast)
+  // Enter (0.4 -> a2, the narrows); press on (0.3 -> b2, the torch dies);
+  // relight (b2's continue costs a torch) into c1, the large beast.
+  let at_c1 =
+    start
+    |> run(ResolveEvent("enter", 0.4))
+    |> run(ResolveEvent("continue", 0.3))
+    |> run(ResolveEvent("continue", 0.5))
+  let assert option.Some(cs) = at_c1.combat
+  cs.enemy.name |> should.equal("beast")
+  cs.enemy.health |> should.equal(10)
+  // Fell it with two steel-sword blows, take the cache (0.9 -> end2), which
+  // clears the cave into a road-connected outpost.
+  let cleared =
+    at_c1
+    |> run(ResolveStrike("steel sword", 0.5))
+    |> run(ResolveStrike("steel sword", 0.5))
+    |> run(CollectLoot([0.0, 0.0, 0.0, 0.0]))
+    |> run(ResolveEvent("continue", 0.9))
+  let assert option.Some(exp) = cleared.expedition
+  world.tile_at(exp.map, exp.pos.0, exp.pos.1)
+  |> should.equal(Ok(world.Outpost))
+  // Two torches spent: entering, then relighting.
+  state.get_store(cleared.state, "torch") |> should.equal(0)
+}
+
 pub fn a_parched_step_onto_the_village_is_a_safe_return_not_a_death_test() {
   // Bone dry and already thirsty, one step from home, having cleared the iron
   // mine. The village costs no supplies, so this is a safe return — not a death

@@ -941,6 +941,10 @@ fn apply_world_effect(
           Model(..model, expedition: Some(world.clear_mine(exp, building))),
           [],
         )
+        events.ClearDungeon -> #(
+          Model(..model, expedition: Some(world.clear_dungeon(exp))),
+          [],
+        )
         events.NoWorldEffect -> #(model, [])
       }
     _, _ -> #(model, [])
