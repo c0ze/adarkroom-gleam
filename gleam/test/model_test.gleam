@@ -675,3 +675,10 @@ pub fn a_hypo_mends_thirty_test() {
   cs.player_hp |> should.equal(31)
   model.on_cooldown(healed, "hypo") |> should.equal(True)
 }
+
+pub fn a_swing_starts_the_weapons_cooldown_test() {
+  let fighting = run(world_model(10), MaybeFight(0.0, 0.0))
+  let after = run(fighting, model.StrikeEnemy("iron sword"))
+  // The iron sword (2s cooldown) is now cooling — no rapid second swing.
+  model.on_cooldown(after, "attack_iron sword") |> should.equal(True)
+}
