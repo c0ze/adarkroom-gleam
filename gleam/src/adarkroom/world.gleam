@@ -60,6 +60,12 @@ pub fn tile_at(map: Map, x: Int, y: Int) -> Result(Tile, Nil) {
   dict.get(map, #(x, y))
 }
 
+/// Manhattan distance from the village at the centre of the map — how deep into
+/// the wilds a position lies, which sets the danger of the encounters there.
+pub fn distance(pos: #(Int, Int)) -> Int {
+  int.absolute_value(pos.0 - radius) + int.absolute_value(pos.1 - radius)
+}
+
 /// The chance weight of each terrain tile before stickiness.
 fn terrain_prob(t: Tile) -> Float {
   case t {

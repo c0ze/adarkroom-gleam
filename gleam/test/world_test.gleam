@@ -234,3 +234,10 @@ pub fn render_hides_unseen_ground_test() {
   // A far corner has not been seen.
   string.slice(row, 0, 1) |> should.equal(" ")
 }
+
+pub fn distance_is_manhattan_from_the_village_test() {
+  // The village sits at the centre (radius, radius).
+  world.distance(#(world.radius, world.radius)) |> should.equal(0)
+  world.distance(#(world.radius + 3, world.radius)) |> should.equal(3)
+  world.distance(#(world.radius - 2, world.radius + 4)) |> should.equal(6)
+}
