@@ -3,6 +3,7 @@
 //// that drive updates. `update` returns the new model together with any
 //// effects (e.g. one-shot timers for the builder's timed progression).
 
+import adarkroom/combat
 import adarkroom/craft
 import adarkroom/events
 import adarkroom/notifications.{type Notifications}
@@ -397,13 +398,55 @@ fn step(model: Model, dir: world.Dir) -> #(Model, Effect(Msg)) {
   }
 }
 
-/// Make it home safe — the expedition ends and the player returns to the room.
+/// Make it home safe — the carried supplies and loot are unloaded, then the
+/// expedition ends and the player returns to the room.
 fn go_home(model: Model) -> Model {
   Model(
     ..notify_world(model, ["a haze falls over the village"]),
+    state: return_outfit(model.state),
     location: Room,
     expedition: None,
   )
+}
+
+/// Unload the outfit on returning home (`returnOutfit`): every carried item is
+/// credited back to the stores; raw loot and resources are then unpacked, while
+/// supplies, weapons, and craftables stay in the loadout for the next trip.
+pub fn return_outfit(s: State) -> State {
+  list.fold(state.outfit_list(s), s, fn(acc, item) {
+    let acc = state.add_store(acc, item.0, item.1)
+    case leave_at_home(item.0) {
+      True -> state.set_outfit(acc, item.0, 0)
+      False -> acc
+    }
+  })
+}
+
+/// Whether an item is unpacked on return (loot/resources) rather than kept in
+/// the loadout (supplies, weapons, craftables) — the JS `leaveItAtHome`.
+fn leave_at_home(item: String) -> Bool {
+  let supply =
+    list.contains(
+      [
+        "cured meat",
+        "bullets",
+        "energy cell",
+        "charm",
+        "medicine",
+        "stim",
+        "hypo",
+      ],
+      item,
+    )
+  let weapon = case combat.get_weapon(item) {
+    Ok(_) -> True
+    Error(_) -> False
+  }
+  let craftable = case craft.get(item) {
+    Ok(_) -> True
+    Error(_) -> False
+  }
+  !supply && !weapon && !craftable
 }
 
 /// Die in the wilds: the supplies are lost and the player wakes in the room.

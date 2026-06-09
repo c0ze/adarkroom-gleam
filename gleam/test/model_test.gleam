@@ -505,6 +505,23 @@ pub fn saying_goodbye_closes_the_event_test() {
   after.active_event |> should.equal(option.None)
 }
 
+pub fn return_outfit_credits_carried_items_and_unpacks_loot_test() {
+  let s =
+    state.new()
+    |> state.set_outfit("cured meat", 3)
+    |> state.set_outfit("iron sword", 1)
+    |> state.set_outfit("fur", 40)
+  let after = model.return_outfit(s)
+  // everything carried is credited to the village stores
+  state.get_store(after, "cured meat") |> should.equal(3)
+  state.get_store(after, "iron sword") |> should.equal(1)
+  state.get_store(after, "fur") |> should.equal(40)
+  // supplies and weapons stay in the loadout; raw loot is unpacked
+  state.get_outfit(after, "cured meat") |> should.equal(3)
+  state.get_outfit(after, "iron sword") |> should.equal(1)
+  state.get_outfit(after, "fur") |> should.equal(0)
+}
+
 pub fn embarking_marks_the_world_as_reached_test() {
   let base = model.init()
   let m =
