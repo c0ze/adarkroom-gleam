@@ -40,3 +40,25 @@ pub fn the_barrens_holds_the_gaunt_man_test() {
   |> list.map(fn(e) { e.title })
   |> should.equal(["A Gaunt Man"])
 }
+
+pub fn tier_two_deepens_the_danger_test() {
+  // Beyond ten tiles the tier-1 foes give way to tougher ones.
+  encounters.available(15, world.Forest)
+  |> list.map(fn(e) { e.title })
+  |> should.equal(["A Man-Eater"])
+  // The barrens hold two: the shivering man and the scavenger.
+  encounters.available(15, world.Barrens) |> list.length |> should.equal(2)
+}
+
+pub fn tier_three_holds_ranged_foes_test() {
+  let assert Ok(soldier) = list.first(encounters.available(25, world.Barrens))
+  soldier.enemy.name |> should.equal("soldier")
+  soldier.enemy.ranged |> should.equal(True)
+  soldier.enemy.damage |> should.equal(8)
+  soldier.enemy.health |> should.equal(50)
+}
+
+pub fn the_pool_spans_all_three_tiers_test() {
+  // 4 tier-1 + 4 tier-2 + 3 tier-3.
+  encounters.encounters() |> list.length |> should.equal(11)
+}

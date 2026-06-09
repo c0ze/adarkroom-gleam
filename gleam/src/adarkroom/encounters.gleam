@@ -76,6 +76,82 @@ pub fn encounters() -> List(Encounter) {
       ),
       "a two-headed creature appears, the smaller head trembling",
     ),
+    // --- Tier 2: eleven to twenty tiles out ---
+    tier2(
+      "A Shivering Man",
+      world.Barrens,
+      melee("shivering man", "E", 20, 5, 0.5, 1, "the shivering man is dead", [
+        LootEntry("cloth", 1, 1, 0.2),
+        LootEntry("teeth", 1, 2, 0.8),
+        LootEntry("leather", 1, 1, 0.2),
+        LootEntry("medicine", 1, 3, 0.7),
+      ]),
+      "a shivering man approaches and attacks with surprising strength",
+    ),
+    tier2(
+      "A Man-Eater",
+      world.Forest,
+      melee("man-eater", "T", 25, 3, 0.8, 1, "the man-eater is dead", [
+        LootEntry("fur", 5, 10, 1.0),
+        LootEntry("meat", 5, 10, 1.0),
+        LootEntry("teeth", 5, 10, 0.8),
+      ]),
+      "a large creature attacks, claws freshly bloodied",
+    ),
+    tier2(
+      "A Scavenger",
+      world.Barrens,
+      melee("scavenger", "E", 30, 4, 0.8, 2, "the scavenger is dead", [
+        LootEntry("cloth", 5, 10, 0.8),
+        LootEntry("leather", 5, 10, 0.8),
+        LootEntry("iron", 1, 5, 0.5),
+        LootEntry("medicine", 1, 2, 0.1),
+      ]),
+      "a scavenger draws close, hoping for an easy score",
+    ),
+    tier2(
+      "A Huge Lizard",
+      world.Field,
+      melee("lizard", "T", 20, 5, 0.8, 2, "the lizard is dead", [
+        LootEntry("scales", 5, 10, 0.8),
+        LootEntry("teeth", 5, 10, 0.5),
+        LootEntry("meat", 5, 10, 0.8),
+      ]),
+      "the grass thrashes wildly as a huge lizard pushes through",
+    ),
+    // --- Tier 3: deeper than twenty tiles ---
+    tier3(
+      "A Feral Terror",
+      world.Forest,
+      melee("feral terror", "T", 45, 6, 0.8, 1, "the feral terror is dead", [
+        LootEntry("fur", 5, 10, 1.0),
+        LootEntry("meat", 5, 10, 1.0),
+        LootEntry("teeth", 5, 10, 0.8),
+      ]),
+      "a beast, wilder than imagining, erupts out of the foliage",
+    ),
+    tier3(
+      "A Soldier",
+      world.Barrens,
+      ranged("soldier", "D", 50, 8, 0.8, 2, "the soldier is dead", [
+        LootEntry("cloth", 5, 10, 0.8),
+        LootEntry("bullets", 1, 5, 0.5),
+        LootEntry("rifle", 1, 1, 0.2),
+        LootEntry("medicine", 1, 2, 0.1),
+      ]),
+      "a soldier opens fire from across the desert",
+    ),
+    tier3(
+      "A Sniper",
+      world.Field,
+      ranged("sniper", "D", 30, 15, 0.8, 4, "the sniper is dead", [
+        LootEntry("cloth", 5, 10, 0.8),
+        LootEntry("bullets", 1, 5, 0.5),
+        LootEntry("rifle", 1, 1, 0.2),
+        LootEntry("medicine", 1, 2, 0.1),
+      ]),
+      "a shot rings out, from somewhere in the long grass",
+    ),
   ]
 }
 
@@ -115,6 +191,57 @@ fn melee(
     hit:,
     attack_delay:,
     ranged: False,
+    death_message:,
+    loot:,
+  )
+}
+
+/// A Tier 2 encounter (distance 11–20).
+fn tier2(
+  title: String,
+  terrain: Tile,
+  enemy: Enemy,
+  notification: String,
+) -> Encounter {
+  Encounter(title:, min_dist: 11, max_dist: 20, terrain:, enemy:, notification:)
+}
+
+/// A Tier 3 encounter (distance 21 and beyond).
+fn tier3(
+  title: String,
+  terrain: Tile,
+  enemy: Enemy,
+  notification: String,
+) -> Encounter {
+  Encounter(
+    title:,
+    min_dist: 21,
+    max_dist: 9999,
+    terrain:,
+    enemy:,
+    notification:,
+  )
+}
+
+/// A ranged enemy (the desert soldiers and snipers).
+fn ranged(
+  name: String,
+  chara: String,
+  health: Int,
+  damage: Int,
+  hit: Float,
+  attack_delay: Int,
+  death_message: String,
+  loot: List(LootEntry),
+) -> Enemy {
+  Enemy(
+    name:,
+    chara:,
+    health:,
+    damage:,
+    hit:,
+    attack_delay:,
+    ranged: True,
     death_message:,
     loot:,
   )
