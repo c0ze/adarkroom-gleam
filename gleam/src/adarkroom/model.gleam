@@ -403,7 +403,15 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
       #(model, enemy_timer(model.combat))
     }
 
-    StrikeEnemy(weapon: weapon) -> #(model, roll_strike(weapon))
+    StrikeEnemy(weapon: weapon) ->
+      case on_cooldown(model, "attack_" <> weapon) {
+        // Still recovering from the last swing — ignore the click.
+        True -> #(model, effect.none())
+        False -> #(
+          start_cooldown(model, "attack_" <> weapon, weapon_cooldown_ms(weapon)),
+          roll_strike(weapon),
+        )
+      }
 
     ResolveStrike(weapon: weapon, roll: roll) ->
       resolve_strike(model, weapon, roll)
@@ -570,6 +578,14 @@ fn heal_cooldown(item: String) -> #(String, Int) {
     "medicine" -> #("meds", 7000)
     "hypo" -> #("hypo", 7000)
     _ -> #("heal", 5000)
+  }
+}
+
+/// How long (ms) a weapon takes to recover between swings.
+fn weapon_cooldown_ms(weapon: String) -> Int {
+  case combat.get_weapon(weapon) {
+    Ok(w) -> w.cooldown * 1000
+    Error(_) -> 0
   }
 }
 

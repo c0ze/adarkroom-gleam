@@ -172,28 +172,27 @@ fn combat_overlay(m: Model) -> List(Element(Msg)) {
 /// own cooldown after use.
 fn heal_buttons(m: Model) -> List(Element(Msg)) {
   [
-    #("cured meat", "eat meat", "eat"),
-    #("medicine", "use meds", "meds"),
-    #("hypo", "use hypo", "hypo"),
+    #("cured meat", "eat meat", "eat", 5000),
+    #("medicine", "use meds", "meds", 7000),
+    #("hypo", "use hypo", "hypo", 7000),
   ]
   |> list.filter_map(fn(t) {
-    let #(item, label, cooldown_id) = t
+    let #(item, label, cooldown_id, cooldown_ms) = t
     case state.get_outfit(m.state, item) > 0 {
-      True -> Ok(heal_button(item, label, model.on_cooldown(m, cooldown_id)))
+      True ->
+        Ok(
+          button.button(button.Config(
+            text: label,
+            on_click: Heal(item),
+            cost: [],
+            disabled: False,
+            cooldown: model.cooldown_fraction(m, cooldown_id, cooldown_ms),
+            id: cooldown_id,
+          )),
+        )
       False -> Error(Nil)
     }
   })
-}
-
-fn heal_button(item: String, label: String, cooling: Bool) -> Element(Msg) {
-  case cooling {
-    True ->
-      html.div([attribute.class("button disabled")], [element.text(label)])
-    False ->
-      html.div([attribute.class("button"), event.on_click(Heal(item))], [
-        element.text(label),
-      ])
-  }
 }
 
 /// One fighter: a glyph and its HP, as `createFighterDiv` builds.
@@ -207,26 +206,29 @@ fn fighter_div(id: String, label: String, hp: Int, max: Int) -> Element(Msg) {
 }
 
 /// The attack buttons a fight offers — one per usable weapon, disabled when its
-/// ammo has run dry.
+/// ammo has run dry and showing a cooldown bar between swings.
 fn attack_buttons(m: Model, _cs: combat.CombatState) -> List(Element(Msg)) {
   list.filter_map(combat.attack_options(m.state), fn(name) {
     case combat.get_weapon(name) {
-      Ok(weapon) ->
-        Ok(attack_button(name, combat.can_attack_with(weapon, m.state)))
+      Ok(weapon) -> Ok(attack_button(m, name, weapon))
       Error(_) -> Error(Nil)
     }
   })
 }
 
-fn attack_button(name: String, usable: Bool) -> Element(Msg) {
-  case usable {
-    True ->
-      html.div([attribute.class("button"), event.on_click(StrikeEnemy(name))], [
-        element.text(name),
-      ])
-    False ->
-      html.div([attribute.class("button disabled")], [element.text(name)])
-  }
+fn attack_button(m: Model, name: String, weapon: combat.Weapon) -> Element(Msg) {
+  button.button(button.Config(
+    text: name,
+    on_click: StrikeEnemy(name),
+    cost: [],
+    disabled: !combat.can_attack_with(weapon, m.state),
+    cooldown: model.cooldown_fraction(
+      m,
+      "attack_" <> name,
+      weapon.cooldown * 1000,
+    ),
+    id: "attack_" <> name,
+  ))
 }
 
 /// The event modal, present only while an event is on screen.

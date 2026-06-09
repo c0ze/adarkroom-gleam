@@ -675,3 +675,25 @@ pub fn a_hypo_mends_thirty_test() {
   cs.player_hp |> should.equal(31)
   model.on_cooldown(healed, "hypo") |> should.equal(True)
 }
+
+pub fn a_swing_starts_the_weapons_cooldown_test() {
+  let fighting = run(world_model(10), MaybeFight(0.0, 0.0))
+  let after = run(fighting, model.StrikeEnemy("iron sword"))
+  // The iron sword (2s cooldown) is now cooling — no rapid second swing.
+  model.on_cooldown(after, "attack_iron sword") |> should.equal(True)
+}
+
+pub fn a_weapon_on_cooldown_refuses_a_second_swing_test() {
+  let fighting = run(world_model(10), MaybeFight(0.0, 0.0))
+  // Arm the iron sword with a far-future deadline, then try to swing again.
+  let cooling =
+    model.Model(
+      ..fighting,
+      now: 1000,
+      cooldowns: dict.insert(fighting.cooldowns, "attack_iron sword", 999_999),
+    )
+  let after = run(cooling, model.StrikeEnemy("iron sword"))
+  // The deadline is untouched — the swing was refused, not re-armed (which
+  // would have dropped it to now + 2000).
+  dict.get(after.cooldowns, "attack_iron sword") |> should.equal(Ok(999_999))
+}
