@@ -524,10 +524,14 @@ fn collect_loot(model: Model, rolls: List(Float)) -> Model {
           ..exp,
           vitals: world.Vitals(..exp.vitals, health: cs.player_hp),
         )
-      let messages = [
-        cs.enemy.death_message,
-        ..list.map(loot, fn(l) { int.to_string(l.1) <> " " <> l.0 })
-      ]
+      // A setpiece enemy carries no death message (the scene's buttons take
+      // over); drop the blank so it isn't logged.
+      let messages =
+        [
+          cs.enemy.death_message,
+          ..list.map(loot, fn(l) { int.to_string(l.1) <> " " <> l.0 })
+        ]
+        |> list.filter(fn(m) { m != "" })
       notify_world(
         Model(..model, state:, expedition: Some(exp), combat: None),
         messages,
@@ -736,6 +740,8 @@ fn die(model: Model) -> Model {
     location: Room,
     expedition: None,
     combat: None,
+    // A setpiece modal closes with the death — there's no scene to return to.
+    active_event: None,
   )
 }
 
@@ -852,7 +858,29 @@ fn load_scene(
       ),
       list.append(world_messages, messages),
     )
-  #(model, setpiece_loot_effect(scene))
+  // A combat scene starts a fight on entry (its loot lands on the win, the way
+  // an encounter's does); a story scene grants any loot straight away.
+  case combat_scene_enemy(scene), model.expedition {
+    Some(foe), Some(exp) -> {
+      let cs =
+        combat.begin_combat(
+          foe,
+          exp.vitals.health,
+          world.max_health(model.state),
+        )
+      let model = Model(..model, combat: Some(cs))
+      #(model, enemy_timer(model.combat))
+    }
+    _, _ -> #(model, setpiece_loot_effect(scene))
+  }
+}
+
+/// The inline enemy of a combat setpiece scene, if it is one.
+fn combat_scene_enemy(scene: events.Scene) -> Option(combat.Enemy) {
+  case scene.combat, scene.setpiece {
+    True, Some(events.SetpieceExtra(enemy: enemy, ..)) -> enemy
+    _, _ -> None
+  }
 }
 
 /// A setpiece scene's world-level `onLoad`: mark the landmark under the player
@@ -871,6 +899,15 @@ fn apply_world_effect(
         )
         events.UseOutpost -> #(
           Model(..model, expedition: Some(world.use_outpost(exp, model.state))),
+          ["water replenished"],
+        )
+        events.RefillSupplies -> #(
+          Model(
+            ..model,
+            expedition: Some(
+              world.mark_visited(world.refill_water(exp, model.state)),
+            ),
+          ),
           ["water replenished"],
         )
         events.NoWorldEffect -> #(model, [])

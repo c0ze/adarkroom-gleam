@@ -786,3 +786,89 @@ pub fn the_swamp_wanderer_grants_gastronome_for_a_charm_test() {
   let assert option.Some(exp) = talked.expedition
   set.contains(exp.visited, exp.pos) |> should.be_true
 }
+
+// --- setpiece combat scenes (the house) -------------------------------------
+
+/// Arrive at the house and take the `enter` branch the roll selects.
+fn enter_house(roll: Float) -> model.Model {
+  run(
+    run(at_landmark(world.House), model.MoveEast),
+    ResolveEvent("enter", roll),
+  )
+}
+
+pub fn an_occupied_house_starts_the_squatter_fight_test() {
+  // 0.7 lands in the third branch ({0.25: medicine, 0.5: supplies, 1: occupied}).
+  let occupied = enter_house(0.7)
+  let assert option.Some(cs) = occupied.combat
+  cs.enemy.name |> should.equal("squatter")
+  // The scene is still active — its buttons return once the fight is won.
+  occupied.active_event |> should.not_equal(option.None)
+}
+
+pub fn winning_the_squatter_fight_drops_loot_and_keeps_the_scene_test() {
+  let occupied = enter_house(0.7)
+  // Two steel-sword blows (6 each) fell the 10-hp squatter.
+  let won =
+    occupied
+    |> run(ResolveStrike("steel sword", 0.5))
+    |> run(ResolveStrike("steel sword", 0.5))
+  let assert option.Some(cs) = won.combat
+  cs.won |> should.be_true
+  // The squatter's loot (cured meat/leather/cloth: 3 entries) lands in the
+  // outfit; the scene stays active so its leave button shows.
+  let done = run(won, CollectLoot([0.0, 0.0, 0.0, 0.0, 0.0, 0.0]))
+  done.combat |> should.equal(option.None)
+  done.active_event |> should.not_equal(option.None)
+  state.get_outfit(done.state, "cured meat") |> should.equal(1)
+  state.get_outfit(done.state, "cloth") |> should.equal(1)
+  // Leaving ends the setpiece.
+  run(done, ResolveEvent("leave", 0.5)).active_event
+  |> should.equal(option.None)
+}
+
+pub fn dying_in_the_house_closes_the_setpiece_test() {
+  let base = at_landmark(world.House)
+  let assert option.Some(exp0) = base.expedition
+  let wounded =
+    model.Model(
+      ..base,
+      expedition: option.Some(
+        world.Expedition(..exp0, vitals: world.Vitals(..exp0.vitals, health: 1)),
+      ),
+    )
+  let occupied = run(run(wounded, model.MoveEast), ResolveEvent("enter", 0.7))
+  // The squatter's blow (3 dmg, 0.0 ≤ 0.8 hit) fells the 1-hp player.
+  let dead = run(occupied, ResolveEnemyTurn(0.0))
+  dead.location |> should.equal(model.Room)
+  dead.combat |> should.equal(option.None)
+  dead.active_event |> should.equal(option.None)
+  dead.expedition |> should.equal(option.None)
+}
+
+pub fn the_house_well_refills_water_and_marks_visited_test() {
+  let base = at_landmark(world.House)
+  let assert option.Some(exp0) = base.expedition
+  let parched =
+    model.Model(
+      ..base,
+      expedition: option.Some(
+        world.Expedition(..exp0, vitals: world.Vitals(..exp0.vitals, water: 3)),
+      ),
+    )
+  // 0.3 lands in the second branch (supplies — the old well).
+  let supplies = run(run(parched, model.MoveEast), ResolveEvent("enter", 0.3))
+  let assert option.Some(exp) = supplies.expedition
+  exp.vitals.water |> should.equal(world.max_water(supplies.state))
+  set.contains(exp.visited, exp.pos) |> should.be_true
+  // No fight — the well is a story scene.
+  supplies.combat |> should.equal(option.None)
+}
+
+pub fn the_house_floorboards_hide_medicine_test() {
+  // 0.1 lands in the first branch (medicine).
+  let medicine = enter_house(0.1)
+  medicine.combat |> should.equal(option.None)
+  let looted = run(medicine, model.SetpieceLoot([0.0, 0.0]))
+  state.get_outfit(looted.state, "medicine") |> should.equal(2)
+}
