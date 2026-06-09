@@ -5,6 +5,7 @@
 
 import adarkroom/combat
 import adarkroom/craft
+import adarkroom/encounters
 import adarkroom/events
 import adarkroom/notifications.{type Notifications}
 import adarkroom/outside
@@ -88,6 +89,18 @@ pub type Msg {
   ChooseEvent(id: String)
   /// Apply the chosen button's outcome (the roll resolves any `Branch`).
   ResolveEvent(id: String, roll: Float)
+  /// After a world step, maybe spring an encounter (rolls: trigger, then pick).
+  MaybeFight(fight_roll: Float, pick_roll: Float)
+  /// The player swings the named weapon at the enemy; rolls then resolves.
+  StrikeEnemy(weapon: String)
+  /// Apply the player's swing (the roll is its hit chance).
+  ResolveStrike(weapon: String, roll: Float)
+  /// The enemy takes its turn; rolls then resolves.
+  EnemyTurn
+  /// Apply the enemy's blow (the roll is its hit chance).
+  ResolveEnemyTurn(roll: Float)
+  /// Gather the defeated enemy's loot from the supplied rolls (two per drop).
+  CollectLoot(rolls: List(Float))
 }
 
 pub type Model {
@@ -115,6 +128,11 @@ pub type Model {
     /// Wall-clock deadline (ms) for the next random event; `0` until first
     /// scheduled. Runtime-only, like the cooldowns.
     next_event_at: Int,
+    /// The fight currently underway out in the world, if any. Runtime-only.
+    combat: Option(combat.CombatState),
+    /// Steps taken since the last world fight (the `fightMove` counter), so
+    /// encounters can't crowd together. Reset each expedition. Runtime-only.
+    fight_move: Int,
   )
 }
 
@@ -137,6 +155,8 @@ pub fn init() -> Model {
     expedition: None,
     active_event: None,
     next_event_at: 0,
+    combat: None,
+    fight_move: 0,
   )
 }
 
@@ -332,6 +352,8 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
               state: stocked,
               location: World,
               expedition: Some(exp),
+              fight_move: 0,
+              combat: None,
             ),
             effect.none(),
           )
@@ -372,15 +394,163 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
       resolve_event(model, id, roll),
       effect.none(),
     )
+
+    MaybeFight(fight_roll: fight_roll, pick_roll: pick_roll) -> #(
+      maybe_start_fight(model, fight_roll, pick_roll),
+      effect.none(),
+    )
+
+    StrikeEnemy(weapon: weapon) -> #(model, roll_strike(weapon))
+
+    ResolveStrike(weapon: weapon, roll: roll) ->
+      resolve_strike(model, weapon, roll)
+
+    EnemyTurn -> #(model, roll_enemy_turn())
+
+    ResolveEnemyTurn(roll: roll) -> #(
+      resolve_enemy_turn(model, roll),
+      effect.none(),
+    )
+
+    CollectLoot(rolls: rolls) -> #(collect_loot(model, rolls), effect.none())
   }
+}
+
+// --- world combat -----------------------------------------------------------
+
+/// After a live step, check for an encounter and, if the dice favour it, pick
+/// one for the current distance and terrain and begin the fight.
+fn maybe_start_fight(model: Model, fight_roll: Float, pick_roll: Float) -> Model {
+  case model.expedition, model.combat {
+    Some(exp), None -> {
+      let #(triggered, fight_move) =
+        combat.check_fight(model.state, model.fight_move, fight_roll)
+      let model = Model(..model, fight_move:)
+      case triggered, world.tile_at(exp.map, exp.pos.0, exp.pos.1) {
+        True, Ok(tile) -> {
+          let options = encounters.available(world.distance(exp.pos), tile)
+          case events.pick(options, pick_roll) {
+            Ok(encounter) -> start_fight(model, exp, encounter)
+            Error(_) -> model
+          }
+        }
+        _, _ -> model
+      }
+    }
+    _, _ -> model
+  }
+}
+
+/// Begin a fight: the enemy at full health, the player at the expedition's.
+fn start_fight(
+  model: Model,
+  exp: Expedition,
+  encounter: encounters.Encounter,
+) -> Model {
+  let cs =
+    combat.begin_combat(
+      encounter.enemy,
+      exp.vitals.health,
+      world.max_health(model.state),
+    )
+  notify_world(Model(..model, combat: Some(cs)), [encounter.notification])
+}
+
+/// Resolve a player's swing. Winning the fight rolls the enemy's loot.
+fn resolve_strike(
+  model: Model,
+  weapon_name: String,
+  roll: Float,
+) -> #(Model, Effect(Msg)) {
+  case model.combat, combat.get_weapon(weapon_name) {
+    Some(cs), Ok(weapon) -> {
+      let cs = combat.player_strike(cs, weapon, model.state, roll)
+      let model = Model(..model, combat: Some(cs))
+      case cs.won {
+        True -> #(model, roll_loot(cs.enemy))
+        False -> #(model, effect.none())
+      }
+    }
+    _, _ -> #(model, effect.none())
+  }
+}
+
+/// Resolve the enemy's blow. Should it fell the player, the expedition ends.
+fn resolve_enemy_turn(model: Model, roll: Float) -> Model {
+  case model.combat {
+    Some(cs) -> {
+      let cs = combat.enemy_strike(cs, model.state, roll)
+      case cs.player_hp <= 0 {
+        True -> die(model)
+        False -> Model(..model, combat: Some(cs))
+      }
+    }
+    None -> model
+  }
+}
+
+/// Take the defeated enemy's loot into the carried outfit, carry the wound back
+/// to the expedition, and resume walking.
+fn collect_loot(model: Model, rolls: List(Float)) -> Model {
+  case model.combat, model.expedition {
+    Some(cs), Some(exp) -> {
+      let loot = combat.roll_loot(cs.enemy.loot, rolls)
+      let state =
+        list.fold(loot, model.state, fn(s, item) {
+          state.set_outfit(s, item.0, state.get_outfit(s, item.0) + item.1)
+        })
+      let exp =
+        world.Expedition(
+          ..exp,
+          vitals: world.Vitals(..exp.vitals, health: cs.player_hp),
+        )
+      let messages = [
+        cs.enemy.death_message,
+        ..list.map(loot, fn(l) { int.to_string(l.1) <> " " <> l.0 })
+      ]
+      notify_world(
+        Model(..model, state:, expedition: Some(exp), combat: None),
+        messages,
+      )
+    }
+    _, _ -> Model(..model, combat: None)
+  }
+}
+
+/// An effect that rolls for an encounter (trigger + pick) after a step.
+fn roll_fight() -> Effect(Msg) {
+  effect.from(fn(dispatch) { dispatch(MaybeFight(rng.random(), rng.random())) })
+}
+
+/// An effect that rolls the player's hit and reports it as `ResolveStrike`.
+fn roll_strike(weapon: String) -> Effect(Msg) {
+  effect.from(fn(dispatch) { dispatch(ResolveStrike(weapon, rng.random())) })
+}
+
+/// An effect that rolls the enemy's hit and reports it as `ResolveEnemyTurn`.
+fn roll_enemy_turn() -> Effect(Msg) {
+  effect.from(fn(dispatch) { dispatch(ResolveEnemyTurn(rng.random())) })
+}
+
+/// An effect that rolls a defeated enemy's loot (two samples per drop).
+fn roll_loot(enemy: combat.Enemy) -> Effect(Msg) {
+  effect.from(fn(dispatch) {
+    let rolls =
+      list.map(list.repeat(Nil, list.length(enemy.loot) * 2), fn(_) {
+        rng.random()
+      })
+    dispatch(CollectLoot(rolls))
+  })
 }
 
 /// Take one step in the world, then resolve where it leaves the player: safely
 /// home at the village, dead in the wilds, or still out exploring.
 fn step(model: Model, dir: world.Dir) -> #(Model, Effect(Msg)) {
-  case model.expedition {
-    None -> #(model, effect.none())
-    Some(exp) -> {
+  case model.combat, model.expedition {
+    // No wandering off mid-fight.
+    Some(_), _ -> #(model, effect.none())
+    _, None -> #(model, effect.none())
+    _, Some(exp) -> {
       let s = world.move(model.state, exp, dir)
       let model = notify_world(Model(..model, state: s.state), s.messages)
       let on_village =
@@ -389,9 +559,10 @@ fn step(model: Model, dir: world.Dir) -> #(Model, Effect(Msg)) {
       case s.alive, on_village {
         _, True -> #(go_home(model), effect.none())
         False, _ -> #(die(model), effect.none())
+        // Still out in the wilds — a fresh step may spring an encounter.
         True, False -> #(
           Model(..model, expedition: Some(s.expedition)),
-          effect.none(),
+          roll_fight(),
         )
       }
     }
@@ -406,6 +577,7 @@ fn go_home(model: Model) -> Model {
     state: return_outfit(model.state),
     location: Room,
     expedition: None,
+    combat: None,
   )
 }
 
@@ -457,6 +629,7 @@ fn die(model: Model) -> Model {
     state: state.State(..model.state, outfit: dict.new()),
     location: Room,
     expedition: None,
+    combat: None,
   )
 }
 

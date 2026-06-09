@@ -1,6 +1,7 @@
 import adarkroom/craft
 import adarkroom/model.{
-  Navigate, ResolveEvent, ScheduleEvent, Tick, TriggerEvent,
+  CollectLoot, MaybeFight, Navigate, ResolveEnemyTurn, ResolveEvent,
+  ResolveStrike, ScheduleEvent, Tick, TriggerEvent,
 }
 import adarkroom/notifications
 import adarkroom/outside
@@ -8,6 +9,7 @@ import adarkroom/rng
 import adarkroom/room
 import adarkroom/state
 import adarkroom/world
+import gleam/dict
 import gleam/list
 import gleam/option
 import gleam/set
@@ -539,4 +541,81 @@ pub fn schedule_event_sets_the_next_deadline_test() {
   let m = model.Model(..base, now: 5000)
   // floor(0.0 * 3) + 3 = 3 minutes = 180_000 ms from now.
   run(m, ScheduleEvent(0.0)).next_event_at |> should.equal(185_000)
+}
+
+// --- world combat -----------------------------------------------------------
+
+/// An expedition standing on forest, `dist` tiles into the wilds, the player at
+/// `health` HP.
+fn forest_expedition(dist: Int, health: Int) -> world.Expedition {
+  let pos = #(world.radius + dist, world.radius)
+  world.Expedition(
+    pos: pos,
+    map: dict.from_list([#(pos, world.Forest)]),
+    seen: set.new(),
+    vitals: world.Vitals(
+      water: 10,
+      health: health,
+      food_move: 0,
+      water_move: 0,
+      starvation: False,
+      thirst: False,
+    ),
+  )
+}
+
+/// A model out in the world, far enough since the last fight for one to spring.
+fn world_model(health: Int) -> model.Model {
+  let base = model.init()
+  model.Model(
+    ..base,
+    location: model.World,
+    expedition: option.Some(forest_expedition(3, health)),
+    fight_move: 4,
+  )
+}
+
+pub fn a_step_in_the_forest_can_spring_an_encounter_test() {
+  // fight_move 4 (> delay 3); a 0.0 trigger roll fires; pick the first forest foe.
+  let after = run(world_model(10), MaybeFight(0.0, 0.0))
+  let assert option.Some(cs) = after.combat
+  cs.enemy.name |> should.equal("snarling beast")
+  cs.player_hp |> should.equal(10)
+}
+
+pub fn a_calm_step_starts_no_fight_test() {
+  // 0.9 is above the 0.2 fight chance.
+  run(world_model(10), MaybeFight(0.9, 0.0)).combat
+  |> should.equal(option.None)
+}
+
+pub fn felling_the_enemy_wins_and_drops_loot_into_the_outfit_test() {
+  let fighting = run(world_model(10), MaybeFight(0.0, 0.0))
+  // steel sword deals 6 > the beast's 5 HP; a 0.5 roll lands.
+  let won = run(fighting, ResolveStrike("steel sword", 0.5))
+  let assert option.Some(cs) = won.combat
+  cs.won |> should.equal(True)
+  // Collect: fur/meat/teeth, each chance roll passes and each qty roll → min 1.
+  let done = run(won, CollectLoot([0.0, 0.0, 0.0, 0.0, 0.0, 0.0]))
+  done.combat |> should.equal(option.None)
+  state.get_outfit(done.state, "fur") |> should.equal(1)
+  state.get_outfit(done.state, "meat") |> should.equal(1)
+  state.get_outfit(done.state, "teeth") |> should.equal(1)
+}
+
+pub fn a_lethal_enemy_blow_ends_the_expedition_test() {
+  // The player starts the fight on 1 HP; the beast's blow fells them.
+  let fighting = run(world_model(1), MaybeFight(0.0, 0.0))
+  let dead = run(fighting, ResolveEnemyTurn(0.0))
+  dead.location |> should.equal(model.Room)
+  dead.expedition |> should.equal(option.None)
+  dead.combat |> should.equal(option.None)
+}
+
+pub fn you_cannot_wander_off_mid_fight_test() {
+  let fighting = run(world_model(10), MaybeFight(0.0, 0.0))
+  let after = run(fighting, model.MoveNorth)
+  // The fight (and position) are untouched by the blocked move.
+  after.combat |> should.equal(fighting.combat)
+  after.expedition |> should.equal(fighting.expedition)
 }
