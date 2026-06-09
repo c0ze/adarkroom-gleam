@@ -515,6 +515,10 @@ pub type Expedition {
     vitals: Vitals,
     visited: Set(#(Int, Int)),
     used_outposts: Set(#(Int, Int)),
+    /// The mines cleared this trip, by building name (`"iron mine"`, …). The JS
+    /// flags these on the world and grants the building on a safe return home;
+    /// we credit them in `go_home`.
+    mines_cleared: Set(String),
   )
 }
 
@@ -556,6 +560,7 @@ pub fn begin(map: Map, s: State) -> Expedition {
     ),
     visited: set.new(),
     used_outposts: set.new(),
+    mines_cleared: set.new(),
   )
 }
 
@@ -627,6 +632,15 @@ pub fn lay_road(exp: Expedition) -> Expedition {
 pub fn clear_dungeon(exp: Expedition) -> Expedition {
   let map = dict.insert(exp.map, exp.pos, Outpost)
   Expedition(..exp, map: draw_road(map, exp.pos))
+}
+
+/// Clear the mine under the player: road it home, mark it dealt with, and flag
+/// its `building` so `go_home` grants it on a safe return (`World.state.<mine>`).
+pub fn clear_mine(exp: Expedition, building: String) -> Expedition {
+  Expedition(
+    ..mark_visited(lay_road(exp)),
+    mines_cleared: set.insert(exp.mines_cleared, building),
+  )
 }
 
 /// Pave an L-shaped road from `from` to the nearest existing road, mirroring

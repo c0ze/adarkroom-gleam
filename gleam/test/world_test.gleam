@@ -264,6 +264,7 @@ fn standing_on(tile: world.Tile) -> world.Expedition {
     vitals: world.Vitals(10, 10, 0, 0, False, False),
     visited: set.new(),
     used_outposts: set.new(),
+    mines_cleared: set.new(),
   )
 }
 
@@ -348,6 +349,7 @@ pub fn clear_dungeon_makes_an_outpost_joined_by_road_test() {
       vitals: world.Vitals(10, 10, 0, 0, False, False),
       visited: set.new(),
       used_outposts: set.new(),
+      mines_cleared: set.new(),
     )
   let cleared = world.clear_dungeon(exp)
   world.tile_at(cleared.map, 33, 30) |> should.equal(Ok(world.Outpost))
@@ -363,6 +365,7 @@ pub fn lay_road_paves_from_the_players_tile_test() {
       vitals: world.Vitals(10, 10, 0, 0, False, False),
       visited: set.new(),
       used_outposts: set.new(),
+      mines_cleared: set.new(),
     )
   let roaded = world.lay_road(exp)
   world.tile_at(roaded.map, 32, 30) |> should.equal(Ok(world.Road))
