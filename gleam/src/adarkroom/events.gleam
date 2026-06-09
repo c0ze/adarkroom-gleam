@@ -6,6 +6,7 @@
 //// next scene), and the next-event timing. The modal UI and the tick-based
 //// scheduler are wired on top in the app layer.
 
+import adarkroom/combat
 import adarkroom/craft
 import adarkroom/state
 import gleam/float
@@ -52,6 +53,25 @@ pub fn button_available(button: SceneButton, s: state.State) -> Bool {
   }
 }
 
+/// A scene's `onLoad` side effect on the world expedition, beyond what `on_load`
+/// can do to `State`. Setpieces mutate the live expedition — marking a landmark
+/// dealt with, or drinking an outpost dry — which the model applies. (`drawRoad`
+/// / `clearDungeon` join this list with the mines.)
+pub type WorldEffect {
+  NoWorldEffect
+  /// `World.markVisited` — the landmark won't fire again this trip.
+  MarkVisited
+  /// `World.useOutpost` — refill water to the brim, spend the outpost.
+  UseOutpost
+}
+
+/// The extra machinery a setpiece scene carries on top of a plain event scene:
+/// a loot table granted on entry and a world-level `onLoad` effect. Inline
+/// combat enemies join this in the combat-scene work.
+pub type SetpieceExtra {
+  SetpieceExtra(loot: List(combat.LootEntry), world_effect: WorldEffect)
+}
+
 /// One screen of an event: prose, an optional notification/reward on entry, and
 /// the buttons (kept in order).
 pub type Scene {
@@ -64,6 +84,9 @@ pub type Scene {
     /// Arbitrary effect run on entry (`onLoad`): computed rewards, flags, perks.
     /// Returns the new state and any extra messages.
     on_load: Option(fn(state.State) -> #(state.State, List(String))),
+    /// Present on setpiece scenes: loot and world-level `onLoad`. `None` on the
+    /// random events, which touch only `State`.
+    setpiece: Option(SetpieceExtra),
   )
 }
 
@@ -281,6 +304,7 @@ fn nomad() -> Event {
       notification: option.Some("a nomad arrives, looking to trade"),
       reward: [],
       combat: False,
+      setpiece: option.None,
       on_load: option.None,
       buttons: [
         #(
@@ -373,6 +397,7 @@ fn noises_through_walls() -> Event {
           ),
           reward: [],
           combat: False,
+          setpiece: option.None,
           on_load: option.None,
           buttons: [
             #(
@@ -393,6 +418,7 @@ fn noises_through_walls() -> Event {
           notification: option.None,
           reward: [],
           combat: False,
+          setpiece: option.None,
           on_load: option.None,
           buttons: [#("backinside", choice("go back inside", End))],
         ),
@@ -407,6 +433,7 @@ fn noises_through_walls() -> Event {
           notification: option.None,
           reward: [#("wood", 100), #("fur", 10)],
           combat: False,
+          setpiece: option.None,
           on_load: option.None,
           buttons: [#("backinside", choice("go back inside", End))],
         ),
@@ -432,6 +459,7 @@ fn noises_in_store_room() -> Event {
           notification: option.Some("something's in the store room"),
           reward: [],
           combat: False,
+          setpiece: option.None,
           on_load: option.None,
           buttons: [
             #(
@@ -459,6 +487,7 @@ fn scavenged_scene(litter: String, material: String) -> Scene {
     notification: option.None,
     reward: [],
     combat: False,
+    setpiece: option.None,
     on_load: option.Some(scavenge(material)),
     buttons: [#("leave", choice("leave", End))],
   )
@@ -494,6 +523,7 @@ fn beggar() -> Event {
           notification: option.Some("a beggar arrives"),
           reward: [],
           combat: False,
+          setpiece: option.None,
           on_load: option.None,
           buttons: [
             #(
@@ -533,6 +563,7 @@ fn beggar_thanks(material: String, litter: String) -> Scene {
     notification: option.None,
     reward: [#(material, 20)],
     combat: False,
+    setpiece: option.None,
     on_load: option.None,
     buttons: [#("leave", choice("say goodbye", End))],
   )
@@ -558,6 +589,7 @@ fn shady_builder() -> Event {
           notification: option.Some("a shady builder passes through"),
           reward: [],
           combat: False,
+          setpiece: option.None,
           on_load: option.None,
           buttons: [
             #(
@@ -581,6 +613,7 @@ fn shady_builder() -> Event {
           ),
           reward: [],
           combat: False,
+          setpiece: option.None,
           on_load: option.None,
           buttons: [#("end", choice("go home", End))],
         ),
@@ -592,6 +625,7 @@ fn shady_builder() -> Event {
           notification: option.Some("the shady builder builds a hut"),
           reward: [],
           combat: False,
+          setpiece: option.None,
           on_load: option.Some(raise_hut),
           buttons: [#("end", choice("go home", End))],
         ),
@@ -629,6 +663,7 @@ fn scout() -> Event {
         notification: option.Some("a scout stops for the night"),
         reward: [],
         combat: False,
+        setpiece: option.None,
         on_load: option.None,
         buttons: [
           #(
@@ -660,6 +695,7 @@ fn master() -> Event {
         notification: option.Some("an old wanderer arrives"),
         reward: [],
         combat: False,
+        setpiece: option.None,
         on_load: option.None,
         buttons: [
           #(
@@ -681,6 +717,7 @@ fn master() -> Event {
         notification: option.None,
         reward: [],
         combat: False,
+        setpiece: option.None,
         on_load: option.None,
         buttons: [
           #("evasion", learn("evasion", [], "evasive")),
@@ -706,6 +743,7 @@ fn sick_man() -> Event {
           notification: option.Some("a sick man hobbles up"),
           reward: [],
           combat: False,
+          setpiece: option.None,
           on_load: option.None,
           buttons: [
             #(
@@ -771,6 +809,7 @@ fn sick_man() -> Event {
           notification: option.None,
           reward: [],
           combat: False,
+          setpiece: option.None,
           on_load: option.None,
           buttons: [#("bye", choice("say goodbye", End))],
         ),
@@ -786,6 +825,7 @@ fn sick_reward(text: List(String), reward: List(#(String, Int))) -> Scene {
     notification: option.None,
     reward:,
     combat: False,
+    setpiece: option.None,
     on_load: option.None,
     buttons: [#("bye", choice("say goodbye", End))],
   )

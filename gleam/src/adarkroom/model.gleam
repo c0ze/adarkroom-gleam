@@ -12,6 +12,7 @@ import adarkroom/outside
 import adarkroom/path
 import adarkroom/rng
 import adarkroom/room
+import adarkroom/setpieces
 import adarkroom/state.{type State}
 import adarkroom/timer
 import adarkroom/trade
@@ -21,6 +22,7 @@ import gleam/float
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
+import gleam/result
 import gleam/set.{type Set}
 import lustre/effect.{type Effect}
 
@@ -103,6 +105,8 @@ pub type Msg {
   CollectLoot(rolls: List(Float))
   /// Use a healing item (cured meat / medicine / hypo) mid-fight.
   Heal(item: String)
+  /// Grant a setpiece scene's loot from the supplied rolls (two per drop).
+  SetpieceLoot(rolls: List(Float))
 }
 
 pub type Model {
@@ -384,7 +388,7 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
           let model = reschedule(model, delay, 1.0)
           case events.pick(avail, pick) {
             Error(_) -> #(model, effect.none())
-            Ok(event) -> #(start_event(model, event), effect.none())
+            Ok(event) -> start_event(model, event)
           }
         }
       }
@@ -392,10 +396,7 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
 
     ChooseEvent(id: id) -> #(model, roll_choice(id))
 
-    ResolveEvent(id: id, roll: roll) -> #(
-      resolve_event(model, id, roll),
-      effect.none(),
-    )
+    ResolveEvent(id: id, roll: roll) -> resolve_event(model, id, roll)
 
     MaybeFight(fight_roll: fight_roll, pick_roll: pick_roll) -> {
       let model = maybe_start_fight(model, fight_roll, pick_roll)
@@ -427,6 +428,11 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
     CollectLoot(rolls: rolls) -> #(collect_loot(model, rolls), effect.none())
 
     Heal(item: item) -> #(heal_in_combat(model, item), effect.none())
+
+    SetpieceLoot(rolls: rolls) -> #(
+      grant_setpiece_loot(model, rolls),
+      effect.none(),
+    )
   }
 }
 
@@ -627,11 +633,12 @@ fn roll_loot(enemy: combat.Enemy) -> Effect(Msg) {
 /// Take one step in the world, then resolve where it leaves the player: safely
 /// home at the village, dead in the wilds, or still out exploring.
 fn step(model: Model, dir: world.Dir) -> #(Model, Effect(Msg)) {
-  case model.combat, model.expedition {
-    // No wandering off mid-fight.
-    Some(_), _ -> #(model, effect.none())
-    _, None -> #(model, effect.none())
-    _, Some(exp) -> {
+  case model.active_event, model.combat, model.expedition {
+    // No wandering off with a setpiece on screen or mid-fight.
+    Some(_), _, _ -> #(model, effect.none())
+    _, Some(_), _ -> #(model, effect.none())
+    _, _, None -> #(model, effect.none())
+    _, _, Some(exp) -> {
       let s = world.move(model.state, exp, dir)
       let model = notify_world(Model(..model, state: s.state), s.messages)
       let on_village =
@@ -640,12 +647,30 @@ fn step(model: Model, dir: world.Dir) -> #(Model, Effect(Msg)) {
       case s.alive, on_village {
         _, True -> #(go_home(model), effect.none())
         False, _ -> #(die(model), effect.none())
-        // Still out in the wilds — a fresh step may spring an encounter.
-        True, False -> #(
-          Model(..model, expedition: Some(s.expedition)),
-          roll_fight(),
-        )
+        True, False -> {
+          let model = Model(..model, expedition: Some(s.expedition))
+          // A landmark launches its setpiece (the `doSpace` order); open ground
+          // may instead spring an encounter.
+          case setpiece_at(s.expedition) {
+            Ok(event) -> start_event(model, event)
+            Error(_) -> #(model, roll_fight())
+          }
+        }
       }
+    }
+  }
+}
+
+/// The setpiece to launch on arriving here: a landmark not yet dealt with this
+/// trip whose scene we have ported. Open ground and visited landmarks are
+/// `Error`, leaving the step to the ordinary encounter roll.
+fn setpiece_at(exp: Expedition) -> Result(events.Event, Nil) {
+  use tile <- result.try(world.tile_at(exp.map, exp.pos.0, exp.pos.1))
+  case world.should_trigger_setpiece(exp, tile) {
+    False -> Error(Nil)
+    True -> {
+      use name <- result.try(world.setpiece_scene(tile))
+      setpieces.setpiece(name)
     }
   }
 }
@@ -756,37 +781,27 @@ fn reschedule(model: Model, delay: Float, scale: Float) -> Model {
 }
 
 /// Begin an event on its `start` scene, applying that scene's reward + notice.
-fn start_event(model: Model, event: events.Event) -> Model {
+fn start_event(model: Model, event: events.Event) -> #(Model, Effect(Msg)) {
   case list.key_find(event.scenes, "start") {
-    Error(_) -> model
-    Ok(scene) -> {
-      let #(new_state, messages) = events.enter_scene(scene, model.state)
-      notify_here(
-        Model(
-          ..model,
-          state: new_state,
-          active_event: Some(ActiveEvent(event, "start")),
-        ),
-        messages,
-      )
-    }
+    Error(_) -> #(model, effect.none())
+    Ok(scene) -> load_scene(model, event, "start", scene)
   }
 }
 
 /// Apply a chosen button's outcome to the running event.
-fn resolve_event(model: Model, id: String, roll: Float) -> Model {
+fn resolve_event(model: Model, id: String, roll: Float) -> #(Model, Effect(Msg)) {
   case model.active_event {
-    None -> model
+    None -> #(model, effect.none())
     Some(ActiveEvent(event, scene_name)) ->
       case list.key_find(event.scenes, scene_name) {
-        Error(_) -> model
+        Error(_) -> #(model, effect.none())
         Ok(scene) ->
           case list.key_find(scene.buttons, id) {
-            Error(_) -> model
+            Error(_) -> #(model, effect.none())
             Ok(button) ->
               case events.click_button(button, model.state, roll) {
                 // Too expensive: a no-op, like the JS.
-                Error(_) -> model
+                Error(_) -> #(model, effect.none())
                 Ok(#(new_state, messages, step)) ->
                   advance_event(
                     notify_here(Model(..model, state: new_state), messages),
@@ -800,25 +815,110 @@ fn resolve_event(model: Model, id: String, roll: Float) -> Model {
 }
 
 /// Move the running event along after a button outcome.
-fn advance_event(model: Model, event: events.Event, step: events.Step) -> Model {
+fn advance_event(
+  model: Model,
+  event: events.Event,
+  step: events.Step,
+) -> #(Model, Effect(Msg)) {
   case step {
-    events.StayOnScene -> model
-    events.EndEvent -> Model(..model, active_event: None)
+    events.StayOnScene -> #(model, effect.none())
+    events.EndEvent -> #(Model(..model, active_event: None), effect.none())
     events.LoadScene(next) ->
       case list.key_find(event.scenes, next) {
-        Error(_) -> Model(..model, active_event: None)
-        Ok(scene) -> {
-          let #(new_state, messages) = events.enter_scene(scene, model.state)
-          notify_here(
-            Model(
-              ..model,
-              state: new_state,
-              active_event: Some(ActiveEvent(event, next)),
-            ),
-            messages,
-          )
-        }
+        Error(_) -> #(Model(..model, active_event: None), effect.none())
+        Ok(scene) -> load_scene(model, event, next, scene)
       }
+  }
+}
+
+/// Load one scene of a running event: run its world-level `onLoad` (setpieces
+/// marking a landmark visited or draining an outpost), then its `State`-level
+/// `onLoad` + reward + notification, set it the active scene, and — when it
+/// carries loot — kick off the roll that grants it.
+fn load_scene(
+  model: Model,
+  event: events.Event,
+  name: String,
+  scene: events.Scene,
+) -> #(Model, Effect(Msg)) {
+  let #(model, world_messages) = apply_world_effect(model, scene)
+  let #(new_state, messages) = events.enter_scene(scene, model.state)
+  let model =
+    notify_here(
+      Model(
+        ..model,
+        state: new_state,
+        active_event: Some(ActiveEvent(event, name)),
+      ),
+      list.append(world_messages, messages),
+    )
+  #(model, setpiece_loot_effect(scene))
+}
+
+/// A setpiece scene's world-level `onLoad`: mark the landmark under the player
+/// visited, or drink the outpost dry (refilling water). A no-op for the random
+/// events, which carry no `setpiece`.
+fn apply_world_effect(
+  model: Model,
+  scene: events.Scene,
+) -> #(Model, List(String)) {
+  case scene.setpiece, model.expedition {
+    Some(extra), Some(exp) ->
+      case extra.world_effect {
+        events.MarkVisited -> #(
+          Model(..model, expedition: Some(world.mark_visited(exp))),
+          [],
+        )
+        events.UseOutpost -> #(
+          Model(..model, expedition: Some(world.use_outpost(exp, model.state))),
+          ["water replenished"],
+        )
+        events.NoWorldEffect -> #(model, [])
+      }
+    _, _ -> #(model, [])
+  }
+}
+
+/// An effect that rolls a setpiece scene's loot (two samples per drop), reported
+/// as `SetpieceLoot`. Nothing to roll when the scene carries no loot.
+fn setpiece_loot_effect(scene: events.Scene) -> Effect(Msg) {
+  case scene.setpiece {
+    Some(events.SetpieceExtra(loot: [_, ..] as loot, ..)) ->
+      effect.from(fn(dispatch) {
+        let rolls =
+          list.map(list.repeat(Nil, list.length(loot) * 2), fn(_) {
+            rng.random()
+          })
+        dispatch(SetpieceLoot(rolls))
+      })
+    _ -> effect.none()
+  }
+}
+
+/// Grant the current setpiece scene's rolled loot into the carried outfit (it is
+/// credited to stores on a safe return), logging what was found.
+fn grant_setpiece_loot(model: Model, rolls: List(Float)) -> Model {
+  case active_scene(model) {
+    Ok(events.Scene(setpiece: Some(extra), ..)) -> {
+      let loot = combat.roll_loot(extra.loot, rolls)
+      let new_state =
+        list.fold(loot, model.state, fn(s, item) {
+          state.set_outfit(s, item.0, state.get_outfit(s, item.0) + item.1)
+        })
+      notify_world(
+        Model(..model, state: new_state),
+        list.map(loot, fn(l) { int.to_string(l.1) <> " " <> l.0 }),
+      )
+    }
+    _ -> model
+  }
+}
+
+/// The scene the running event is currently showing, if any.
+fn active_scene(model: Model) -> Result(events.Scene, Nil) {
+  case model.active_event {
+    Some(ActiveEvent(event, name)) -> list.key_find(event.scenes, name)
+    None -> Error(Nil)
   }
 }
 

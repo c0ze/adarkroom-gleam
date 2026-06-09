@@ -241,3 +241,62 @@ pub fn distance_is_manhattan_from_the_village_test() {
   world.distance(#(world.radius + 3, world.radius)) |> should.equal(3)
   world.distance(#(world.radius - 2, world.radius + 4)) |> should.equal(6)
 }
+
+// --- setpiece landmarks -----------------------------------------------------
+
+pub fn landmark_tiles_map_to_their_setpiece_test() {
+  world.setpiece_scene(world.Outpost) |> should.equal(Ok("outpost"))
+  world.setpiece_scene(world.Swamp) |> should.equal(Ok("swamp"))
+  world.setpiece_scene(world.City) |> should.equal(Ok("city"))
+  // Terrain, roads, the village and the executioner have no setpiece key here.
+  world.setpiece_scene(world.Forest) |> should.be_error
+  world.setpiece_scene(world.Village) |> should.be_error
+  world.setpiece_scene(world.Executioner) |> should.be_error
+}
+
+/// An expedition standing on `tile` at the centre.
+fn standing_on(tile: world.Tile) -> world.Expedition {
+  let pos = #(world.radius, world.radius)
+  world.Expedition(
+    pos: pos,
+    map: dict.from_list([#(pos, tile)]),
+    seen: set.new(),
+    vitals: world.Vitals(10, 10, 0, 0, False, False),
+    visited: set.new(),
+    used_outposts: set.new(),
+  )
+}
+
+pub fn a_fresh_landmark_triggers_its_setpiece_test() {
+  world.should_trigger_setpiece(
+    standing_on(world.Battlefield),
+    world.Battlefield,
+  )
+  |> should.be_true
+  // Open ground never does.
+  world.should_trigger_setpiece(standing_on(world.Forest), world.Forest)
+  |> should.be_false
+}
+
+pub fn a_visited_landmark_does_not_trigger_again_test() {
+  let exp = world.mark_visited(standing_on(world.Battlefield))
+  world.should_trigger_setpiece(exp, world.Battlefield) |> should.be_false
+}
+
+pub fn an_unused_outpost_triggers_but_a_used_one_does_not_test() {
+  let exp = standing_on(world.Outpost)
+  world.should_trigger_setpiece(exp, world.Outpost) |> should.be_true
+  let used = world.use_outpost(exp, state.new())
+  world.should_trigger_setpiece(used, world.Outpost) |> should.be_false
+}
+
+pub fn using_an_outpost_refills_water_to_the_brim_test() {
+  let s = state.new() |> state.set_store("water tank", 1)
+  let exp =
+    world.Expedition(
+      ..standing_on(world.Outpost),
+      vitals: world.Vitals(3, 10, 0, 0, False, False),
+    )
+  let refilled = world.use_outpost(exp, s)
+  refilled.vitals.water |> should.equal(world.max_water(s))
+}
