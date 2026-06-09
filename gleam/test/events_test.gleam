@@ -55,6 +55,7 @@ pub fn entering_a_scene_grants_its_reward_and_notification_test() {
       reward: [#("wood", 50)],
       buttons: [],
       combat: False,
+      setpiece: None,
       on_load: None,
     )
   let #(s, msgs) = events.enter_scene(scene, state.new())
@@ -71,6 +72,7 @@ pub fn entering_a_scene_runs_its_on_load_effect_test() {
       reward: [],
       buttons: [],
       combat: False,
+      setpiece: None,
       on_load: Some(fn(s) {
         let taken = state.get_store(s, "wood") / 10
         let s =
@@ -96,6 +98,7 @@ pub fn entering_a_plain_scene_changes_nothing_test() {
       reward: [],
       buttons: [],
       combat: False,
+      setpiece: None,
       on_load: None,
     )
   let #(s, msgs) = events.enter_scene(scene, state.new())

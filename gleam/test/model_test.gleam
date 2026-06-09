@@ -561,6 +561,8 @@ fn forest_expedition(dist: Int, health: Int) -> world.Expedition {
       starvation: False,
       thirst: False,
     ),
+    visited: set.new(),
+    used_outposts: set.new(),
   )
 }
 
@@ -696,4 +698,91 @@ pub fn a_weapon_on_cooldown_refuses_a_second_swing_test() {
   // The deadline is untouched — the swing was refused, not re-armed (which
   // would have dropped it to now + 2000).
   dict.get(after.cooldowns, "attack_iron sword") |> should.equal(Ok(999_999))
+}
+
+// --- setpieces --------------------------------------------------------------
+
+/// A model out in the world with `tile` one step east of the player.
+fn at_landmark(tile: world.Tile) -> model.Model {
+  let center = #(world.radius, world.radius)
+  let east = #(world.radius + 1, world.radius)
+  let exp =
+    world.Expedition(
+      pos: center,
+      map: dict.from_list([#(center, world.Forest), #(east, tile)]),
+      seen: set.new(),
+      vitals: world.Vitals(10, 10, 0, 0, False, False),
+      visited: set.new(),
+      used_outposts: set.new(),
+    )
+  model.Model(
+    ..model.init(),
+    location: model.World,
+    expedition: option.Some(exp),
+  )
+}
+
+pub fn stepping_onto_a_landmark_launches_its_setpiece_test() {
+  let after = run(at_landmark(world.Battlefield), model.MoveEast)
+  let assert option.Some(active) = after.active_event
+  active.event.title |> should.equal("A Forgotten Battlefield")
+  active.scene |> should.equal("start")
+  // A setpiece, not a random encounter.
+  after.combat |> should.equal(option.None)
+}
+
+pub fn open_ground_springs_no_setpiece_test() {
+  let after = run(at_landmark(world.Forest), model.MoveEast)
+  after.active_event |> should.equal(option.None)
+}
+
+pub fn you_cannot_wander_off_with_a_setpiece_open_test() {
+  let open = run(at_landmark(world.Battlefield), model.MoveEast)
+  let after = run(open, model.MoveEast)
+  after.expedition |> should.equal(open.expedition)
+  after.active_event |> should.equal(open.active_event)
+}
+
+pub fn arriving_at_the_battlefield_marks_it_visited_test() {
+  let after = run(at_landmark(world.Battlefield), model.MoveEast)
+  let assert option.Some(exp) = after.expedition
+  set.contains(exp.visited, exp.pos) |> should.be_true
+}
+
+pub fn battlefield_loot_lands_in_the_outfit_test() {
+  let open = run(at_landmark(world.Battlefield), model.MoveEast)
+  // Each chance roll of 0.0 passes; each qty roll of 0.0 → the entry's min.
+  let looted = run(open, model.SetpieceLoot(list.repeat(0.0, 12)))
+  state.get_outfit(looted.state, "rifle") |> should.equal(1)
+  state.get_outfit(looted.state, "bullets") |> should.equal(5)
+  state.get_outfit(looted.state, "alien alloy") |> should.equal(1)
+}
+
+pub fn arriving_at_an_outpost_refills_water_and_spends_it_test() {
+  let base = at_landmark(world.Outpost)
+  let assert option.Some(exp0) = base.expedition
+  let parched =
+    model.Model(
+      ..base,
+      expedition: option.Some(
+        world.Expedition(..exp0, vitals: world.Vitals(..exp0.vitals, water: 2)),
+      ),
+    )
+  let after = run(parched, model.MoveEast)
+  let assert option.Some(exp) = after.expedition
+  exp.vitals.water |> should.equal(world.max_water(after.state))
+  set.contains(exp.used_outposts, exp.pos) |> should.be_true
+}
+
+pub fn the_swamp_wanderer_grants_gastronome_for_a_charm_test() {
+  let base = at_landmark(world.Swamp)
+  let ready =
+    model.Model(..base, state: state.set_store(base.state, "charm", 1))
+  let start = run(ready, model.MoveEast)
+  let cabin = run(start, ResolveEvent("enter", 0.5))
+  let talked = run(cabin, ResolveEvent("talk", 0.5))
+  state.has_perk(talked.state, "gastronome") |> should.be_true
+  state.get_store(talked.state, "charm") |> should.equal(0)
+  let assert option.Some(exp) = talked.expedition
+  set.contains(exp.visited, exp.pos) |> should.be_true
 }

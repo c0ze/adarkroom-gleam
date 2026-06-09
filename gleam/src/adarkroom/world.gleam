@@ -502,8 +502,20 @@ fn offset(dir: Dir) -> #(Int, Int) {
 
 /// An expedition into the world: where the player stands, the map, the ground
 /// they have seen (the fog mask), and their vitals.
+///
+/// `visited` and `used_outposts` track the landmarks dealt with this trip so a
+/// setpiece won't fire again when you step back onto its tile. The JS keeps the
+/// same per-trip state (`map` markers and `usedOutposts`), reset on arrival; our
+/// world is re-rolled each embark, so per-trip sets match that behaviour.
 pub type Expedition {
-  Expedition(pos: #(Int, Int), map: Map, seen: Set(#(Int, Int)), vitals: Vitals)
+  Expedition(
+    pos: #(Int, Int),
+    map: Map,
+    seen: Set(#(Int, Int)),
+    vitals: Vitals,
+    visited: Set(#(Int, Int)),
+    used_outposts: Set(#(Int, Int)),
+  )
 }
 
 /// The result of a step: the (possibly changed) state and expedition, any
@@ -542,6 +554,60 @@ pub fn begin(map: Map, s: State) -> Expedition {
       starvation: False,
       thirst: False,
     ),
+    visited: set.new(),
+    used_outposts: set.new(),
+  )
+}
+
+/// The setpiece registry key for a landmark tile, mirroring `World.LANDMARKS`.
+/// Terrain, roads, the village and the executioner have no setpiece here.
+pub fn setpiece_scene(tile: Tile) -> Result(String, Nil) {
+  case tile {
+    Outpost -> Ok("outpost")
+    IronMine -> Ok("ironmine")
+    CoalMine -> Ok("coalmine")
+    SulphurMine -> Ok("sulphurmine")
+    House -> Ok("house")
+    Cave -> Ok("cave")
+    Town -> Ok("town")
+    City -> Ok("city")
+    Ship -> Ok("ship")
+    Borehole -> Ok("borehole")
+    Battlefield -> Ok("battlefield")
+    Swamp -> Ok("swamp")
+    Cache -> Ok("cache")
+    _ -> Error(Nil)
+  }
+}
+
+/// Whether arriving here should launch a setpiece: a landmark not yet dealt with
+/// this trip (`markVisited`), and — for an outpost — one not already used. This
+/// is the `doSpace` landmark guard.
+pub fn should_trigger_setpiece(exp: Expedition, tile: Tile) -> Bool {
+  case setpiece_scene(tile) {
+    Error(_) -> False
+    Ok(_) ->
+      !set.contains(exp.visited, exp.pos)
+      && case tile {
+        Outpost -> !set.contains(exp.used_outposts, exp.pos)
+        _ -> True
+      }
+  }
+}
+
+/// Mark the landmark under the player visited, so it won't fire again this trip
+/// (`World.markVisited`).
+pub fn mark_visited(exp: Expedition) -> Expedition {
+  Expedition(..exp, visited: set.insert(exp.visited, exp.pos))
+}
+
+/// Use the outpost under the player: refill water to the brim and note it spent,
+/// so it won't refill again this trip (`World.useOutpost`).
+pub fn use_outpost(exp: Expedition, s: State) -> Expedition {
+  Expedition(
+    ..exp,
+    vitals: Vitals(..exp.vitals, water: max_water(s)),
+    used_outposts: set.insert(exp.used_outposts, exp.pos),
   )
 }
 
