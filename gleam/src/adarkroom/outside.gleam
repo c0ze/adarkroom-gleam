@@ -261,6 +261,79 @@ fn arrival_message(num: Int) -> String {
   }
 }
 
+// --- disasters --------------------------------------------------------------
+
+/// Cut the population by `n` (never below zero), then lay off any workers the
+/// survivors can no longer cover, oldest role first (`Outside.killVillagers`).
+pub fn kill_villagers(s: State, n: Int) -> State {
+  let s = state.set_game(s, "population", int.max(0, population(s) - n))
+  case num_gatherers(s) {
+    short if short < 0 -> lay_off(s, all_roles(), -short)
+    _ -> s
+  }
+}
+
+/// Drop `gap` workers, taking whole roles from the front before splitting one.
+fn lay_off(s: State, roles: List(String), gap: Int) -> State {
+  case roles {
+    _ if gap <= 0 -> s
+    [] -> s
+    [role, ..rest] -> {
+      let have = worker_count(s, role)
+      case have < gap {
+        True ->
+          lay_off(state.set_game(s, "worker." <> role, 0), rest, gap - have)
+        False -> state.set_game(s, "worker." <> role, have - gap)
+      }
+    }
+  }
+}
+
+/// Tear apart `n` traps (`A Ruined Trap`).
+pub fn destroy_traps(s: State, n: Int) -> State {
+  state.set_game(
+    s,
+    craft.building_key("trap"),
+    int.max(0, craft.building_count(s, "trap") - n),
+  )
+}
+
+/// Raze `n` huts, killing whoever lived in each (`Outside.destroyHuts`, without
+/// `allowEmpty`). One roll per hut picks which full/half-full hut burns; an empty
+/// target spares its residents.
+pub fn destroy_huts(s: State, n: Int, rolls: List(Float)) -> State {
+  case n <= 0, rolls {
+    True, _ -> s
+    _, [] -> s
+    _, [roll, ..rest] -> destroy_huts(raze_one_hut(s, roll), n - 1, rest)
+  }
+}
+
+fn raze_one_hut(s: State, roll: Float) -> State {
+  let pop = population(s)
+  let full = pop / hut_room
+  // The default targets only occupied huts: ceil(pop / room).
+  let huts = { pop + hut_room - 1 } / hut_room
+  case huts <= 0 {
+    True -> s
+    False -> {
+      let target = float.truncate(roll *. int.to_float(huts)) + 1
+      let inhabitants = case target <= full, target == full + 1 {
+        True, _ -> hut_room
+        _, True -> pop % hut_room
+        _, _ -> 0
+      }
+      let s =
+        state.set_game(
+          s,
+          craft.building_key("hut"),
+          int.max(0, craft.building_count(s, "hut") - 1),
+        )
+      kill_villagers(s, inhabitants)
+    }
+  }
+}
+
 /// The Outside's title, which grows from a silent forest into a village as huts
 /// go up.
 pub fn title(s: State) -> String {
