@@ -9,6 +9,7 @@ import adarkroom/state
 import gleam/float
 import gleam/int
 import gleam/list
+import gleam/option.{type Option, None}
 
 /// How a weapon is wielded — drives perk bonuses.
 pub type WeaponType {
@@ -293,6 +294,9 @@ pub const meditate_duration_ms = 5000
 /// `DOT_TICK` — how often armed poison drips.
 pub const dot_tick_ms = 1000
 
+/// `EXPLOSION_DURATION` — the pause before a dying enemy detonates.
+pub const explosion_duration_ms = 3000
+
 /// A boss's recurring special (`scene.specials`): every `delay` seconds it
 /// takes a status.
 pub type Special {
@@ -324,6 +328,9 @@ pub type CombatState {
     specials: List(Special),
     /// The rotation's previous pick, never repeated (`Events._lastSpecial`).
     last_special: Status,
+    /// A dying blast (`scene.explosion`): the win pauses while the enemy
+    /// detonates, dealing this to the player.
+    exploding: Option(Int),
   )
 }
 
@@ -346,6 +353,7 @@ pub fn begin_combat(
     at_health: [],
     specials: [],
     last_special: NoStatus,
+    exploding: None,
   )
 }
 

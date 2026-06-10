@@ -115,6 +115,9 @@ pub type SetpieceExtra {
     specials: List(combat.Special),
     /// A combat scene's `atHealth` triggers, threshold → status.
     at_health: List(#(Int, combat.Status)),
+    /// A combat scene's dying blast (`scene.explosion`): on the win, the
+    /// enemy detonates for this much damage to the player.
+    explosion: Option(Int),
   )
 }
 

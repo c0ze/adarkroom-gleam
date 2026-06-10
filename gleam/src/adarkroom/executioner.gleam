@@ -17,16 +17,299 @@ import adarkroom/events.{
 import adarkroom/state
 import gleam/option.{None, Some}
 
-/// The event for a registry key (`Events.Executioner[...]`). The martial and
-/// medical wings and the command deck arrive in later increments.
+/// The event for a registry key (`Events.Executioner[...]`). The command deck
+/// arrives in the last increment.
 pub fn event(key: String) -> Result(Event, Nil) {
   case key {
     "executioner-intro" -> Ok(intro())
     "executioner-antechamber" -> Ok(antechamber())
     "executioner-engineering" -> Ok(engineering())
     "executioner-martial" -> Ok(martial())
+    "executioner-medical" -> Ok(medical())
     _ -> Error(Nil)
   }
+}
+
+/// The Medical Wing: a deck spared the fighting, stalked by broken medical
+/// drones that turn venomous as they break down, an automaton that detonates
+/// on its defeat, and a malformed experiment loose among the cells.
+fn medical() -> Event {
+  Event(title: "Medical Wing", is_available: fn(_) { True }, scenes: [
+    #(
+      "start",
+      Scene(
+        ..story([
+          "elevator doors open to an empty corridor.",
+          "a few dusty corpses can be seen further down, but this deck appears to have been spared most of the combat.",
+        ]),
+        buttons: continue_or_leave("1"),
+      ),
+    ),
+    #("1", defence_turret("2")),
+    #(
+      "2",
+      Scene(
+        ..story([
+          "past the checkpoint, the corridor is undamaged save for sporadic graffiti.",
+          "there was no fighting here.",
+        ]),
+        buttons: [
+          #("continue", branch("continue", [#(0.5, "3a"), #(1.0, "3b")])),
+          #("leave", leave("leave")),
+        ],
+      ),
+    ),
+    #("3a", quadruped_patrol("4")),
+    #(
+      "3b",
+      Scene(
+        ..story([
+          "automated guardians still stalk the halls, unaware that their masters have long gone.",
+          "clumsy machines, and easily avoided.",
+        ]),
+        buttons: continue_or_leave("4"),
+      ),
+    ),
+    #(
+      "4",
+      Scene(
+        ..story([
+          "medical gurneys are fixed to grooves running down the corridor walls.",
+          "the automated patient transport system now sits motionless.",
+        ]),
+        buttons: [
+          #("continue", branch("continue", [#(0.5, "5-1"), #(1.0, "5-2")])),
+          #("leave", leave("leave")),
+        ],
+      ),
+    ),
+    // The dispatch bay.
+    #(
+      "5-1",
+      Scene(..medic_drone("ignored"), buttons: [
+        #("continue", branch("continue", [#(0.5, "6-1a"), #(1.0, "6-1b")])),
+        #("leave", leave("leave")),
+      ]),
+    ),
+    #(
+      "6-1a",
+      Scene(..medic_drone("7-1"), notification: Some("it had friends.")),
+    ),
+    #(
+      "6-1b",
+      Scene(
+        ..story([
+          "more medical robots stand frozen, attached by a network of wires.",
+          "they take no notice of the intrusion.",
+        ]),
+        buttons: continue_or_leave("7-1"),
+      ),
+    ),
+    #(
+      "7-1",
+      passage(
+        [
+          "weapons are strewn about the medical dispatch bay. must have been used as a muster point.",
+          "more strange graffiti adorns the walls.",
+        ],
+        [
+          combat.LootEntry("laser rifle", 1, 1, 1.0),
+          combat.LootEntry("energy cell", 3, 10, 1.0),
+        ],
+        "8",
+      ),
+    ),
+    // The strategy room.
+    #(
+      "5-2",
+      Scene(
+        ..story([
+          "this ward has been converted to a makeshift strategy room, maps scrawled hastily on any flat surface.",
+          "a secure locker is set into one wall.",
+        ]),
+        buttons: [
+          #("force", to("force locker", "6-2a-intro")),
+          #("continue", to("continue", "6-2b")),
+          #("leave", leave("leave")),
+        ],
+      ),
+    ),
+    #(
+      "6-2a-intro",
+      passage(
+        ["hinges rusted through. no challenge."],
+        [
+          combat.LootEntry("energy cell", 5, 10, 1.0),
+          combat.LootEntry("hypo", 1, 3, 1.0),
+        ],
+        "6-2a",
+      ),
+    ),
+    #(
+      "6-2a",
+      Scene(
+        ..medic_drone("7-2"),
+        notification: Some("the noise draws attention."),
+      ),
+    ),
+    #(
+      "6-2b",
+      Scene(
+        ..story([
+          "better to move without drawing attention.",
+          "noises can be heard from the corridor outside.",
+        ]),
+        buttons: continue_or_leave("7-2"),
+      ),
+    ),
+    #("7-2", quadruped_patrol("8")),
+    // The unstable automaton — it doesn't go quietly.
+    #(
+      "8",
+      Scene(
+        text: [],
+        notification: Some("something's wrong with this robot."),
+        reward: [],
+        buttons: continue_or_leave("9"),
+        combat: True,
+        on_load: None,
+        on_load_rng: None,
+        setpiece: Some(SetpieceExtra(
+          loot: [],
+          world_effect: events.NoWorldEffect,
+          enemy: Some(
+            enemy("unstable automaton", "A", 100, 10, 0.7, 2.0, False, [
+              combat.LootEntry("glowstone blueprint", 1, 1, 1.0),
+            ]),
+          ),
+          specials: [],
+          at_health: [],
+          explosion: Some(30),
+        )),
+      ),
+    ),
+    #(
+      "9",
+      Scene(
+        ..story([
+          "another checkpoint ahead, fitted with heavy doors.",
+          "security is even tighter here.",
+        ]),
+        buttons: [
+          #("continue", branch("continue", [#(0.5, "10a"), #(1.0, "10b")])),
+          #("leave", leave("leave")),
+        ],
+      ),
+    ),
+    #("10a", guard_post("11")),
+    #(
+      "10b",
+      Scene(
+        ..story([
+          "slipped through unnoticed.",
+          "air whistles as the doors open. this section must have lower pressure than the rest of the ship.",
+        ]),
+        buttons: continue_or_leave("11"),
+      ),
+    ),
+    #(
+      "11",
+      Scene(..medic_drone("ignored"), buttons: [
+        #("continue", branch("continue", [#(0.5, "12-1"), #(1.0, "12-2")])),
+        #("leave", leave("leave")),
+      ]),
+    ),
+    // The cold store.
+    #(
+      "12-1",
+      Scene(
+        ..story([
+          "the air is cooler here. low cabinets ring the room, doors dusted with frost.",
+          "samples of something biological inside.",
+        ]),
+        setpiece: extra(
+          [combat.LootEntry("cured meat", 5, 10, 1.0)],
+          events.NoWorldEffect,
+        ),
+        buttons: [
+          #("continue", branch("continue", [#(0.5, "13-1a"), #(1.0, "13-1b")])),
+          #("leave", leave("leave")),
+        ],
+      ),
+    ),
+    #("13-1a", guard_post("14-1")),
+    #(
+      "13-1b",
+      Scene(
+        ..story([
+          "security drones still patrol the hallways.",
+          "predictable paths.",
+        ]),
+        buttons: continue_or_leave("14-1"),
+      ),
+    ),
+    #("14-1", medic_drone("15")),
+    // The surgery.
+    #(
+      "12-2",
+      Scene(
+        ..story([
+          "surgical tools are scattered on the floor, near what appears the be the remains of a fire.",
+          "strange.",
+        ]),
+        buttons: [
+          #("continue", branch("continue", [#(0.5, "13-2a"), #(1.0, "13-2b")])),
+          #("leave", leave("leave")),
+        ],
+      ),
+    ),
+    #("13-2a", medic_drone("14-2")),
+    #(
+      "13-2b",
+      passage(
+        [
+          "the air in this room has a metallic tinge. floor is covered in dark powder.",
+          "some completed explosives in the corner.",
+        ],
+        [combat.LootEntry("grenade", 3, 8, 1.0)],
+        "14-2",
+      ),
+    ),
+    #("14-2", medic_drone("15")),
+    // The containment cells.
+    #(
+      "15",
+      Scene(
+        ..story([
+          "containment cells arranged at the back of the room, all open.",
+          "something moving up ahead.",
+        ]),
+        buttons: continue_or_leave("16"),
+      ),
+    ),
+    #(
+      "16",
+      boss_fight(
+        "a mutated beast leaps from its cell.",
+        enemy("malformed experiment", "E", 200, 5, 0.8, 2.0, False, [
+          combat.LootEntry("stim blueprint", 1, 1, 1.0),
+        ]),
+        [combat.SetStatusEvery(16.0, combat.Enraged)],
+        [#("continue", to("continue", "17"))],
+      ),
+    ),
+    #(
+      "17",
+      Scene(
+        ..story([
+          "the creature's tortured breathing ceases.",
+          "nothing more here.",
+        ]),
+        on_load: Some(fn(s) { #(state.set_game(s, "world.medical", 1), []) }),
+        buttons: [#("leave", leave("leave"))],
+      ),
+    ),
+  ])
 }
 
 /// The Martial Wing: past the barricaded elevators, a sealed armoury door
@@ -608,6 +891,33 @@ fn guard() -> combat.Enemy {
   ])
 }
 
+/// `Enemies.Executioner.medic` — a broken medical drone that turns venomous
+/// as it breaks down (`atHealth` 40).
+fn medic_drone(next: String) -> Scene {
+  Scene(
+    text: [],
+    notification: Some("a medical drone wheels out of control."),
+    reward: [],
+    buttons: continue_or_leave(next),
+    combat: True,
+    on_load: None,
+    on_load_rng: None,
+    setpiece: Some(SetpieceExtra(
+      loot: [],
+      world_effect: events.NoWorldEffect,
+      enemy: Some(
+        enemy("broken medic", "M", 80, 15, 0.8, 3.0, False, [
+          combat.LootEntry("alien alloy", 1, 2, 1.0),
+          combat.LootEntry("hypo", 1, 4, 0.2),
+        ]),
+      ),
+      specials: [],
+      at_health: [#(40, combat.Venomous)],
+      explosion: None,
+    )),
+  )
+}
+
 /// `Enemies.Executioner.quadruped` — a mobile defence platform. Its JS loot
 /// table has two 'alien alloy' keys, and the later one wins the object
 /// literal: the effective table is just alloy 2-4 at 0.2 — preserved verbatim.
@@ -880,15 +1190,14 @@ fn guarded(notification: String, foe: combat.Enemy, next: String) -> Scene {
     combat: True,
     on_load: None,
     on_load_rng: None,
-    setpiece: Some(
-      SetpieceExtra(
-        loot: [],
-        world_effect: events.NoWorldEffect,
-        enemy: Some(foe),
-        specials: [],
-        at_health: [],
-      ),
-    ),
+    setpiece: Some(SetpieceExtra(
+      loot: [],
+      world_effect: events.NoWorldEffect,
+      enemy: Some(foe),
+      specials: [],
+      at_health: [],
+      explosion: None,
+    )),
   )
 }
 
@@ -907,15 +1216,14 @@ fn boss_fight(
     combat: True,
     on_load: None,
     on_load_rng: None,
-    setpiece: Some(
-      SetpieceExtra(
-        loot: [],
-        world_effect: events.NoWorldEffect,
-        enemy: Some(foe),
-        specials: specials,
-        at_health: [],
-      ),
-    ),
+    setpiece: Some(SetpieceExtra(
+      loot: [],
+      world_effect: events.NoWorldEffect,
+      enemy: Some(foe),
+      specials: specials,
+      at_health: [],
+      explosion: None,
+    )),
   )
 }
 
@@ -929,15 +1237,14 @@ fn extra(
   loot: List(combat.LootEntry),
   world_effect: events.WorldEffect,
 ) -> option.Option(SetpieceExtra) {
-  Some(
-    SetpieceExtra(
-      loot: loot,
-      world_effect: world_effect,
-      enemy: None,
-      specials: [],
-      at_health: [],
-    ),
-  )
+  Some(SetpieceExtra(
+    loot: loot,
+    world_effect: world_effect,
+    enemy: None,
+    specials: [],
+    at_health: [],
+    explosion: None,
+  ))
 }
 
 /// An inline enemy. No death message — the scene's buttons take over on the win.
