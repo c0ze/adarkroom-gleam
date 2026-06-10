@@ -1909,6 +1909,7 @@ fn leave(text: String) -> SceneButton {
     reward: [],
     notification: None,
     available: None,
+    link: None,
     on_click: None,
     next: End,
   )
@@ -1922,6 +1923,7 @@ fn to(text: String, scene: String) -> SceneButton {
     reward: [],
     notification: None,
     available: None,
+    link: None,
     on_click: None,
     next: Branch([#(1.0, scene)]),
   )
@@ -1935,6 +1937,7 @@ fn spend(text: String, cost: List(#(String, Int)), scene: String) -> SceneButton
     reward: [],
     notification: None,
     available: None,
+    link: None,
     on_click: None,
     next: Branch([#(1.0, scene)]),
   )
@@ -1949,6 +1952,7 @@ fn branch(text: String, targets: List(#(Float, String))) -> SceneButton {
     reward: [],
     notification: None,
     available: None,
+    link: None,
     on_click: None,
     next: Branch(targets),
   )
@@ -1967,6 +1971,7 @@ fn cost_branch(
     reward: [],
     notification: None,
     available: None,
+    link: None,
     on_click: None,
     next: Branch(targets),
   )

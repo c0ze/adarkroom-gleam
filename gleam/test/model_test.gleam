@@ -478,8 +478,15 @@ pub fn trigger_event_starts_an_available_event_test() {
 }
 
 pub fn trigger_event_stays_idle_when_nothing_qualifies_test() {
-  // No fur: the Nomad isn't available, so no event starts — but a slot is set.
-  let after = run(room_with_fur(0, 1000), TriggerEvent(0.0, 0.0))
+  // No fur (no Nomad) and Penrose already given in to: no event starts — but
+  // a slot is set.
+  let base = room_with_fur(0, 1000)
+  let m =
+    model.Model(
+      ..base,
+      state: state.set_game(base.state, "marketing.penrose", 1),
+    )
+  let after = run(m, TriggerEvent(0.0, 0.0))
   after.active_event |> should.equal(option.None)
   { after.next_event_at > 1000 } |> should.equal(True)
 }
@@ -1055,4 +1062,19 @@ pub fn cool_check_delivers_a_due_delayed_return_test() {
     "the mysterious wanderer returns, cart piled high with wood.",
   )
   |> should.be_true
+}
+
+pub fn a_link_button_ends_the_event_test() {
+  // The JS runs onClick, ends the event, and window.opens the link; the modal
+  // must not linger.
+  let assert Ok(penrose) =
+    list.find(events.marketing_events(), fn(e) { e.title == "Penrose" })
+  let m =
+    model.Model(
+      ..model.init(),
+      active_event: option.Some(model.ActiveEvent(penrose, "start")),
+    )
+  let after = run(m, model.ResolveEvent("give in", 0.5))
+  after.active_event |> should.equal(option.None)
+  state.get_game(after.state, "marketing.penrose") |> should.equal(1)
 }

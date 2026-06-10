@@ -3,6 +3,7 @@
 //// that drive updates. `update` returns the new model together with any
 //// effects (e.g. one-shot timers for the builder's timed progression).
 
+import adarkroom/browser
 import adarkroom/combat
 import adarkroom/craft
 import adarkroom/encounters
@@ -789,10 +790,25 @@ fn roll_seed() -> Effect(Msg) {
 /// encounters, so away from home there is none.
 fn event_pool(location: Location) -> List(events.Event) {
   case location {
-    Room -> list.append(events.global_events(), events.room_events())
-    Outside -> list.append(events.global_events(), events.outside_events())
+    Room ->
+      list.flatten([
+        events.global_events(),
+        events.room_events(),
+        events.marketing_events(),
+      ])
+    Outside ->
+      list.flatten([
+        events.global_events(),
+        events.outside_events(),
+        events.marketing_events(),
+      ])
     _ -> []
   }
+}
+
+/// Open a link button's page in a new tab.
+fn open_link(url: String) -> Effect(Msg) {
+  effect.from(fn(_) { browser.open_url(url) })
 }
 
 /// The effect that drives event scheduling, run each second from `CoolCheck`:
@@ -838,12 +854,19 @@ fn resolve_event(model: Model, id: String, roll: Float) -> #(Model, Effect(Msg))
               case events.click_button(button, model.state, roll) {
                 // Too expensive: a no-op, like the JS.
                 Error(_) -> #(model, effect.none())
-                Ok(#(new_state, messages, step)) ->
-                  advance_event(
-                    notify_here(Model(..model, state: new_state), messages),
-                    event,
-                    step,
-                  )
+                Ok(#(new_state, messages, step)) -> {
+                  let model =
+                    notify_here(Model(..model, state: new_state), messages)
+                  case button.link {
+                    // A link button ends the event and opens the page (the
+                    // JS `endEvent()` + `window.open`), skipping nextScene.
+                    Some(url) -> #(
+                      Model(..model, active_event: None),
+                      open_link(url),
+                    )
+                    None -> advance_event(model, event, step)
+                  }
+                }
               }
           }
       }
