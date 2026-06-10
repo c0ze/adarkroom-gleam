@@ -645,3 +645,9 @@ pub fn giving_in_to_penrose_sets_the_flag_and_links_out_test() {
   let assert Ok(#(s, _, _)) = events.click_button(give_in, state.new(), 0.5)
   state.get_game(s, "marketing.penrose") |> should.equal(1)
 }
+
+pub fn goto_event_switches_events_test() {
+  // The JS `nextEvent` — the executioner's elevators hop between events.
+  events.resolve_next(events.GotoEvent("executioner-medical"), 0.5)
+  |> should.equal(events.SwitchEvent("executioner-medical"))
+}

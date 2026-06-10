@@ -1,5 +1,6 @@
 import adarkroom/craft
 import adarkroom/events
+import adarkroom/executioner
 import adarkroom/model.{
   CollectLoot, MaybeFight, Navigate, ResolveEnemyTurn, ResolveEvent,
   ResolveStrike, ScheduleEvent, Tick, TriggerEvent,
@@ -1077,4 +1078,115 @@ pub fn a_link_button_ends_the_event_test() {
   let after = run(m, model.ResolveEvent("give in", 0.5))
   after.active_event |> should.equal(option.None)
   state.get_game(after.state, "marketing.penrose") |> should.equal(1)
+}
+
+// --- the ravaged battleship (executioner) -------------------------------------
+
+/// An expedition standing in forest one step west of the battleship, with the
+/// village on the map for the road-drawing fallback.
+fn battleship_expedition() -> world.Expedition {
+  let pos = #(world.radius + 3, world.radius)
+  world.Expedition(
+    pos: pos,
+    map: dict.from_list([
+      #(#(world.radius, world.radius), world.Village),
+      #(pos, world.Forest),
+      #(#(world.radius + 4, world.radius), world.Executioner),
+    ]),
+    seen: set.new(),
+    vitals: world.Vitals(
+      water: 10,
+      health: 10,
+      food_move: 0,
+      water_move: 0,
+      starvation: False,
+      thirst: False,
+    ),
+    visited: set.new(),
+    used_outposts: set.new(),
+    mines_cleared: set.new(),
+  )
+}
+
+fn battleship_model() -> model.Model {
+  let base = model.init()
+  model.Model(
+    ..base,
+    location: model.World,
+    expedition: option.Some(battleship_expedition()),
+  )
+}
+
+pub fn stepping_onto_the_battleship_opens_the_intro_test() {
+  let after = run(battleship_model(), model.MoveEast)
+  let assert option.Some(active) = after.active_event
+  active.event.title |> should.equal("A Ravaged Battleship")
+  active.scene |> should.equal("start")
+}
+
+pub fn the_unsealed_battleship_skips_the_intro_test() {
+  // With world.executioner set the antechamber would open — it isn't ported
+  // yet, so for now the step falls through to the ordinary encounter roll.
+  let base = battleship_model()
+  let m =
+    model.Model(
+      ..base,
+      state: state.set_game(base.state, "world.executioner", 1),
+    )
+  run(m, model.MoveEast).active_event |> should.equal(option.None)
+}
+
+pub fn an_elevator_button_switches_events_test() {
+  // A stub hub whose button rides GotoEvent — the JS nextEvent path.
+  let ride =
+    events.SceneButton(
+      text: "ride",
+      cost: [],
+      reward: [],
+      notification: option.None,
+      available: option.None,
+      on_click: option.None,
+      link: option.None,
+      next: events.GotoEvent("executioner-intro"),
+    )
+  let hub =
+    events.Event(title: "hub", is_available: fn(_) { True }, scenes: [
+      #(
+        "start",
+        events.Scene(
+          text: ["elevator doors"],
+          notification: option.None,
+          reward: [],
+          combat: False,
+          on_load: option.None,
+          on_load_rng: option.None,
+          setpiece: option.None,
+          buttons: [#("ride", ride)],
+        ),
+      ),
+    ])
+  let m =
+    model.Model(
+      ..model.init(),
+      active_event: option.Some(model.ActiveEvent(hub, "start")),
+    )
+  let after = run(m, model.ResolveEvent("ride", 0.5))
+  let assert option.Some(active) = after.active_event
+  active.event.title |> should.equal("A Ravaged Battleship")
+  active.scene |> should.equal("start")
+}
+
+pub fn taking_the_device_lays_a_road_and_sets_the_flag_test() {
+  let assert Ok(intro) = executioner.event("executioner-intro")
+  let base = battleship_model()
+  let m =
+    model.Model(
+      ..base,
+      active_event: option.Some(model.ActiveEvent(intro, "6")),
+    )
+  // The turret is down; continue ({1: '7'}) enters the device antechamber.
+  let after = run(m, model.ResolveEvent("continue", 0.5))
+  state.get_game(after.state, "world.executioner") |> should.equal(1)
+  let assert option.Some(active) = after.active_event
+  active.scene |> should.equal("7")
 }
