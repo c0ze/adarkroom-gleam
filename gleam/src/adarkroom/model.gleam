@@ -9,6 +9,7 @@ import adarkroom/craft
 import adarkroom/encounters
 import adarkroom/events
 import adarkroom/executioner
+import adarkroom/fabricator
 import adarkroom/notifications.{type Notifications}
 import adarkroom/outside
 import adarkroom/path
@@ -131,6 +132,8 @@ pub type Msg {
   UpgradeEngine
   /// Press the lift-off button: the warning first, then up and away.
   CheckLiftoff
+  /// Fabricate the named recipe at the whirring fabricator.
+  Fabricate(name: String)
 }
 
 pub type Model {
@@ -246,6 +249,13 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
         Outside -> apply_outside(navigated, outside.see_forest(navigated.state))
         // First sight of the old wreck.
         Ship -> apply_at(navigated, "ship", ship.see_ship(navigated.state))
+        // The hum of real tools.
+        Fabricator ->
+          apply_at(
+            navigated,
+            "fabricator",
+            fabricator.see_fabricator(navigated.state),
+          )
         _ -> navigated
       }
       #(arrived, effect.none())
@@ -507,6 +517,11 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
         True -> update(model, Navigate(to: Space))
       }
     }
+
+    Fabricate(name: name) -> #(
+      apply_at(model, "fabricator", fabricator.fabricate(model.state, name)),
+      effect.none(),
+    )
   }
 }
 
