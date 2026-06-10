@@ -194,34 +194,82 @@ fn notification_messages(notification: Option(String)) -> List(String) {
   }
 }
 
-/// Whether the stores can cover a button's cost.
-pub fn affordable(cost: List(#(String, Int)), s: state.State) -> Bool {
-  list.all(cost, fn(c) { state.get_store(s, c.0) >= c.1 })
+/// Where a button's cost is drawn from (`Events.getQuantity`/`buttonClick`):
+/// at home it's the stores; out in the world it's the carried outfit, with
+/// `water` and `hp` drawn straight from the expedition's vitals. Rewards land
+/// in the stores either way (`addM('stores', …)`).
+pub type Purse {
+  HomeStores
+  Carried(water: Int, hp: Int)
+}
+
+/// How much of a thing the purse can see (`Events.getQuantity`).
+fn quantity(s: state.State, purse: Purse, name: String) -> Int {
+  case purse, name {
+    Carried(water: water, ..), "water" -> water
+    Carried(hp: hp, ..), "hp" -> hp
+    Carried(..), _ -> state.get_outfit(s, name)
+    HomeStores, _ -> state.get_store(s, name)
+  }
+}
+
+/// Whether the purse can cover a button's cost.
+pub fn affordable(
+  cost: List(#(String, Int)),
+  s: state.State,
+  purse: Purse,
+) -> Bool {
+  list.all(cost, fn(c) { quantity(s, purse, c.0) >= c.1 })
+}
+
+/// Pay a cost from the purse.
+fn pay(
+  s: state.State,
+  purse: Purse,
+  cost: List(#(String, Int)),
+) -> #(state.State, Purse) {
+  list.fold(cost, #(s, purse), fn(acc, c) {
+    let #(s, purse) = acc
+    case purse, c.0 {
+      Carried(water: water, hp: hp), "water" -> #(
+        s,
+        Carried(water: water - c.1, hp: hp),
+      )
+      Carried(water: water, hp: hp), "hp" -> #(
+        s,
+        Carried(water: water, hp: hp - c.1),
+      )
+      Carried(..), item -> #(
+        state.set_outfit(s, item, state.get_outfit(s, item) - c.1),
+        purse,
+      )
+      HomeStores, item -> #(state.add_store(s, item, -c.1), purse)
+    }
+  })
 }
 
 /// Resolve a button click. If the cost can't be met it's refused (`Error`),
-/// mirroring the JS no-op. Otherwise the cost is paid, the reward granted, the
-/// notification surfaced, and the next step resolved (using `roll` for a
-/// `Branch`).
+/// mirroring the JS no-op. Otherwise the cost is paid from the purse, the
+/// reward granted, the notification surfaced, and the next step resolved
+/// (using `roll` for a `Branch`).
 pub fn click_button(
   button: SceneButton,
   s: state.State,
   roll: Float,
-) -> Result(#(state.State, List(String), Step), Nil) {
-  case affordable(button.cost, s) {
+  purse: Purse,
+) -> Result(#(state.State, Purse, List(String), Step), Nil) {
+  case affordable(button.cost, s, purse) {
     False -> Error(Nil)
     True -> {
-      let s =
-        s
-        |> apply_stores(list.map(button.cost, fn(c) { #(c.0, -c.1) }))
-        |> apply_stores(button.reward)
+      let #(s, purse) = pay(s, purse, button.cost)
+      let s = apply_stores(s, button.reward)
       let #(s, click_messages) = case button.on_click {
         option.Some(f) -> f(s)
         option.None -> #(s, [])
       }
       let messages =
         list.append(notification_messages(button.notification), click_messages)
-      Ok(#(s, messages, resolve_next(button.next, roll)))
+      Ok(#(s, purse, messages, resolve_next(button.next, roll)))
     }
   }
 }

@@ -788,12 +788,12 @@ pub fn arriving_at_an_outpost_refills_water_and_spends_it_test() {
 pub fn the_swamp_wanderer_grants_gastronome_for_a_charm_test() {
   let base = at_landmark(world.Swamp)
   let ready =
-    model.Model(..base, state: state.set_store(base.state, "charm", 1))
+    model.Model(..base, state: state.set_outfit(base.state, "charm", 1))
   let start = run(ready, model.MoveEast)
   let cabin = run(start, ResolveEvent("enter", 0.5))
   let talked = run(cabin, ResolveEvent("talk", 0.5))
   state.has_perk(talked.state, "gastronome") |> should.be_true
-  state.get_store(talked.state, "charm") |> should.equal(0)
+  state.get_outfit(talked.state, "charm") |> should.equal(0)
   let assert option.Some(exp) = talked.expedition
   set.contains(exp.visited, exp.pos) |> should.be_true
 }
@@ -897,7 +897,7 @@ pub fn finding_the_ship_marks_it_and_records_the_way_off_test() {
 pub fn clearing_the_iron_mine_flags_its_building_test() {
   let base = at_landmark(world.IronMine)
   let ready =
-    model.Model(..base, state: state.set_store(base.state, "torch", 1))
+    model.Model(..base, state: state.set_outfit(base.state, "torch", 1))
   // Pay the torch to enter; the matriarch lunges.
   let fighting = run(run(ready, model.MoveEast), ResolveEvent("enter", 0.5))
   let assert option.Some(cs) = fighting.combat
@@ -943,7 +943,7 @@ pub fn a_safe_return_grants_a_cleared_mine_building_test() {
 pub fn delving_the_cave_clears_it_into_an_outpost_test() {
   let base = at_landmark(world.Cave)
   let ready =
-    model.Model(..base, state: state.set_store(base.state, "torch", 2))
+    model.Model(..base, state: state.set_outfit(base.state, "torch", 2))
   let start = run(ready, model.MoveEast)
   // Enter (0.4 -> a2, the narrows); press on (0.3 -> b2, the torch dies);
   // relight (b2's continue costs a torch) into c1, the large beast.
@@ -967,13 +967,13 @@ pub fn delving_the_cave_clears_it_into_an_outpost_test() {
   world.tile_at(exp.map, exp.pos.0, exp.pos.1)
   |> should.equal(Ok(world.Outpost))
   // Two torches spent: entering, then relighting.
-  state.get_store(cleared.state, "torch") |> should.equal(0)
+  state.get_outfit(cleared.state, "torch") |> should.equal(0)
 }
 
 pub fn clearing_the_town_turns_it_into_an_outpost_test() {
   let base = at_landmark(world.Town)
   let ready =
-    model.Model(..base, state: state.set_store(base.state, "torch", 1))
+    model.Model(..base, state: state.set_outfit(base.state, "torch", 1))
   // Explore (0.5 -> a3, the clinic), torch the door (0.9 -> end5), which clears
   // the town — no fight on this branch.
   let cleared =
@@ -985,7 +985,7 @@ pub fn clearing_the_town_turns_it_into_an_outpost_test() {
   let assert option.Some(exp) = cleared.expedition
   world.tile_at(exp.map, exp.pos.0, exp.pos.1)
   |> should.equal(Ok(world.Outpost))
-  state.get_store(cleared.state, "torch") |> should.equal(0)
+  state.get_outfit(cleared.state, "torch") |> should.equal(0)
 }
 
 pub fn a_parched_step_onto_the_village_is_a_safe_return_not_a_death_test() {
@@ -1189,4 +1189,62 @@ pub fn taking_the_device_lays_a_road_and_sets_the_flag_test() {
   state.get_game(after.state, "world.executioner") |> should.equal(1)
   let assert option.Some(active) = after.active_event
   active.scene |> should.equal("7")
+}
+
+pub fn a_world_event_pays_costs_from_the_pack_test() {
+  // Entering the battleship spends a carried torch; the home stores and the
+  // identical store-room torches stay untouched.
+  let base = battleship_model()
+  let m =
+    model.Model(
+      ..base,
+      state: base.state
+        |> state.set_store("torch", 3)
+        |> state.set_outfit("torch", 1),
+    )
+  let entered = run(run(m, model.MoveEast), model.ResolveEvent("enter", 0.5))
+  state.get_outfit(entered.state, "torch") |> should.equal(0)
+  state.get_store(entered.state, "torch") |> should.equal(3)
+  let assert option.Some(active) = entered.active_event
+  active.scene |> should.equal("1")
+}
+
+pub fn a_world_event_can_cost_vitals_test() {
+  // The engineering wing's fire: dousing it drinks the expedition's water.
+  let douse =
+    events.SceneButton(
+      text: "extinguish",
+      cost: [#("water", 4)],
+      reward: [],
+      notification: option.None,
+      available: option.None,
+      link: option.None,
+      on_click: option.None,
+      next: events.End,
+    )
+  let fire =
+    events.Event(title: "fire", is_available: fn(_) { True }, scenes: [
+      #(
+        "start",
+        events.Scene(
+          text: ["flames"],
+          notification: option.None,
+          reward: [],
+          combat: False,
+          on_load: option.None,
+          on_load_rng: option.None,
+          setpiece: option.None,
+          buttons: [#("water", douse)],
+        ),
+      ),
+    ])
+  let m =
+    model.Model(
+      ..battleship_model(),
+      active_event: option.Some(model.ActiveEvent(fire, "start")),
+    )
+  let after = run(m, model.ResolveEvent("water", 0.5))
+  let assert option.Some(exp) = after.expedition
+  exp.vitals.water |> should.equal(6)
+  exp.vitals.health |> should.equal(10)
 }

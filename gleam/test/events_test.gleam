@@ -177,9 +177,10 @@ pub fn a_gated_button_follows_its_predicate_test() {
 
 pub fn affordability_reads_stores_test() {
   let s = state.new() |> state.set_store("fur", 30)
-  events.affordable([#("fur", 10)], s) |> should.equal(True)
-  events.affordable([#("fur", 40)], s) |> should.equal(False)
-  events.affordable([#("fur", 10), #("scales", 1)], s) |> should.equal(False)
+  events.affordable([#("fur", 10)], s, events.HomeStores) |> should.equal(True)
+  events.affordable([#("fur", 40)], s, events.HomeStores) |> should.equal(False)
+  events.affordable([#("fur", 10), #("scales", 1)], s, events.HomeStores)
+  |> should.equal(False)
 }
 
 pub fn an_unaffordable_button_is_refused_test() {
@@ -194,7 +195,8 @@ pub fn an_unaffordable_button_is_refused_test() {
       on_click: None,
       next: events.End,
     )
-  events.click_button(btn, state.new(), 0.5) |> should.equal(Error(Nil))
+  events.click_button(btn, state.new(), 0.5, events.HomeStores)
+  |> should.equal(Error(Nil))
 }
 
 pub fn clicking_pays_cost_takes_reward_and_advances_test() {
@@ -210,7 +212,8 @@ pub fn clicking_pays_cost_takes_reward_and_advances_test() {
       next: events.Goto("next"),
     )
   let s0 = state.new() |> state.set_store("fur", 30)
-  let assert Ok(#(s, msgs, step)) = events.click_button(btn, s0, 0.5)
+  let assert Ok(#(s, _, msgs, step)) =
+    events.click_button(btn, s0, 0.5, events.HomeStores)
   state.get_store(s, "fur") |> should.equal(20)
   state.get_store(s, "scales") |> should.equal(5)
   msgs |> should.equal(["a fair trade"])
@@ -232,7 +235,8 @@ pub fn clicking_a_button_runs_its_on_click_effect_test() {
       }),
       next: events.End,
     )
-  let assert Ok(#(s, msgs, _)) = events.click_button(btn, state.new(), 0.5)
+  let assert Ok(#(s, _, msgs, _)) =
+    events.click_button(btn, state.new(), 0.5, events.HomeStores)
   state.has_perk(s, "scout") |> should.equal(True)
   msgs |> should.equal(["lessons learned"])
 }
@@ -249,7 +253,8 @@ pub fn a_free_button_can_just_end_test() {
       on_click: None,
       next: events.End,
     )
-  let assert Ok(#(_, msgs, step)) = events.click_button(btn, state.new(), 0.5)
+  let assert Ok(#(_, _, msgs, step)) =
+    events.click_button(btn, state.new(), 0.5, events.HomeStores)
   msgs |> should.equal([])
   step |> should.equal(events.EndEvent)
 }
@@ -272,7 +277,8 @@ pub fn buying_scales_from_the_nomad_costs_fur_and_stays_test() {
   let assert Ok(start) = list.key_find(nomad().scenes, "start")
   let assert Ok(buy) = list.key_find(start.buttons, "buyScales")
   let s = state.new() |> state.set_store("fur", 150)
-  let assert Ok(#(s2, _msgs, step)) = events.click_button(buy, s, 0.5)
+  let assert Ok(#(s2, _, _msgs, step)) =
+    events.click_button(buy, s, 0.5, events.HomeStores)
   state.get_store(s2, "fur") |> should.equal(50)
   state.get_store(s2, "scales") |> should.equal(1)
   // No nextScene on a trade button — you stay and can keep buying.
@@ -322,7 +328,8 @@ pub fn learning_scouting_grants_the_perk_then_hides_the_button_test() {
     |> state.set_store("fur", 1000)
     |> state.set_store("scales", 50)
     |> state.set_store("teeth", 20)
-  let assert Ok(#(s, _, step)) = events.click_button(learn, s0, 0.5)
+  let assert Ok(#(s, _, _, step)) =
+    events.click_button(learn, s0, 0.5, events.HomeStores)
   state.has_perk(s, "scout") |> should.equal(True)
   state.get_store(s, "fur") |> should.equal(0)
   step |> should.equal(events.EndEvent)
@@ -334,7 +341,8 @@ pub fn the_master_teaches_a_combat_perk_test() {
   let master = room_event_by_notification("an old wanderer arrives")
   let assert Ok(agree) = list.key_find(master.scenes, "agree")
   let assert Ok(force) = list.key_find(agree.buttons, "force")
-  let assert Ok(#(s, _, _)) = events.click_button(force, state.new(), 0.5)
+  let assert Ok(#(s, _, _, _)) =
+    events.click_button(force, state.new(), 0.5, events.HomeStores)
   state.has_perk(s, "barbarian") |> should.equal(True)
 }
 
@@ -351,7 +359,8 @@ pub fn helping_the_sick_man_spends_medicine_and_may_reward_test() {
   let assert Ok(help) = list.key_find(start.buttons, "help")
   let s0 = state.new() |> state.set_store("medicine", 2)
   // 0.05 < 0.1 → the rare alien-alloy reward.
-  let assert Ok(#(s, _, step)) = events.click_button(help, s0, 0.05)
+  let assert Ok(#(s, _, _, step)) =
+    events.click_button(help, s0, 0.05, events.HomeStores)
   state.get_store(s, "medicine") |> should.equal(1)
   step |> should.equal(events.LoadScene("alloy"))
   let assert Ok(alloy) = list.key_find(sick.scenes, "alloy")
@@ -403,7 +412,8 @@ pub fn giving_the_beggar_fur_branches_to_a_reward_scene_test() {
   let assert Ok(give50) = list.key_find(start.buttons, "50furs")
   // 50 furs costs 50 fur and routes to scales (<0.5) / teeth (<0.8) / cloth.
   let s0 = state.new() |> state.set_store("fur", 80)
-  let assert Ok(#(s, _, step)) = events.click_button(give50, s0, 0.2)
+  let assert Ok(#(s, _, _, step)) =
+    events.click_button(give50, s0, 0.2, events.HomeStores)
   state.get_store(s, "fur") |> should.equal(30)
   step |> should.equal(events.LoadScene("scales"))
   // The reward scene hands over 20 scales.
@@ -642,7 +652,8 @@ pub fn giving_in_to_penrose_sets_the_flag_and_links_out_test() {
   |> should.equal(Some(
     "https://penrose.doublespeakgames.com/?utm_source=adarkroom&utm_medium=crosspromote&utm_campaign=event",
   ))
-  let assert Ok(#(s, _, _)) = events.click_button(give_in, state.new(), 0.5)
+  let assert Ok(#(s, _, _, _)) =
+    events.click_button(give_in, state.new(), 0.5, events.HomeStores)
   state.get_game(s, "marketing.penrose") |> should.equal(1)
 }
 
@@ -650,4 +661,76 @@ pub fn goto_event_switches_events_test() {
   // The JS `nextEvent` — the executioner's elevators hop between events.
   events.resolve_next(events.GotoEvent("executioner-medical"), 0.5)
   |> should.equal(events.SwitchEvent("executioner-medical"))
+}
+
+// --- the purse (in-world costs) -----------------------------------------------
+
+fn priced(cost: List(#(String, Int))) -> events.SceneButton {
+  events.SceneButton(
+    text: "pay",
+    cost: cost,
+    reward: [],
+    notification: None,
+    available: None,
+    link: None,
+    on_click: None,
+    next: events.End,
+  )
+}
+
+pub fn world_costs_come_from_the_carried_outfit_test() {
+  // Out in the world a torch cost is paid from the pack, not the home stores.
+  let s =
+    state.new()
+    |> state.set_store("torch", 5)
+    |> state.set_outfit("torch", 2)
+  let assert Ok(#(after, purse, _, _)) =
+    events.click_button(
+      priced([#("torch", 1)]),
+      s,
+      0.5,
+      events.Carried(water: 10, hp: 10),
+    )
+  state.get_outfit(after, "torch") |> should.equal(1)
+  state.get_store(after, "torch") |> should.equal(5)
+  purse |> should.equal(events.Carried(water: 10, hp: 10))
+}
+
+pub fn torches_at_home_cannot_pay_in_the_wilds_test() {
+  let s = state.new() |> state.set_store("torch", 5)
+  events.affordable([#("torch", 1)], s, events.Carried(water: 10, hp: 10))
+  |> should.be_false
+  events.affordable([#("torch", 1)], s, events.HomeStores)
+  |> should.be_true
+}
+
+pub fn water_and_hp_costs_drain_the_vitals_test() {
+  let assert Ok(#(_, doused, _, _)) =
+    events.click_button(
+      priced([#("water", 5)]),
+      state.new(),
+      0.5,
+      events.Carried(water: 8, hp: 10),
+    )
+  doused |> should.equal(events.Carried(water: 3, hp: 10))
+  let assert Ok(#(_, burnt, _, _)) =
+    events.click_button(
+      priced([#("hp", 10)]),
+      state.new(),
+      0.5,
+      events.Carried(water: 8, hp: 10),
+    )
+  burnt |> should.equal(events.Carried(water: 8, hp: 0))
+}
+
+pub fn an_exact_vitals_cost_is_allowed_test() {
+  // The JS gate is `num < cost`: 10 hp covers a 10-hp rush, down to zero.
+  events.affordable(
+    [#("hp", 10)],
+    state.new(),
+    events.Carried(water: 0, hp: 10),
+  )
+  |> should.be_true
+  events.affordable([#("hp", 10)], state.new(), events.Carried(water: 0, hp: 9))
+  |> should.be_false
 }
