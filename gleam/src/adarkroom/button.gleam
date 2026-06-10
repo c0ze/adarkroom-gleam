@@ -20,6 +20,9 @@ pub type Config(msg) {
     cost: List(#(String, Int)),
     disabled: Bool,
     cooldown: Float,
+    /// The cooldown's full length, for the bar's animation clock. `0` for
+    /// buttons that never cool.
+    cooldown_ms: Int,
     id: String,
   )
 }
@@ -32,6 +35,7 @@ pub fn new(text text: String, on_click on_click: msg) -> Config(msg) {
     cost: [],
     disabled: False,
     cooldown: 0.0,
+    cooldown_ms: 0,
     id: "",
   )
 }
@@ -60,21 +64,48 @@ pub fn button(config: Config(msg)) -> Element(msg) {
   }
   let children =
     list.flatten([
-      [element.text(config.text), cooldown_bar(config.cooldown)],
+      [
+        element.text(config.text),
+        cooldown_bar(config.cooldown, config.cooldown_ms),
+      ],
       tooltip_children,
     ])
 
   html.div(attrs, children)
 }
 
-fn cooldown_bar(fraction: Float) -> Element(msg) {
-  html.div(
-    [
-      attribute.class("cooldown"),
-      attribute.style("width", percent(fraction)),
-    ],
-    [],
-  )
+/// The bar slides on a CSS animation clock rather than the model's 1s steps
+/// (the original's jQuery animate): a negative delay starts it mid-way, so a
+/// re-render lands exactly where the wall clock says.
+fn cooldown_bar(fraction: Float, duration_ms: Int) -> Element(msg) {
+  case fraction >. 0.0 && duration_ms > 0 {
+    True -> {
+      let elapsed =
+        float.round(int.to_float(duration_ms) *. { 1.0 -. fraction })
+      html.div(
+        [
+          attribute.class("cooldown"),
+          attribute.style(
+            "animation",
+            "cooldownBar "
+              <> int.to_string(duration_ms)
+              <> "ms linear -"
+              <> int.to_string(elapsed)
+              <> "ms forwards",
+          ),
+        ],
+        [],
+      )
+    }
+    False ->
+      html.div(
+        [
+          attribute.class("cooldown"),
+          attribute.style("width", percent(fraction)),
+        ],
+        [],
+      )
+  }
 }
 
 fn percent(fraction: Float) -> String {

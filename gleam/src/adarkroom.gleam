@@ -315,6 +315,7 @@ fn heal_buttons(m: Model) -> List(Element(Msg)) {
             cost: [],
             disabled: False,
             cooldown: model.cooldown_fraction(m, cooldown_id, cooldown_ms),
+            cooldown_ms: cooldown_ms,
             id: cooldown_id,
           )),
         )
@@ -371,6 +372,7 @@ fn attack_button(m: Model, name: String, weapon: combat.Weapon) -> Element(Msg) 
       "attack_" <> name,
       weapon.cooldown * 1000,
     ),
+    cooldown_ms: weapon.cooldown * 1000,
     id: "attack_" <> name,
   ))
 }
@@ -469,6 +471,7 @@ fn outside_panel(m: Model) -> Element(Msg) {
       cost: [],
       disabled: model.on_cooldown(m, "gather"),
       cooldown: model.cooldown_fraction(m, "gather", outside.gather_cooldown_ms),
+      cooldown_ms: outside.gather_cooldown_ms,
       id: "gatherButton",
     ))
   let traps = case craft.building_count(m.state, "trap") > 0 {
@@ -480,6 +483,7 @@ fn outside_panel(m: Model) -> Element(Msg) {
         cost: [],
         disabled: model.on_cooldown(m, "traps"),
         cooldown: model.cooldown_fraction(m, "traps", outside.traps_cooldown_ms),
+        cooldown_ms: outside.traps_cooldown_ms,
         id: "trapsButton",
       ))
   }
@@ -566,6 +570,7 @@ fn path_panel(m: Model) -> Element(Msg) {
       cost: [],
       disabled: state.get_outfit(s, "cured meat") <= 0,
       cooldown: 0.0,
+      cooldown_ms: 0,
       id: "embarkButton",
     ))
   html.div([attribute.class("location"), attribute.id("pathPanel")], [
@@ -687,6 +692,7 @@ fn build_button(s: state.State, name: String, c: Craftable) -> Element(Msg) {
     cost: c.cost(s),
     disabled: craft.at_maximum(c, craft.count(s, c, name)),
     cooldown: 0.0,
+    cooldown_ms: 0,
     id: "build_" <> string.replace(name, " ", "-"),
   ))
 }
@@ -714,6 +720,7 @@ fn buy_button(s: state.State, name: String, g: Good) -> Element(Msg) {
     cost: g.cost,
     disabled: trade.at_maximum(g, state.get_store(s, name)),
     cooldown: 0.0,
+    cooldown_ms: 0,
     id: "buy_" <> string.replace(name, " ", "-"),
   ))
 }
@@ -742,6 +749,7 @@ fn ship_panel(m: Model) -> Element(Msg) {
       cost: [#("alien alloy", ship.alloy_per_hull)],
       disabled: False,
       cooldown: 0.0,
+      cooldown_ms: 0,
       id: "reinforceButton",
     )),
     button.button(button.Config(
@@ -750,6 +758,7 @@ fn ship_panel(m: Model) -> Element(Msg) {
       cost: [#("alien alloy", ship.alloy_per_thruster)],
       disabled: False,
       cooldown: 0.0,
+      cooldown_ms: 0,
       id: "engineButton",
     )),
     button.button(button.Config(
@@ -758,6 +767,7 @@ fn ship_panel(m: Model) -> Element(Msg) {
       cost: [],
       disabled: ship.hull(m.state) <= 0,
       cooldown: model.cooldown_fraction(m, "liftoff", ship.liftoff_cooldown_ms),
+      cooldown_ms: ship.liftoff_cooldown_ms,
       id: "liftoffButton",
     )),
   ])
@@ -800,6 +810,7 @@ fn fabricator_panel(m: Model) -> Element(Msg) {
           cost: [#("alien alloy", c.alloy)],
           disabled: fabricator.at_maximum(m.state, c),
           cooldown: 0.0,
+          cooldown_ms: 0,
           id: "fabricate_" <> c.key,
         ))
       }),
@@ -906,6 +917,7 @@ fn dir_button(label: String, msg: Msg) -> Element(Msg) {
     cost: [],
     disabled: False,
     cooldown: 0.0,
+    cooldown_ms: 0,
     id: "dir_" <> label,
   ))
 }
