@@ -18,6 +18,21 @@
         from { width: 100%; }
         to { width: 0%; }
       }
+
+      /* The Outside right-hand column: the village box flows above the
+         stores (Engine.moveStoresView's measured village.height() + 26px,
+         by normal flow instead). */
+      #storesColumn {
+        position: absolute;
+        top: 0;
+        right: 0;
+      }
+      #storesColumn #village {
+        position: relative;
+        top: auto;
+        right: auto;
+        margin-bottom: 26px;
+      }
     </style>
   </head>
   <body>

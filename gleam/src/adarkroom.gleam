@@ -662,11 +662,16 @@ fn outside_panel(m: Model) -> Element(Msg) {
       ))
   }
   html.div([attribute.class("location"), attribute.id("outsidePanel")], [
-    village_view(m.state),
     workers_view(m.state),
     gather,
     traps,
-    stores_view(m.state),
+    // The village box and the stores flow in one right-hand column, the
+    // stores sliding below however tall the village grows — the layout
+    // Engine.moveStoresView measures into place.
+    html.div([attribute.id("storesColumn")], [
+      village_view(m.state),
+      stores_view(m.state),
+    ]),
   ])
 }
 
@@ -781,6 +786,11 @@ fn outfit_row(s: state.State, item: String) -> Element(Msg) {
 /// The village: the buildings raised and the current population. Shown as a
 /// "forest" until the first hut makes it a "village". Hidden until something
 /// stands.
+/// The original's float-clearing spacer, appended after floated rows.
+fn clear_div() -> Element(Msg) {
+  html.div([attribute.class("clear")], [])
+}
+
 fn village_view(s: state.State) -> Element(Msg) {
   case craft.built(s) {
     [] -> element.none()
@@ -797,6 +807,7 @@ fn village_view(s: state.State) -> Element(Msg) {
             html.div([attribute.class("row_val")], [
               element.text(int.to_string(count)),
             ]),
+            clear_div(),
           ])
         })
       let population =
@@ -1113,6 +1124,7 @@ fn stores_view(s: state.State) -> Element(Msg) {
                 html.div([attribute.class("row_val")], [
                   element.text(int.to_string(count)),
                 ]),
+                clear_div(),
               ])
             }),
           ),
