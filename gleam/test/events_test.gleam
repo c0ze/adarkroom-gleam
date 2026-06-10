@@ -741,3 +741,16 @@ pub fn an_exact_vitals_cost_is_allowed_test() {
   events.affordable([#("hp", 10)], state.new(), events.Carried(water: 0, hp: 9))
   |> should.be_false
 }
+
+pub fn learning_from_the_master_announces_the_lesson_test() {
+  // addPerk always notifies (Engine.Perks[name].notify).
+  let master =
+    list.find(events.room_events(), fn(e) { e.title == "The Master" })
+  let assert Ok(master) = master
+  let assert Ok(agree) = list.key_find(master.scenes, "agree")
+  let assert Ok(evasion) = list.key_find(agree.buttons, "evasion")
+  let assert Ok(#(s, _, msgs, _)) =
+    events.click_button(evasion, state.new(), 0.5, events.HomeStores)
+  state.has_perk(s, "evasive") |> should.be_true
+  msgs |> should.equal(["learned to be where they're not"])
+}

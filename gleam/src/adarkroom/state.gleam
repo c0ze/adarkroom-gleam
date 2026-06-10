@@ -136,6 +136,25 @@ pub fn has_perk(state: State, perk: String) -> Bool {
 }
 
 /// Grant a perk.
+/// What learning a perk announces (`Engine.Perks[name].notify` — `addPerk`
+/// always notifies).
+pub fn perk_notify(perk: String) -> String {
+  case perk {
+    "boxer" -> "learned to throw punches with purpose"
+    "martial artist" -> "learned to fight quite effectively without weapons"
+    "unarmed master" -> "learned to strike faster without weapons"
+    "barbarian" -> "learned to swing weapons with force"
+    "slow metabolism" -> "learned how to ignore the hunger"
+    "desert rat" -> "learned to love the dry air"
+    "evasive" -> "learned to be where they're not"
+    "precise" -> "learned to predict their movement"
+    "scout" -> "learned to look ahead"
+    "stealthy" -> "learned how not to be seen"
+    "gastronome" -> "learned to make the most of food"
+    _ -> "learned " <> perk
+  }
+}
+
 pub fn add_perk(state: State, perk: String) -> State {
   set_character(state, "perk." <> perk, 1)
 }
