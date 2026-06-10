@@ -926,19 +926,54 @@ fn setpiece_at(exp: Expedition, s: State) -> Result(events.Event, Nil) {
 /// Make it home safe — the carried supplies and loot are unloaded, then the
 /// expedition ends and the player returns to the room.
 fn go_home(model: Model) -> Model {
-  // Mines cleared this trip are credited now that the player is home safe.
+  // Home safe (`goHome`): cleared mines are credited, the crashed ship and
+  // the strange device commission their locations, and carried blueprints
+  // are redeemed — all before the outfit is unloaded, so blueprints never
+  // reach the stores.
   let cleared = case model.expedition {
     Some(exp) -> set.to_list(exp.mines_cleared)
     None -> []
   }
-  let state = list.fold(cleared, return_outfit(model.state), grant_mine)
-  Model(
-    ..notify_world(model, ["a haze falls over the village"]),
-    state: state,
-    location: Room,
-    expedition: None,
-    combat: None,
-  )
+  let s = list.fold(cleared, model.state, grant_mine)
+  let #(s, unlock_messages) = unlock_returns(s)
+  let #(s, blueprint_messages) = world.redeem_blueprints(s)
+  let s = return_outfit(s)
+  let home =
+    Model(
+      ..notify_world(model, ["a haze falls over the village"]),
+      state: s,
+      location: Room,
+      expedition: None,
+      combat: None,
+    )
+  // Announced once home, where the player now stands.
+  notify_room(home, list.append(unlock_messages, blueprint_messages))
+}
+
+/// A safe return commissions what was found out there: the crashed ship opens
+/// its location (`Ship.init` — hull 0, thrusters 1, the once-only guard), and
+/// the strange device opens the fabricator's (`Fabricator.init`).
+fn unlock_returns(s: State) -> #(State, List(String)) {
+  let s = case
+    state.get_game(s, "world.ship") == 1
+    && !state.has_feature(s, "location.ship")
+  {
+    True ->
+      s
+      |> state.set_feature("location.ship", True)
+      |> state.set_game("spaceShip.hull", 0)
+      |> state.set_game("spaceShip.thrusters", 1)
+    False -> s
+  }
+  case
+    state.get_game(s, "world.executioner") == 1
+    && !state.has_feature(s, "location.fabricator")
+  {
+    True -> #(state.set_feature(s, "location.fabricator", True), [
+      "builder knows the strange device when she sees it. takes it for herself real quick. doesn’t ask where it came from.",
+    ])
+    False -> #(s, [])
+  }
 }
 
 /// Raise a cleared mine's building on a safe return, the first time only — it
