@@ -136,16 +136,18 @@ pub type Msg {
   CheckLiftoff
   /// Fabricate the named recipe at the whirring fabricator.
   Fabricate(name: String)
-  /// Timer: one 33ms flight frame of the ascent (time-stamped).
-  FlightFrame(at: Int)
+  /// Timer: one 33ms flight frame of the ascent (time-stamped). Every ascent
+  /// timer carries its run, so a crashed flight's stragglers can't touch a
+  /// later one.
+  FlightFrame(run: Int, at: Int)
   /// Timer: a second of climb.
-  ClimbTick
+  ClimbTick(run: Int)
   /// Timer: the next asteroid wave is due; rolls then spawns.
-  WaveTick
+  WaveTick(run: Int)
   /// Spawn an asteroid wave from its rolls (three per rock), time-stamped.
-  SpawnWave(at: Int, rolls: List(Float))
+  SpawnWave(run: Int, at: Int, rolls: List(Float))
   /// Timer: the fade completes — the ascent is survived.
-  AscentComplete
+  AscentComplete(run: Int)
   /// A key went down / came up (the ascent's controls).
   KeyDown(key: String)
   KeyUp(key: String)
@@ -185,6 +187,8 @@ pub type Model {
     space: Option(space.Flight),
     /// The previous flight frame's clock, for dt-scaling. Runtime-only.
     flight_last_move: Int,
+    /// Which ascent this is — stale timers from earlier runs are ignored.
+    flight_run: Int,
     /// Whether the document key listeners are armed (once per session).
     keys_armed: Bool,
   )
@@ -213,6 +217,7 @@ pub fn init() -> Model {
     fight_move: 0,
     space: None,
     flight_last_move: 0,
+    flight_run: 0,
     keys_armed: False,
   )
 }
@@ -285,21 +290,23 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
       // Lift-off proper: the ascent begins with its clocks and controls.
       case location {
         Space -> {
+          let run = arrived.flight_run + 1
           let flying =
             Model(
               ..arrived,
               space: Some(space.begin(arrived.state)),
               flight_last_move: 0,
+              flight_run: run,
             )
           let #(flying, keys) = arm_keys(flying)
           #(
             flying,
             effect.batch([
               keys,
-              flight_frame_timer(),
-              delayed(1000, ClimbTick),
-              delayed(space.wave_delay_ms(0), WaveTick),
-              delayed(space.ascent_ms, AscentComplete),
+              flight_frame_timer(run),
+              delayed(1000, ClimbTick(run)),
+              delayed(space.wave_delay_ms(0), WaveTick(run)),
+              delayed(space.ascent_ms, AscentComplete(run)),
             ]),
           )
         }
@@ -569,25 +576,29 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
       effect.none(),
     )
 
-    FlightFrame(at: now) -> flight_frame(model, now)
+    FlightFrame(run: run, at: now) ->
+      case run == model.flight_run {
+        True -> flight_frame(model, now)
+        False -> #(model, effect.none())
+      }
 
-    ClimbTick ->
-      case model.space {
+    ClimbTick(run: run) ->
+      case current_flight(model, run) {
         // The altitude clock stops past 60km; the win is the fade completing.
-        Some(flight) if !flight.done ->
+        Ok(flight) ->
           case flight.altitude > 60 {
             True -> #(model, effect.none())
             False -> #(
               Model(..model, space: Some(space.climb(flight))),
-              delayed(1000, ClimbTick),
+              delayed(1000, ClimbTick(run)),
             )
           }
-        _ -> #(model, effect.none())
+        Error(_) -> #(model, effect.none())
       }
 
-    WaveTick ->
-      case model.space {
-        Some(flight) if !flight.done -> #(
+    WaveTick(run: run) ->
+      case current_flight(model, run) {
+        Ok(flight) -> #(
           model,
           effect.from(fn(dispatch) {
             let rolls =
@@ -597,34 +608,36 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
               )
             let _ =
               timer.set_timeout(
-                fn() { dispatch(SpawnWave(float.round(clock.now()), rolls)) },
+                fn() {
+                  dispatch(SpawnWave(run, float.round(clock.now()), rolls))
+                },
                 0,
               )
             Nil
           }),
         )
-        _ -> #(model, effect.none())
+        Error(_) -> #(model, effect.none())
       }
 
-    SpawnWave(at: now, rolls: rolls) ->
-      case model.space {
-        Some(flight) if !flight.done -> #(
+    SpawnWave(run: run, at: now, rolls: rolls) ->
+      case current_flight(model, run) {
+        Ok(flight) -> #(
           Model(..model, space: Some(space.spawn(flight, now, rolls))),
-          delayed(space.wave_delay_ms(flight.altitude), WaveTick),
+          delayed(space.wave_delay_ms(flight.altitude), WaveTick(run)),
         )
-        _ -> #(model, effect.none())
+        Error(_) -> #(model, effect.none())
       }
 
-    AscentComplete ->
-      case model.space {
+    AscentComplete(run: run) ->
+      case current_flight(model, run) {
         // Survived the fade: the ascent is won. The ending sequence (score,
         // prestige, the wanderer fleet) lands with the next increment; the
         // flight simply goes quiet.
-        Some(flight) if !flight.done -> #(
+        Ok(flight) -> #(
           Model(..model, space: Some(space.Flight(..flight, done: True))),
           effect.none(),
         )
-        _ -> #(model, effect.none())
+        Error(_) -> #(model, effect.none())
       }
 
     KeyDown(key: key) -> #(hold_key(model, key, True), effect.none())
@@ -658,7 +671,7 @@ fn flight_frame(model: Model, now: Int) -> #(Model, Effect(Msg)) {
         }
         False -> #(
           Model(..model, space: Some(flown), flight_last_move: now),
-          flight_frame_timer(),
+          flight_frame_timer(model.flight_run),
         )
       }
     }
@@ -667,15 +680,27 @@ fn flight_frame(model: Model, now: Int) -> #(Model, Effect(Msg)) {
 }
 
 /// The next 33ms frame, time-stamped from the wall clock.
-fn flight_frame_timer() -> Effect(Msg) {
+fn flight_frame_timer(run: Int) -> Effect(Msg) {
   effect.from(fn(dispatch) {
     let _ =
       timer.set_timeout(
-        fn() { dispatch(FlightFrame(float.round(clock.now()))) },
+        fn() { dispatch(FlightFrame(run, float.round(clock.now()))) },
         space.frame_ms,
       )
     Nil
   })
+}
+
+/// This run's live, still-flying flight — stale-run timers get nothing.
+fn current_flight(model: Model, run: Int) -> Result(space.Flight, Nil) {
+  case model.space {
+    Some(flight) ->
+      case run == model.flight_run && !flight.done {
+        True -> Ok(flight)
+        False -> Error(Nil)
+      }
+    None -> Error(Nil)
+  }
 }
 
 /// Press or release an ascent control (`keyDown`/`keyUp`: arrows or WASD).

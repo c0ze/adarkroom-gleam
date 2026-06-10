@@ -1680,7 +1680,7 @@ pub fn arriving_in_space_begins_the_flight_test() {
 pub fn a_flight_frame_moves_the_held_ship_test() {
   let flying = lifting_off()
   let steering = run(flying, model.KeyDown("ArrowLeft"))
-  let after = run(steering, model.FlightFrame(at: 1033))
+  let after = run(steering, model.FlightFrame(run: 1, at: 1033))
   let assert option.Some(flight) = after.space
   flight.x |> should.equal(346.0)
   after.flight_last_move |> should.equal(1033)
@@ -1692,13 +1692,13 @@ pub fn releasing_the_key_stops_the_ship_test() {
     flying
     |> run(model.KeyDown("a"))
     |> run(model.KeyUp("a"))
-    |> run(model.FlightFrame(at: 1033))
+    |> run(model.FlightFrame(run: 1, at: 1033))
   let assert option.Some(flight) = coasting.space
   flight.x |> should.equal(350.0)
 }
 
 pub fn a_spent_hull_crashes_back_to_the_ship_test() {
-  // A rock dead-centre and one point of hull: the frame ends the flight.
+  // A rock within collision range and one point of hull: the frame ends the flight.
   let flying = lifting_off()
   let assert option.Some(flight) = flying.space
   let doomed =
@@ -1711,7 +1711,7 @@ pub fn a_spent_hull_crashes_back_to_the_ship_test() {
       ),
       flight_last_move: 467,
     )
-  let after = run(doomed, model.FlightFrame(at: 500))
+  let after = run(doomed, model.FlightFrame(run: 1, at: 500))
   after.space |> should.equal(option.None)
   after.location |> should.equal(model.Ship)
   // The lift-off button cools again.
@@ -1721,25 +1721,47 @@ pub fn a_spent_hull_crashes_back_to_the_ship_test() {
 
 pub fn the_climb_counts_kilometres_test() {
   let flying = lifting_off()
-  let after = run(flying, model.ClimbTick)
+  let after = run(flying, model.ClimbTick(run: 1))
   let assert option.Some(flight) = after.space
   flight.altitude |> should.equal(1)
 }
 
 pub fn a_wave_falls_from_its_rolls_test() {
   let flying = lifting_off()
-  let after = run(flying, model.SpawnWave(at: 2000, rolls: [0.1, 0.5, 0.0]))
+  let after =
+    run(flying, model.SpawnWave(run: 1, at: 2000, rolls: [0.1, 0.5, 0.0]))
   let assert option.Some(flight) = after.space
   flight.asteroids |> list.length |> should.equal(1)
 }
 
 pub fn surviving_the_fade_wins_test() {
   let flying = lifting_off()
-  let after = run(flying, model.AscentComplete)
+  let after = run(flying, model.AscentComplete(run: 1))
   let assert option.Some(flight) = after.space
   flight.done |> should.be_true
   // A quiet flight spawns and climbs no more.
-  let still = run(after, model.ClimbTick)
+  let still = run(after, model.ClimbTick(run: 1))
   let assert option.Some(done_flight) = still.space
   done_flight.altitude |> should.equal(0)
+}
+
+pub fn a_crashed_runs_stragglers_cannot_touch_the_next_flight_test() {
+  // Lift off twice (run 2); run 1's leftover 60s fade and climb must do
+  // nothing to the new flight.
+  let second =
+    lifting_off()
+    |> run(model.Navigate(to: model.Ship))
+    |> run(model.Navigate(to: model.Space))
+  second.flight_run |> should.equal(2)
+  let after =
+    second
+    |> run(model.AscentComplete(run: 1))
+    |> run(model.ClimbTick(run: 1))
+  let assert option.Some(flight) = after.space
+  flight.done |> should.be_false
+  flight.altitude |> should.equal(0)
+  // The live run's clocks still work.
+  let won = run(after, model.AscentComplete(run: 2))
+  let assert option.Some(done_flight) = won.space
+  done_flight.done |> should.be_true
 }
