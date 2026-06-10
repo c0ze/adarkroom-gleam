@@ -149,6 +149,7 @@ pub fn an_ungated_button_is_always_available_test() {
       reward: [],
       notification: None,
       available: None,
+      link: None,
       on_click: None,
       next: events.End,
     )
@@ -164,6 +165,7 @@ pub fn a_gated_button_follows_its_predicate_test() {
       notification: None,
       available: Some(fn(s) { state.get_store(s, "compass") < 1 }),
       on_click: None,
+      link: None,
       next: events.End,
     )
   events.button_available(btn, state.new()) |> should.equal(True)
@@ -188,6 +190,7 @@ pub fn an_unaffordable_button_is_refused_test() {
       reward: [],
       notification: None,
       available: None,
+      link: None,
       on_click: None,
       next: events.End,
     )
@@ -202,6 +205,7 @@ pub fn clicking_pays_cost_takes_reward_and_advances_test() {
       reward: [#("scales", 5)],
       notification: Some("a fair trade"),
       available: None,
+      link: None,
       on_click: None,
       next: events.Goto("next"),
     )
@@ -222,6 +226,7 @@ pub fn clicking_a_button_runs_its_on_click_effect_test() {
       reward: [],
       notification: None,
       available: None,
+      link: None,
       on_click: Some(fn(s) {
         #(state.add_perk(s, "scout"), ["lessons learned"])
       }),
@@ -240,6 +245,7 @@ pub fn a_free_button_can_just_end_test() {
       reward: [],
       notification: None,
       available: None,
+      link: None,
       on_click: None,
       next: events.End,
     )
@@ -611,4 +617,31 @@ pub fn tick_delays_idles_with_nothing_pending_test() {
   let #(after, msgs) = events.tick_delays(state.new())
   msgs |> should.equal([])
   after |> should.equal(state.new())
+}
+
+// --- marketing ------------------------------------------------------------------
+
+fn penrose() -> events.Event {
+  let assert Ok(ev) =
+    list.find(events.marketing_events(), fn(e) { e.title == "Penrose" })
+  ev
+}
+
+pub fn penrose_thrums_until_given_in_test() {
+  penrose().is_available(state.new()) |> should.be_true
+  state.new()
+  |> state.set_game("marketing.penrose", 1)
+  |> penrose().is_available
+  |> should.be_false
+}
+
+pub fn giving_in_to_penrose_sets_the_flag_and_links_out_test() {
+  let assert Ok(start) = list.key_find(penrose().scenes, "start")
+  let assert Ok(give_in) = list.key_find(start.buttons, "give in")
+  give_in.link
+  |> should.equal(Some(
+    "https://penrose.doublespeakgames.com/?utm_source=adarkroom&utm_medium=crosspromote&utm_campaign=event",
+  ))
+  let assert Ok(#(s, _, _)) = events.click_button(give_in, state.new(), 0.5)
+  state.get_game(s, "marketing.penrose") |> should.equal(1)
 }

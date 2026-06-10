@@ -41,6 +41,10 @@ pub type SceneButton {
     /// Arbitrary effect run when chosen (`onChoose`/`onClick`): a perk, a flag.
     /// Runs after the cost/reward, returning the new state and any messages.
     on_click: Option(fn(state.State) -> #(state.State, List(String))),
+    /// When present, choosing the button ends the event and opens this URL in
+    /// a new tab (the JS `link` + `window.open`); the marketing cross-promos
+    /// use it.
+    link: Option(String),
     next: NextScene,
   )
 }
@@ -414,6 +418,7 @@ fn choice(text: String, next: NextScene) -> SceneButton {
     reward: [],
     notification: option.None,
     available: option.None,
+    link: option.None,
     on_click: option.None,
     next:,
   )
@@ -431,6 +436,7 @@ fn give(
     reward: [],
     notification: option.None,
     available: option.None,
+    link: option.None,
     on_click: option.None,
     next:,
   )
@@ -446,6 +452,7 @@ fn learn(text: String, cost: List(#(String, Int)), perk: String) -> SceneButton 
     notification: option.None,
     available: option.Some(fn(s) { !state.has_perk(s, perk) }),
     on_click: option.Some(fn(s) { #(state.add_perk(s, perk), []) }),
+    link: option.None,
     next: End,
   )
 }
@@ -698,6 +705,7 @@ fn plague() -> Event {
                 reward: [#("medicine", 1)],
                 notification: option.None,
                 available: option.None,
+                link: option.None,
                 on_click: option.None,
                 next: Stay,
               ),
@@ -799,6 +807,7 @@ fn give_then_home(notification: String) -> SceneButton {
     reward: [],
     notification: option.Some(notification),
     available: option.None,
+    link: option.None,
     on_click: option.None,
     next: End,
   )
@@ -807,6 +816,60 @@ fn give_then_home(notification: String) -> SceneButton {
 /// Events available in any settled location (Room or Outside).
 pub fn global_events() -> List(Event) {
   [thief()]
+}
+
+/// The marketing cross-promos (`events/marketing.js`), folded into the same
+/// pool as everything else, exactly as the JS concatenates them.
+pub fn marketing_events() -> List(Event) {
+  [penrose()]
+}
+
+/// Play Penrose! — a dream of another doublespeak game. Giving in opens it
+/// (and the dream never comes back); ignoring it leaves the door open.
+fn penrose() -> Event {
+  Event(
+    title: "Penrose",
+    is_available: fn(s) { state.get_game(s, "marketing.penrose") == 0 },
+    scenes: [
+      #(
+        "start",
+        Scene(
+          text: [
+            "a strange thrumming, pounding and crashing. visions of people and places, of a huge machine and twisting curves.",
+            "inviting. it would be so easy to give in, completely.",
+          ],
+          notification: option.Some(
+            "a strange thrumming, pounding and crashing. and then gone.",
+          ),
+          reward: [],
+          combat: False,
+          on_load: option.None,
+          on_load_rng: option.None,
+          setpiece: option.None,
+          buttons: [
+            #(
+              "give in",
+              SceneButton(
+                text: "give in",
+                cost: [],
+                reward: [],
+                notification: option.None,
+                available: option.None,
+                on_click: option.Some(fn(s) {
+                  #(state.set_game(s, "marketing.penrose", 1), [])
+                }),
+                link: option.Some(
+                  "https://penrose.doublespeakgames.com/?utm_source=adarkroom&utm_medium=crosspromote&utm_campaign=event",
+                ),
+                next: End,
+              ),
+            ),
+            #("ignore", choice("ignore it", End)),
+          ],
+        ),
+      ),
+    ],
+  )
 }
 
 /// The Thief — once the thieves have skimmed enough, the villagers catch one.
@@ -903,6 +966,7 @@ fn nomad() -> Event {
             reward: [#("scales", 1)],
             notification: option.None,
             available: option.None,
+            link: option.None,
             on_click: option.None,
             next: Stay,
           ),
@@ -915,6 +979,7 @@ fn nomad() -> Event {
             reward: [#("teeth", 1)],
             notification: option.None,
             available: option.None,
+            link: option.None,
             on_click: option.None,
             next: Stay,
           ),
@@ -927,6 +992,7 @@ fn nomad() -> Event {
             reward: [#("bait", 1)],
             notification: option.Some("traps are more effective with bait."),
             available: option.None,
+            link: option.None,
             on_click: option.None,
             next: Stay,
           ),
@@ -942,6 +1008,7 @@ fn nomad() -> Event {
             ),
             available: option.Some(fn(s) { state.get_store(s, "compass") < 1 }),
             on_click: option.None,
+            link: option.None,
             next: Stay,
           ),
         ),
@@ -953,6 +1020,7 @@ fn nomad() -> Event {
             reward: [],
             notification: option.None,
             available: option.None,
+            link: option.None,
             on_click: option.None,
             next: End,
           ),
@@ -1358,6 +1426,7 @@ fn sick_man() -> Event {
                   "the man swallows the medicine eagerly",
                 ),
                 available: option.None,
+                link: option.None,
                 on_click: option.None,
                 next: Branch([
                   #(0.1, "alloy"),
