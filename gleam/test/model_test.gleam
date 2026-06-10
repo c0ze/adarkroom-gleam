@@ -1125,16 +1125,84 @@ pub fn stepping_onto_the_battleship_opens_the_intro_test() {
   active.scene |> should.equal("start")
 }
 
-pub fn the_unsealed_battleship_skips_the_intro_test() {
-  // With world.executioner set the antechamber would open — it isn't ported
-  // yet, so for now the step falls through to the ordinary encounter roll.
+pub fn the_unsealed_battleship_opens_the_antechamber_test() {
+  // With world.executioner set, stepping onto the ship reaches the elevators.
   let base = battleship_model()
   let m =
     model.Model(
       ..base,
       state: state.set_game(base.state, "world.executioner", 1),
     )
-  run(m, model.MoveEast).active_event |> should.equal(option.None)
+  let after = run(m, model.MoveEast)
+  let assert option.Some(active) = after.active_event
+  let assert Ok(start) = list.key_find(active.event.scenes, "start")
+  let assert Ok(lift) = list.key_find(start.buttons, "engineering")
+  lift.next |> should.equal(events.GotoEvent("executioner-engineering"))
+}
+
+pub fn riding_the_elevator_reaches_the_wing_test() {
+  // Choose the engineering elevator: the wing event takes the stage.
+  let assert Ok(hub) = executioner.event("executioner-antechamber")
+  let m =
+    model.Model(
+      ..battleship_model(),
+      active_event: option.Some(model.ActiveEvent(hub, "start")),
+    )
+  let after = run(m, model.ResolveEvent("engineering", 0.5))
+  let assert option.Some(active) = after.active_event
+  active.event.title |> should.equal("Engineering Wing")
+  active.scene |> should.equal("start")
+}
+
+pub fn an_elevator_to_nowhere_stays_put_test() {
+  // The martial wing isn't ported yet: the JS switchEvent guards a missing
+  // event with a bare return, so the antechamber stays on screen.
+  let assert Ok(hub) = executioner.event("executioner-antechamber")
+  let m =
+    model.Model(
+      ..battleship_model(),
+      active_event: option.Some(model.ActiveEvent(hub, "start")),
+    )
+  let after = run(m, model.ResolveEvent("martial", 0.5))
+  let assert option.Some(active) = after.active_event
+  active.event.title |> should.equal("A Ravaged Battleship")
+}
+
+pub fn the_regenerative_machine_reknits_to_full_test() {
+  // An alien alloy in the pack buys a full heal in the R&D lab.
+  let assert Ok(wing) = executioner.event("executioner-engineering")
+  let base = battleship_model()
+  let assert option.Some(exp) = base.expedition
+  let wounded =
+    world.Expedition(..exp, vitals: world.Vitals(..exp.vitals, health: 2))
+  let m =
+    model.Model(
+      ..base,
+      state: state.set_outfit(base.state, "alien alloy", 1),
+      expedition: option.Some(wounded),
+      active_event: option.Some(model.ActiveEvent(wing, "4")),
+    )
+  let after = run(m, model.ResolveEvent("use", 0.5))
+  let assert option.Some(healed) = after.expedition
+  healed.vitals.health |> should.equal(world.max_health(after.state))
+  state.get_outfit(after.state, "alien alloy") |> should.equal(0)
+  let assert option.Some(active) = after.active_event
+  active.scene |> should.equal("4-heal")
+}
+
+pub fn rushing_the_fire_costs_hit_points_test() {
+  let assert Ok(wing) = executioner.event("executioner-engineering")
+  let m =
+    model.Model(
+      ..battleship_model(),
+      active_event: option.Some(model.ActiveEvent(wing, "1-3")),
+    )
+  // A 0.9 branch roll lands in the quiet robot bay (2-3b).
+  let after = run(m, model.ResolveEvent("run", 0.9))
+  let assert option.Some(exp) = after.expedition
+  exp.vitals.health |> should.equal(0)
+  let assert option.Some(active) = after.active_event
+  active.scene |> should.equal("2-3b")
 }
 
 pub fn an_elevator_button_switches_events_test() {
@@ -1148,6 +1216,7 @@ pub fn an_elevator_button_switches_events_test() {
       available: option.None,
       on_click: option.None,
       link: option.None,
+      effect: option.None,
       next: events.GotoEvent("executioner-intro"),
     )
   let hub =
@@ -1220,6 +1289,7 @@ pub fn a_world_event_can_cost_vitals_test() {
       notification: option.None,
       available: option.None,
       link: option.None,
+      effect: option.None,
       on_click: option.None,
       next: events.End,
     )

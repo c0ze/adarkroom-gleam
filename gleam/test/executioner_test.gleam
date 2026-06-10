@@ -1,6 +1,7 @@
 import adarkroom/combat
 import adarkroom/events
 import adarkroom/executioner
+import adarkroom/state
 import gleam/list
 import gleam/option.{Some}
 import gleam/result
@@ -71,4 +72,69 @@ pub fn taking_the_device_unseals_the_ship_test() {
   let assert Ok(btn) = list.key_find(s.buttons, "leave")
   btn.text |> should.equal("take device and leave")
   btn.next |> should.equal(events.End)
+}
+
+// --- the antechamber and the engineering wing -----------------------------------
+
+fn wing(key: String, name: String) -> events.Scene {
+  let assert Ok(ev) = executioner.event(key)
+  let assert Ok(s) = list.key_find(ev.scenes, name)
+  s
+}
+
+pub fn the_elevators_run_until_their_wing_is_done_test() {
+  let assert Ok(lift) =
+    list.key_find(wing("executioner-antechamber", "start").buttons, "medical")
+  events.button_available(lift, state.new()) |> should.be_true
+  state.new()
+  |> state.set_game("world.medical", 1)
+  |> events.button_available(lift, _)
+  |> should.be_false
+}
+
+pub fn the_command_deck_needs_all_three_wings_test() {
+  let assert Ok(lift) =
+    list.key_find(wing("executioner-antechamber", "start").buttons, "command")
+  let two =
+    state.new()
+    |> state.set_game("world.engineering", 1)
+    |> state.set_game("world.medical", 1)
+  events.button_available(lift, two) |> should.be_false
+  two
+  |> state.set_game("world.martial", 1)
+  |> events.button_available(lift, _)
+  |> should.be_true
+}
+
+pub fn the_fire_takes_water_or_blood_test() {
+  let s = wing("executioner-engineering", "1-3")
+  let assert Ok(douse) = list.key_find(s.buttons, "water")
+  douse.cost |> should.equal([#("water", 5)])
+  let assert Ok(rush) = list.key_find(s.buttons, "run")
+  rush.cost |> should.equal([#("hp", 10)])
+  // No way around: the fire offers no leave.
+  list.key_find(s.buttons, "leave") |> should.equal(Error(Nil))
+}
+
+pub fn the_machine_heals_for_an_alloy_test() {
+  let assert Ok(use_machine) =
+    list.key_find(wing("executioner-engineering", "4").buttons, "use")
+  use_machine.cost |> should.equal([#("alien alloy", 1)])
+  use_machine.effect |> should.equal(Some(events.HealToMax))
+}
+
+pub fn the_prototype_shields_every_five_seconds_test() {
+  let s = wing("executioner-engineering", "7")
+  let assert Some(extra) = s.setpiece
+  extra.specials
+  |> should.equal([combat.SetStatusEvery(5.0, combat.Shield)])
+  let assert Some(foe) = extra.enemy
+  foe.health |> should.equal(150)
+}
+
+pub fn the_wing_ends_at_the_elevators_test() {
+  let s = wing("executioner-engineering", "8")
+  let assert Some(on_load) = s.on_load
+  let #(after, _) = on_load(state.new())
+  state.get_game(after, "world.engineering") |> should.equal(1)
 }

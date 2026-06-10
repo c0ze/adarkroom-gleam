@@ -150,6 +150,7 @@ pub fn an_ungated_button_is_always_available_test() {
       notification: None,
       available: None,
       link: None,
+      effect: None,
       on_click: None,
       next: events.End,
     )
@@ -166,6 +167,7 @@ pub fn a_gated_button_follows_its_predicate_test() {
       available: Some(fn(s) { state.get_store(s, "compass") < 1 }),
       on_click: None,
       link: None,
+      effect: None,
       next: events.End,
     )
   events.button_available(btn, state.new()) |> should.equal(True)
@@ -192,6 +194,7 @@ pub fn an_unaffordable_button_is_refused_test() {
       notification: None,
       available: None,
       link: None,
+      effect: None,
       on_click: None,
       next: events.End,
     )
@@ -208,6 +211,7 @@ pub fn clicking_pays_cost_takes_reward_and_advances_test() {
       notification: Some("a fair trade"),
       available: None,
       link: None,
+      effect: None,
       on_click: None,
       next: events.Goto("next"),
     )
@@ -230,6 +234,7 @@ pub fn clicking_a_button_runs_its_on_click_effect_test() {
       notification: None,
       available: None,
       link: None,
+      effect: None,
       on_click: Some(fn(s) {
         #(state.add_perk(s, "scout"), ["lessons learned"])
       }),
@@ -250,6 +255,7 @@ pub fn a_free_button_can_just_end_test() {
       notification: None,
       available: None,
       link: None,
+      effect: None,
       on_click: None,
       next: events.End,
     )
@@ -673,6 +679,7 @@ fn priced(cost: List(#(String, Int))) -> events.SceneButton {
     notification: None,
     available: None,
     link: None,
+    effect: None,
     on_click: None,
     next: events.End,
   )
