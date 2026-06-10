@@ -1999,12 +1999,14 @@ fn setpiece_loot_effect(scene: events.Scene) -> Effect(Msg) {
 fn grant_setpiece_loot(model: Model, rolls: List(Float)) -> Model {
   case active_scene(model) {
     // The scene's drops wait in rows for the player to take (`drawLoot`),
-    // not in the pack.
+    // not in the pack — and the take-everything button starts its second of
+    // cooling here too.
     Ok(events.Scene(setpiece: Some(extra), ..)) -> {
       let loot =
         combat.roll_loot(extra.loot, rolls)
         |> list.filter(fn(l) { l.1 > 0 })
       Model(..model, loot: loot, drop_for: None)
+      |> start_cooldown("loot_take_et", leave_cooldown_ms)
     }
     _ -> model
   }
