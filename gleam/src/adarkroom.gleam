@@ -10,16 +10,18 @@ import adarkroom/combat
 import adarkroom/craft.{type Craftable}
 import adarkroom/events
 import adarkroom/model.{
-  type Model, type Msg, AdjustTemp, Build, BuilderProgress, Buy, CheckTraps,
-  ChooseEvent, CollectIncome, CoolCheck, DecreaseSupply, DecreaseWorker, Embark,
-  GatherWood, Heal, IncreaseSupply, IncreaseWorker, LightFire, MoveEast,
-  MoveNorth, MoveSouth, MoveWest, Navigate, StokeFire, StrikeEnemy, Tick,
+  type Model, type Msg, AdjustTemp, Build, BuilderProgress, Buy, CheckLiftoff,
+  CheckTraps, ChooseEvent, CollectIncome, CoolCheck, DecreaseSupply,
+  DecreaseWorker, Embark, GatherWood, Heal, IncreaseSupply, IncreaseWorker,
+  LightFire, MoveEast, MoveNorth, MoveSouth, MoveWest, Navigate, ReinforceHull,
+  StokeFire, StrikeEnemy, Tick, UpgradeEngine,
 }
 import adarkroom/notifications.{type Notifications}
 import adarkroom/outside
 import adarkroom/path
 import adarkroom/room
 import adarkroom/save
+import adarkroom/ship
 import adarkroom/state
 import adarkroom/timer
 import adarkroom/trade.{type Good}
@@ -332,6 +334,7 @@ fn location_panel(m: Model) -> Element(Msg) {
     model.Room -> room_panel(m)
     model.Outside -> outside_panel(m)
     model.Path -> path_panel(m)
+    model.Ship -> ship_panel(m)
     model.World ->
       case m.expedition {
         Some(exp) -> world_panel(exp)
@@ -605,6 +608,49 @@ fn buy_button(s: state.State, name: String, g: Good) -> Element(Msg) {
 
 /// The world map: the explored ground (the wanderer at its centre), the vitals,
 /// and directional controls.
+/// An Old Starship: the hull and engine, their alloy-fed upgrades, and the
+/// lift-off button — disabled until there's any hull at all (`ship.js`).
+fn ship_panel(m: Model) -> Element(Msg) {
+  html.div([attribute.id("shipPanel"), attribute.class("location")], [
+    html.div([attribute.id("hullRow"), attribute.class("storeRow")], [
+      html.div([attribute.class("row_key")], [element.text("hull:")]),
+      html.div([attribute.class("row_val")], [
+        element.text(int.to_string(ship.hull(m.state))),
+      ]),
+    ]),
+    html.div([attribute.id("engineRow"), attribute.class("storeRow")], [
+      html.div([attribute.class("row_key")], [element.text("engine:")]),
+      html.div([attribute.class("row_val")], [
+        element.text(int.to_string(ship.thrusters(m.state))),
+      ]),
+    ]),
+    button.button(button.Config(
+      text: "reinforce hull",
+      on_click: ReinforceHull,
+      cost: [#("alien alloy", ship.alloy_per_hull)],
+      disabled: False,
+      cooldown: 0.0,
+      id: "reinforceButton",
+    )),
+    button.button(button.Config(
+      text: "upgrade engine",
+      on_click: UpgradeEngine,
+      cost: [#("alien alloy", ship.alloy_per_thruster)],
+      disabled: False,
+      cooldown: 0.0,
+      id: "engineButton",
+    )),
+    button.button(button.Config(
+      text: "lift off",
+      on_click: CheckLiftoff,
+      cost: [],
+      disabled: ship.hull(m.state) <= 0,
+      cooldown: model.cooldown_fraction(m, "liftoff", ship.liftoff_cooldown_ms),
+      id: "liftoffButton",
+    )),
+  ])
+}
+
 fn world_panel(exp: Expedition) -> Element(Msg) {
   let map =
     html.div(

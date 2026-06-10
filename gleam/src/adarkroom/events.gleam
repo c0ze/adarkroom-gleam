@@ -41,6 +41,10 @@ pub type ButtonEffect {
   /// Scavenged surface maps (`World.applyMap()` run `times` times): each
   /// reveals a patch of the world around a random unexplored spot.
   ApplyMap(times: Int)
+  /// Up and away (`Ship.liftOff`, the Ready to Leave 'fly').
+  LiftOff
+  /// Refund a button's cooldown (the 'linger' clearing lift off's).
+  ClearCooldown(id: String)
 }
 
 /// A choice the player can make within a scene.
