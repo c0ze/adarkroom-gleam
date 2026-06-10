@@ -32,6 +32,14 @@ pub type NextScene {
   GotoEvent(String)
 }
 
+/// A button-level world action the model interprets — the JS `onChoose`
+/// closures that reach beyond plain state into `World`.
+pub type ButtonEffect {
+  /// A regenerative machine (`World.setHp(World.getMaxHealth())`): muscle and
+  /// bone reknit, good as new.
+  HealToMax
+}
+
 /// A choice the player can make within a scene.
 pub type SceneButton {
   SceneButton(
@@ -48,6 +56,8 @@ pub type SceneButton {
     /// a new tab (the JS `link` + `window.open`); the marketing cross-promos
     /// use it.
     link: Option(String),
+    /// A world-level `onChoose` (a wing machine), interpreted by the model.
+    effect: Option(ButtonEffect),
     next: NextScene,
   )
 }
@@ -481,6 +491,7 @@ fn choice(text: String, next: NextScene) -> SceneButton {
     notification: option.None,
     available: option.None,
     link: option.None,
+    effect: option.None,
     on_click: option.None,
     next:,
   )
@@ -499,6 +510,7 @@ fn give(
     notification: option.None,
     available: option.None,
     link: option.None,
+    effect: option.None,
     on_click: option.None,
     next:,
   )
@@ -515,6 +527,7 @@ fn learn(text: String, cost: List(#(String, Int)), perk: String) -> SceneButton 
     available: option.Some(fn(s) { !state.has_perk(s, perk) }),
     on_click: option.Some(fn(s) { #(state.add_perk(s, perk), []) }),
     link: option.None,
+    effect: option.None,
     next: End,
   )
 }
@@ -768,6 +781,7 @@ fn plague() -> Event {
                 notification: option.None,
                 available: option.None,
                 link: option.None,
+                effect: option.None,
                 on_click: option.None,
                 next: Stay,
               ),
@@ -870,6 +884,7 @@ fn give_then_home(notification: String) -> SceneButton {
     notification: option.Some(notification),
     available: option.None,
     link: option.None,
+    effect: option.None,
     on_click: option.None,
     next: End,
   )
@@ -923,6 +938,7 @@ fn penrose() -> Event {
                 link: option.Some(
                   "https://penrose.doublespeakgames.com/?utm_source=adarkroom&utm_medium=crosspromote&utm_campaign=event",
                 ),
+                effect: option.None,
                 next: End,
               ),
             ),
@@ -1029,6 +1045,7 @@ fn nomad() -> Event {
             notification: option.None,
             available: option.None,
             link: option.None,
+            effect: option.None,
             on_click: option.None,
             next: Stay,
           ),
@@ -1042,6 +1059,7 @@ fn nomad() -> Event {
             notification: option.None,
             available: option.None,
             link: option.None,
+            effect: option.None,
             on_click: option.None,
             next: Stay,
           ),
@@ -1055,6 +1073,7 @@ fn nomad() -> Event {
             notification: option.Some("traps are more effective with bait."),
             available: option.None,
             link: option.None,
+            effect: option.None,
             on_click: option.None,
             next: Stay,
           ),
@@ -1071,6 +1090,7 @@ fn nomad() -> Event {
             available: option.Some(fn(s) { state.get_store(s, "compass") < 1 }),
             on_click: option.None,
             link: option.None,
+            effect: option.None,
             next: Stay,
           ),
         ),
@@ -1083,6 +1103,7 @@ fn nomad() -> Event {
             notification: option.None,
             available: option.None,
             link: option.None,
+            effect: option.None,
             on_click: option.None,
             next: End,
           ),
@@ -1489,6 +1510,7 @@ fn sick_man() -> Event {
                 ),
                 available: option.None,
                 link: option.None,
+                effect: option.None,
                 on_click: option.None,
                 next: Branch([
                   #(0.1, "alloy"),

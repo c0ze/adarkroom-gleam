@@ -1039,7 +1039,10 @@ fn resolve_event(model: Model, id: String, roll: Float) -> #(Model, Effect(Msg))
                 Ok(#(new_state, purse, messages, step)) -> {
                   let model =
                     notify_here(
-                      apply_purse(Model(..model, state: new_state), purse),
+                      apply_button_effect(
+                        apply_purse(Model(..model, state: new_state), purse),
+                        button.effect,
+                      ),
                       messages,
                     )
                   case button.link {
@@ -1065,6 +1068,30 @@ pub fn event_purse(model: Model) -> events.Purse {
     World, Some(exp) ->
       events.Carried(water: exp.vitals.water, hp: exp.vitals.health)
     _, _ -> events.HomeStores
+  }
+}
+
+/// A button's world-level `onChoose`: the wings' regenerative machines reknit
+/// muscle and bone (`World.setHp(World.getMaxHealth())`).
+fn apply_button_effect(
+  model: Model,
+  effect: Option(events.ButtonEffect),
+) -> Model {
+  case effect, model.expedition {
+    Some(events.HealToMax), Some(exp) ->
+      Model(
+        ..model,
+        expedition: Some(
+          world.Expedition(
+            ..exp,
+            vitals: world.Vitals(
+              ..exp.vitals,
+              health: world.max_health(model.state),
+            ),
+          ),
+        ),
+      )
+    _, _ -> model
   }
 }
 
@@ -1100,13 +1127,14 @@ fn advance_event(
         Ok(scene) -> load_scene(model, event, next, scene)
       }
     // The JS switchEvent: close this event, start the keyed one. The registry
-    // spans the setpieces and the executioner chain, in that lookup order.
+    // spans the setpieces and the executioner chain, in that lookup order. An
+    // unknown key stays put (`if (!event) return`).
     events.SwitchEvent(key) ->
       case
         setpieces.setpiece(key)
         |> result.lazy_or(fn() { executioner.event(key) })
       {
-        Error(_) -> #(Model(..model, active_event: None), effect.none())
+        Error(_) -> #(model, effect.none())
         Ok(next_event) -> start_event(model, next_event)
       }
   }
