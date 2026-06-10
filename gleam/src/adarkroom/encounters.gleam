@@ -30,17 +30,26 @@ pub fn encounters() -> List(Encounter) {
     tier1(
       "A Snarling Beast",
       world.Forest,
-      melee("snarling beast", "R", 5, 1, 0.8, 1, "the snarling beast is dead", [
-        LootEntry("fur", 1, 3, 1.0),
-        LootEntry("meat", 1, 3, 1.0),
-        LootEntry("teeth", 1, 3, 0.8),
-      ]),
+      melee(
+        "snarling beast",
+        "R",
+        5,
+        1,
+        0.8,
+        1.0,
+        "the snarling beast is dead",
+        [
+          LootEntry("fur", 1, 3, 1.0),
+          LootEntry("meat", 1, 3, 1.0),
+          LootEntry("teeth", 1, 3, 0.8),
+        ],
+      ),
       "a snarling beast leaps out of the underbrush",
     ),
     tier1(
       "A Gaunt Man",
       world.Barrens,
-      melee("gaunt man", "E", 6, 2, 0.8, 2, "the gaunt man is dead", [
+      melee("gaunt man", "E", 6, 2, 0.8, 2.0, "the gaunt man is dead", [
         LootEntry("cloth", 1, 3, 0.8),
         LootEntry("teeth", 1, 2, 0.8),
         LootEntry("leather", 1, 2, 0.5),
@@ -50,7 +59,7 @@ pub fn encounters() -> List(Encounter) {
     tier1(
       "A Strange Bird",
       world.Field,
-      melee("strange bird", "R", 4, 3, 0.8, 2, "the strange bird is dead", [
+      melee("strange bird", "R", 4, 3, 0.8, 2.0, "the strange bird is dead", [
         LootEntry("scales", 1, 3, 0.8),
         LootEntry("teeth", 1, 2, 0.5),
         LootEntry("meat", 1, 3, 0.8),
@@ -66,7 +75,7 @@ pub fn encounters() -> List(Encounter) {
         10,
         2,
         0.5,
-        3,
+        3.0,
         "the two creatures are dead",
         [
           LootEntry("fur", 2, 4, 1.0),
@@ -80,7 +89,7 @@ pub fn encounters() -> List(Encounter) {
     tier2(
       "A Shivering Man",
       world.Barrens,
-      melee("shivering man", "E", 20, 5, 0.5, 1, "the shivering man is dead", [
+      melee("shivering man", "E", 20, 5, 0.5, 1.0, "the shivering man is dead", [
         LootEntry("cloth", 1, 1, 0.2),
         LootEntry("teeth", 1, 2, 0.8),
         LootEntry("leather", 1, 1, 0.2),
@@ -91,7 +100,7 @@ pub fn encounters() -> List(Encounter) {
     tier2(
       "A Man-Eater",
       world.Forest,
-      melee("man-eater", "T", 25, 3, 0.8, 1, "the man-eater is dead", [
+      melee("man-eater", "T", 25, 3, 0.8, 1.0, "the man-eater is dead", [
         LootEntry("fur", 5, 10, 1.0),
         LootEntry("meat", 5, 10, 1.0),
         LootEntry("teeth", 5, 10, 0.8),
@@ -101,7 +110,7 @@ pub fn encounters() -> List(Encounter) {
     tier2(
       "A Scavenger",
       world.Barrens,
-      melee("scavenger", "E", 30, 4, 0.8, 2, "the scavenger is dead", [
+      melee("scavenger", "E", 30, 4, 0.8, 2.0, "the scavenger is dead", [
         LootEntry("cloth", 5, 10, 0.8),
         LootEntry("leather", 5, 10, 0.8),
         LootEntry("iron", 1, 5, 0.5),
@@ -112,7 +121,7 @@ pub fn encounters() -> List(Encounter) {
     tier2(
       "A Huge Lizard",
       world.Field,
-      melee("lizard", "T", 20, 5, 0.8, 2, "the lizard is dead", [
+      melee("lizard", "T", 20, 5, 0.8, 2.0, "the lizard is dead", [
         LootEntry("scales", 5, 10, 0.8),
         LootEntry("teeth", 5, 10, 0.5),
         LootEntry("meat", 5, 10, 0.8),
@@ -123,7 +132,7 @@ pub fn encounters() -> List(Encounter) {
     tier3(
       "A Feral Terror",
       world.Forest,
-      melee("feral terror", "T", 45, 6, 0.8, 1, "the feral terror is dead", [
+      melee("feral terror", "T", 45, 6, 0.8, 1.0, "the feral terror is dead", [
         LootEntry("fur", 5, 10, 1.0),
         LootEntry("meat", 5, 10, 1.0),
         LootEntry("teeth", 5, 10, 0.8),
@@ -133,7 +142,7 @@ pub fn encounters() -> List(Encounter) {
     tier3(
       "A Soldier",
       world.Barrens,
-      ranged("soldier", "D", 50, 8, 0.8, 2, "the soldier is dead", [
+      ranged("soldier", "D", 50, 8, 0.8, 2.0, "the soldier is dead", [
         LootEntry("cloth", 5, 10, 0.8),
         LootEntry("bullets", 1, 5, 0.5),
         LootEntry("rifle", 1, 1, 0.2),
@@ -144,7 +153,7 @@ pub fn encounters() -> List(Encounter) {
     tier3(
       "A Sniper",
       world.Field,
-      ranged("sniper", "D", 30, 15, 0.8, 4, "the sniper is dead", [
+      ranged("sniper", "D", 30, 15, 0.8, 4.0, "the sniper is dead", [
         LootEntry("cloth", 5, 10, 0.8),
         LootEntry("bullets", 1, 5, 0.5),
         LootEntry("rifle", 1, 1, 0.2),
@@ -179,7 +188,7 @@ fn melee(
   health: Int,
   damage: Int,
   hit: Float,
-  attack_delay: Int,
+  attack_delay: Float,
   death_message: String,
   loot: List(LootEntry),
 ) -> Enemy {
@@ -230,7 +239,7 @@ fn ranged(
   health: Int,
   damage: Int,
   hit: Float,
-  attack_delay: Int,
+  attack_delay: Float,
   death_message: String,
   loot: List(LootEntry),
 ) -> Enemy {

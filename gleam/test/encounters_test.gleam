@@ -28,7 +28,7 @@ pub fn the_snarling_beast_has_its_stats_and_loot_test() {
   beast.enemy.health |> should.equal(5)
   beast.enemy.damage |> should.equal(1)
   beast.enemy.hit |> should.equal(0.8)
-  beast.enemy.attack_delay |> should.equal(1)
+  beast.enemy.attack_delay |> should.equal(1.0)
   beast.enemy.chara |> should.equal("R")
   beast.enemy.loot
   |> list.map(fn(l) { l.name })
