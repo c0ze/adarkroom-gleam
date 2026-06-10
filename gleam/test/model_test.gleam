@@ -1765,3 +1765,37 @@ pub fn a_crashed_runs_stragglers_cannot_touch_the_next_flight_test() {
   let assert option.Some(done_flight) = won.space
   done_flight.done |> should.be_true
 }
+
+// --- the ending ---------------------------------------------------------------
+
+pub fn winning_with_the_beacon_begins_the_outro_test() {
+  let base = lifting_off()
+  let won =
+    model.Model(..base, state: state.set_store(base.state, "fleet beacon", 1))
+    |> run(model.GameWon([0.5]))
+  let assert option.Some(model.Outro(paragraphs: 0, this_score: this, ..)) =
+    won.ending
+  // The beacon (500) plus the two-point hull (100).
+  this |> should.equal(600)
+}
+
+pub fn winning_without_the_beacon_goes_straight_to_the_scores_test() {
+  let won = run(lifting_off(), model.GameWon([0.5]))
+  let assert option.Some(model.EndOptions(..)) = won.ending
+}
+
+pub fn the_outro_paces_its_paragraphs_test() {
+  let base = lifting_off()
+  let telling =
+    model.Model(..base, ending: option.Some(model.Outro(0, 500, 500)))
+  let after = run(run(telling, model.OutroStep), model.OutroStep)
+  let assert option.Some(model.Outro(paragraphs: 2, ..)) = after.ending
+}
+
+pub fn waiting_brings_the_scores_test() {
+  let base = lifting_off()
+  let told = model.Model(..base, ending: option.Some(model.Outro(5, 500, 1200)))
+  let after = run(told, model.EndingWait)
+  after.ending
+  |> should.equal(option.Some(model.EndOptions(500, 1200)))
+}

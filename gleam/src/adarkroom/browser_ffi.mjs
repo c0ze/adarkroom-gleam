@@ -18,3 +18,7 @@ export function onKeys(down, up) {
     up(e.key);
   });
 }
+
+export function reload() {
+  window.location.reload();
+}

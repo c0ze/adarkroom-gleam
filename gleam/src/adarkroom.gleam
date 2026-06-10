@@ -130,6 +130,118 @@ fn save_effect(s: state.State) -> Effect(Msg) {
 }
 
 fn view(m: Model) -> Element(Msg) {
+  case m.ending {
+    Some(ending) -> ending_view(ending)
+    None -> game_view(m)
+  }
+}
+
+/// The end of the game replaces everything: the beacon's outro paragraphs
+/// fading in on their clocks, then the scores and the ways onward
+/// (`showExpansionEnding` / `showEndingOptions`).
+fn ending_view(ending: model.Ending) -> Element(Msg) {
+  case ending {
+    model.Outro(paragraphs: n, ..) -> {
+      let texts = [
+        [
+          "the beacon pulses gently as the ship glides through space.",
+          "coordinates are locked. nothing to do but wait.",
+        ],
+        [
+          "the beacon glows a solid blue, and then goes dim. the ship slows.",
+          "gradually, the vast wanderer homefleet comes into view.",
+          "massive worldships drift unnaturally through clouds of debris, scarred and dead.",
+        ],
+        ["the air is running out."],
+        ["the capsule is cold."],
+      ]
+      let shown =
+        texts
+        |> list.take(int.min(n, 4))
+        |> list.map(fn(lines) {
+          html.div(
+            [attribute.class("outro"), attribute.style("opacity", "1")],
+            list.map(lines, fn(line) { html.div([], [element.text(line)]) }),
+          )
+        })
+      let wait = case n >= 5 {
+        True -> [
+          html.div(
+            [
+              attribute.id("wait-btn"),
+              attribute.class("button"),
+              event.on_click(model.EndingWait),
+            ],
+            [element.text("wait")],
+          ),
+        ]
+        False -> []
+      }
+      html.div([attribute.class("outroContainer")], list.append(shown, wait))
+    }
+    model.EndOptions(this_score: this, total_score: total) ->
+      html.div([attribute.class("centerCont")], [
+        html.span(
+          [attribute.class("endGame"), attribute.style("opacity", "1")],
+          [
+            element.text("score for this game: " <> int.to_string(this)),
+          ],
+        ),
+        html.br([]),
+        html.span(
+          [attribute.class("endGame"), attribute.style("opacity", "1")],
+          [
+            element.text("total score: " <> int.to_string(total)),
+          ],
+        ),
+        html.br([]),
+        html.br([]),
+        html.span(
+          [
+            attribute.class("endGame endGameOption"),
+            attribute.style("opacity", "1"),
+            event.on_click(model.RestartGame),
+          ],
+          [element.text("restart.")],
+        ),
+        html.br([]),
+        html.br([]),
+        html.span(
+          [attribute.class("endGame"), attribute.style("opacity", "1")],
+          [
+            element.text(
+              "expanded story. alternate ending. behind the scenes commentary. get the app.",
+            ),
+          ],
+        ),
+        html.br([]),
+        html.br([]),
+        html.span(
+          [
+            attribute.class("endGame endGameOption"),
+            attribute.style("opacity", "1"),
+            event.on_click(model.OpenStore(
+              "https://itunes.apple.com/app/apple-store/id736683061?pt=2073437&ct=gameover&mt=8",
+            )),
+          ],
+          [element.text("iOS.")],
+        ),
+        html.br([]),
+        html.span(
+          [
+            attribute.class("endGame endGameOption"),
+            attribute.style("opacity", "1"),
+            event.on_click(model.OpenStore(
+              "https://play.google.com/store/apps/details?id=com.yourcompany.adarkroom",
+            )),
+          ],
+          [element.text("android.")],
+        ),
+      ])
+  }
+}
+
+fn game_view(m: Model) -> Element(Msg) {
   html.div(
     [attribute.id("wrapper")],
     list.append(
