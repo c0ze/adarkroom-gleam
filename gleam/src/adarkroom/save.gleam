@@ -121,3 +121,8 @@ pub fn import_save(encoded: String) -> Result(State, Nil) {
     Error(_) -> Error(Nil)
   }
 }
+
+/// Wipe the save (`deleteSave`) — the prestige slot is not ours and survives.
+pub fn wipe() -> Nil {
+  storage.remove(save_key)
+}

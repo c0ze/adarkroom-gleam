@@ -16,6 +16,8 @@ import adarkroom/outside
 import adarkroom/path
 import adarkroom/rng
 import adarkroom/room
+import adarkroom/save
+import adarkroom/scoring
 import adarkroom/setpieces
 import adarkroom/ship
 import adarkroom/space
@@ -151,6 +153,17 @@ pub type Msg {
   /// A key went down / came up (the ascent's controls).
   KeyDown(key: String)
   KeyUp(key: String)
+  /// The ascent is survived: save the score and prestige (the rolls reduce
+  /// the carried stores) and begin the ending.
+  GameWon(rolls: List(Float))
+  /// Timer: the next outro paragraph fades in.
+  OutroStep
+  /// The outro's wait button: on to the scores.
+  EndingWait
+  /// Start again — the save is wiped (prestige stays) and the page reloads.
+  RestartGame
+  /// The ending's app-store links.
+  OpenStore(url: String)
 }
 
 pub type Model {
@@ -189,6 +202,9 @@ pub type Model {
     flight_last_move: Int,
     /// Which ascent this is — stale timers from earlier runs are ignored.
     flight_run: Int,
+    /// The ending, once the ascent is survived. Runtime-only — the game is
+    /// over.
+    ending: Option(Ending),
     /// Whether the document key listeners are armed (once per session).
     keys_armed: Bool,
   )
@@ -197,6 +213,13 @@ pub type Model {
 /// A random event in progress: the event and the scene currently showing.
 pub type ActiveEvent {
   ActiveEvent(event: events.Event, scene: String)
+}
+
+/// The end of the game, after the fade is survived (`endGame`): the beacon's
+/// outro paragraphs, then the scores and the ways onward.
+pub type Ending {
+  Outro(paragraphs: Int, this_score: Int, total_score: Int)
+  EndOptions(this_score: Int, total_score: Int)
 }
 
 /// The initial model for a new game.
@@ -218,6 +241,7 @@ pub fn init() -> Model {
     space: None,
     flight_last_move: 0,
     flight_run: 0,
+    ending: None,
     keys_armed: False,
   )
 }
@@ -630,12 +654,17 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
 
     AscentComplete(run: run) ->
       case current_flight(model, run) {
-        // Survived the fade: the ascent is won. The ending sequence (score,
-        // prestige, the wanderer fleet) lands with the next increment; the
-        // flight simply goes quiet.
+        // Survived the fade: the ascent is won. The flight goes quiet and the
+        // prestige reduction rolls its dice.
         Ok(flight) -> #(
           Model(..model, space: Some(space.Flight(..flight, done: True))),
-          effect.none(),
+          effect.from(fn(dispatch) {
+            let rolls =
+              list.map(list.repeat(Nil, scoring.rolls_needed()), fn(_) {
+                rng.random()
+              })
+            dispatch(GameWon(rolls))
+          }),
         )
         Error(_) -> #(model, effect.none())
       }
@@ -643,6 +672,73 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
     KeyDown(key: key) -> #(hold_key(model, key, True), effect.none())
 
     KeyUp(key: key) -> #(hold_key(model, key, False), effect.none())
+
+    GameWon(rolls: rolls) -> game_won(model, rolls)
+
+    OutroStep ->
+      case model.ending {
+        Some(Outro(paragraphs: n, this_score: this, total_score: total)) -> {
+          let shown = n + 1
+          let next = case shown < 5 {
+            True -> delayed(outro_gap_ms(shown + 1), OutroStep)
+            False -> effect.none()
+          }
+          #(Model(..model, ending: Some(Outro(shown, this, total))), next)
+        }
+        _ -> #(model, effect.none())
+      }
+
+    EndingWait ->
+      case model.ending {
+        Some(Outro(paragraphs: _, this_score: this, total_score: total)) -> #(
+          Model(..model, ending: Some(EndOptions(this, total))),
+          effect.none(),
+        )
+        _ -> #(model, effect.none())
+      }
+
+    RestartGame -> #(
+      model,
+      effect.from(fn(_) {
+        save.wipe()
+        browser.reload()
+      }),
+    )
+
+    OpenStore(url: url) -> #(model, open_link(url))
+  }
+}
+
+// --- the ending ----------------------------------------------------------------
+
+/// The game is won (`endGame`): the score and the reduced stores are written
+/// to the prestige slot, and the ending begins — the beacon's outro when one
+/// is aboard, the scores straight away otherwise.
+fn game_won(model: Model, rolls: List(Float)) -> #(Model, Effect(Msg)) {
+  let this_score = scoring.calculate_score(model.state)
+  let total = scoring.total_score() + this_score
+  let persist = effect.from(fn(_) { scoring.save(model.state, rolls) })
+  case state.get_store(model.state, "fleet beacon") > 0 {
+    True -> #(
+      Model(..model, ending: Some(Outro(0, this_score, total))),
+      effect.batch([persist, delayed(outro_gap_ms(1), OutroStep)]),
+    )
+    False -> #(
+      Model(..model, ending: Some(EndOptions(this_score, total))),
+      persist,
+    )
+  }
+}
+
+/// The outro's timing (`showExpansionEnding`): paragraphs at 2s, 7s, 14s and
+/// 17s, the wait button at 19.5s.
+fn outro_gap_ms(step: Int) -> Int {
+  case step {
+    1 -> 2000
+    2 -> 5000
+    3 -> 7000
+    4 -> 3000
+    _ -> 2500
   }
 }
 

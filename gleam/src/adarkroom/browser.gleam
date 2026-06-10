@@ -8,3 +8,7 @@ pub fn open_url(url: String) -> Nil
 /// controls). Registered once; the handlers receive `event.key`.
 @external(javascript, "./browser_ffi.mjs", "onKeys")
 pub fn on_keys(down: fn(String) -> Nil, up: fn(String) -> Nil) -> Nil
+
+/// Reload the page (the ending's restart).
+@external(javascript, "./browser_ffi.mjs", "reload")
+pub fn reload() -> Nil
