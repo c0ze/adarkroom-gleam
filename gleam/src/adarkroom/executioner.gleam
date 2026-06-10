@@ -277,6 +277,7 @@ fn medical() -> Event {
         reward: [],
         buttons: continue_or_leave("9"),
         combat: True,
+        blink: False,
         on_load: None,
         on_load_rng: None,
         setpiece: Some(SetpieceExtra(
@@ -1005,6 +1006,7 @@ fn medic_drone(next: String) -> Scene {
     reward: [],
     buttons: continue_or_leave(next),
     combat: True,
+    blink: False,
     on_load: None,
     on_load_rng: None,
     setpiece: Some(SetpieceExtra(
@@ -1266,6 +1268,7 @@ fn story(text: List(String)) -> Scene {
     reward: [],
     buttons: [],
     combat: False,
+    blink: False,
     on_load: None,
     on_load_rng: None,
     setpiece: None,
@@ -1293,6 +1296,7 @@ fn guarded(notification: String, foe: combat.Enemy, next: String) -> Scene {
     reward: [],
     buttons: [#("continue", to("continue", next)), #("leave", leave("leave"))],
     combat: True,
+    blink: False,
     on_load: None,
     on_load_rng: None,
     setpiece: Some(SetpieceExtra(
@@ -1319,6 +1323,7 @@ fn boss_fight(
     reward: [],
     buttons: buttons,
     combat: True,
+    blink: False,
     on_load: None,
     on_load_rng: None,
     setpiece: Some(SetpieceExtra(

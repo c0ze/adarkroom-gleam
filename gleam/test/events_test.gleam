@@ -56,6 +56,7 @@ pub fn entering_a_scene_grants_its_reward_and_notification_test() {
       reward: [#("wood", 50)],
       buttons: [],
       combat: False,
+      blink: False,
       on_load_rng: None,
       setpiece: None,
       on_load: None,
@@ -74,6 +75,7 @@ pub fn entering_a_scene_runs_its_on_load_effect_test() {
       reward: [],
       buttons: [],
       combat: False,
+      blink: False,
       on_load_rng: None,
       setpiece: None,
       on_load: Some(fn(s) {
@@ -101,6 +103,7 @@ pub fn entering_a_plain_scene_changes_nothing_test() {
       reward: [],
       buttons: [],
       combat: False,
+      blink: False,
       on_load_rng: None,
       setpiece: None,
       on_load: None,

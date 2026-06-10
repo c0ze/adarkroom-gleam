@@ -137,6 +137,10 @@ pub type Scene {
     reward: List(#(String, Int)),
     buttons: List(#(String, SceneButton)),
     combat: Bool,
+    /// Blink the page title while this scene opens the event (`blink: true` —
+    /// the start scenes of most random events; notably not the Shady
+    /// Builder's).
+    blink: Bool,
     /// Arbitrary effect run on entry (`onLoad`): computed rewards, flags, perks.
     /// Returns the new state and any extra messages.
     on_load: Option(fn(state.State) -> #(state.State, List(String))),
@@ -454,6 +458,7 @@ fn mysterious_wanderer(
         notification: option.Some("a mysterious wanderer arrives"),
         reward: [],
         combat: False,
+        blink: True,
         on_load: option.None,
         on_load_rng: option.None,
         setpiece: option.None,
@@ -483,6 +488,7 @@ fn gamble(text: String, key: String, chance: Float) -> Scene {
     notification: option.None,
     reward: [],
     combat: False,
+    blink: False,
     on_load: option.None,
     on_load_rng: option.Some(fn(s, roll) {
       case roll <. chance {
@@ -592,6 +598,7 @@ fn toll_scene(
     reward: [],
     buttons:,
     combat: False,
+    blink: False,
     on_load: option.None,
     on_load_rng: option.Some(toll),
     setpiece: option.None,
@@ -611,6 +618,7 @@ fn relief_scene(
     reward:,
     buttons:,
     combat: False,
+    blink: False,
     on_load: option.None,
     on_load_rng: option.None,
     setpiece: option.None,
@@ -630,29 +638,35 @@ fn ruined_trap() -> Event {
     scenes: [
       #(
         "start",
-        toll_scene(
-          [
-            "some of the traps have been torn apart.",
-            "large prints lead away, into the forest.",
-          ],
-          "some traps have been destroyed",
-          fn(s, roll) {
-            let span = craft.building_count(s, "trap")
-            #(
-              outside.destroy_traps(
-                s,
-                float.truncate(roll *. int.to_float(span)) + 1,
+        Scene(
+          ..toll_scene(
+            [
+              "some of the traps have been torn apart.",
+              "large prints lead away, into the forest.",
+            ],
+            "some traps have been destroyed",
+            fn(s, roll) {
+              let span = craft.building_count(s, "trap")
+              #(
+                outside.destroy_traps(
+                  s,
+                  float.truncate(roll *. int.to_float(span)) + 1,
+                ),
+                [],
+              )
+            },
+            [
+              #(
+                "track",
+                choice(
+                  "track them",
+                  Branch([#(0.5, "nothing"), #(1.0, "catch")]),
+                ),
               ),
-              [],
-            )
-          },
-          [
-            #(
-              "track",
-              choice("track them", Branch([#(0.5, "nothing"), #(1.0, "catch")])),
-            ),
-            #("ignore", choice("ignore them", End)),
-          ],
+              #("ignore", choice("ignore them", End)),
+            ],
+          ),
+          blink: True,
         ),
       ),
       #(
@@ -693,14 +707,17 @@ fn hut_fire() -> Event {
     scenes: [
       #(
         "start",
-        toll_scene(
-          [
-            "a fire rampages through one of the huts, destroying it.",
-            "all residents in the hut perished in the fire.",
-          ],
-          "a fire has started",
-          fn(s, roll) { #(outside.destroy_huts(s, 1, [roll]), []) },
-          [#("mourn", choice("mourn", End))],
+        Scene(
+          ..toll_scene(
+            [
+              "a fire rampages through one of the huts, destroying it.",
+              "all residents in the hut perished in the fire.",
+            ],
+            "a fire has started",
+            fn(s, roll) { #(outside.destroy_huts(s, 1, [roll]), []) },
+            [#("mourn", choice("mourn", End))],
+          ),
+          blink: True,
         ),
       ),
     ],
@@ -719,17 +736,20 @@ fn sickness() -> Event {
     scenes: [
       #(
         "start",
-        relief_scene(
-          [
-            "a sickness is spreading through the village.",
-            "medicine is needed immediately.",
-          ],
-          "some villagers are ill",
-          [],
-          [
-            #("heal", give("1 medicine", [#("medicine", 1)], Goto("healed"))),
-            #("ignore", choice("ignore it", Goto("death"))),
-          ],
+        Scene(
+          ..relief_scene(
+            [
+              "a sickness is spreading through the village.",
+              "medicine is needed immediately.",
+            ],
+            "some villagers are ill",
+            [],
+            [
+              #("heal", give("1 medicine", [#("medicine", 1)], Goto("healed"))),
+              #("ignore", choice("ignore it", Goto("death"))),
+            ],
+          ),
+          blink: True,
         ),
       ),
       #(
@@ -779,31 +799,34 @@ fn plague() -> Event {
     scenes: [
       #(
         "start",
-        relief_scene(
-          [
-            "a terrible plague is fast spreading through the village.",
-            "medicine is needed immediately.",
-          ],
-          "a plague afflicts the village",
-          [],
-          [
-            #(
-              "buyMedicine",
-              SceneButton(
-                text: "buy medicine",
-                cost: [#("scales", 70), #("teeth", 50)],
-                reward: [#("medicine", 1)],
-                notification: option.None,
-                available: option.None,
-                link: option.None,
-                effect: option.None,
-                on_click: option.None,
-                next: Stay,
+        Scene(
+          ..relief_scene(
+            [
+              "a terrible plague is fast spreading through the village.",
+              "medicine is needed immediately.",
+            ],
+            "a plague afflicts the village",
+            [],
+            [
+              #(
+                "buyMedicine",
+                SceneButton(
+                  text: "buy medicine",
+                  cost: [#("scales", 70), #("teeth", 50)],
+                  reward: [#("medicine", 1)],
+                  notification: option.None,
+                  available: option.None,
+                  link: option.None,
+                  effect: option.None,
+                  on_click: option.None,
+                  next: Stay,
+                ),
               ),
-            ),
-            #("heal", give("5 medicine", [#("medicine", 5)], Goto("healed"))),
-            #("ignore", choice("do nothing", Goto("death"))),
-          ],
+              #("heal", give("5 medicine", [#("medicine", 5)], Goto("healed"))),
+              #("ignore", choice("do nothing", Goto("death"))),
+            ],
+          ),
+          blink: True,
         ),
       ),
       #(
@@ -856,6 +879,7 @@ fn beast_attack() -> Event {
             [#("end", give_then_home("predators become prey. price is unfair"))],
           ),
           reward: [#("fur", 100), #("meat", 100), #("teeth", 10)],
+          blink: True,
         ),
       ),
     ],
@@ -884,6 +908,7 @@ fn military_raid() -> Event {
             [#("end", give_then_home("warfare is bloodthirsty"))],
           ),
           reward: [#("bullets", 10), #("cured meat", 50)],
+          blink: True,
         ),
       ),
     ],
@@ -935,6 +960,7 @@ fn penrose() -> Event {
           ),
           reward: [],
           combat: False,
+          blink: True,
           on_load: option.None,
           on_load_rng: option.None,
           setpiece: option.None,
@@ -984,6 +1010,7 @@ fn thief() -> Event {
           notification: option.Some("a thief is caught"),
           reward: [],
           combat: False,
+          blink: True,
           on_load: option.None,
           on_load_rng: option.None,
           setpiece: option.None,
@@ -1003,6 +1030,7 @@ fn thief() -> Event {
           notification: option.None,
           reward: [],
           combat: False,
+          blink: False,
           on_load: option.Some(fn(s) {
             #(state.set_game(s, "thieves", 2) |> outside.return_stolen, [])
           }),
@@ -1021,6 +1049,7 @@ fn thief() -> Event {
           notification: option.None,
           reward: [],
           combat: False,
+          blink: False,
           on_load: option.Some(fn(s) {
             #(state.set_game(s, "thieves", 2) |> state.add_perk("stealthy"), [
               state.perk_notify("stealthy"),
@@ -1047,6 +1076,7 @@ fn nomad() -> Event {
       notification: option.Some("a nomad arrives, looking to trade"),
       reward: [],
       combat: False,
+      blink: True,
       on_load_rng: option.None,
       setpiece: option.None,
       on_load: option.None,
@@ -1151,6 +1181,7 @@ fn noises_through_walls() -> Event {
           ),
           reward: [],
           combat: False,
+          blink: True,
           on_load_rng: option.None,
           setpiece: option.None,
           on_load: option.None,
@@ -1173,6 +1204,7 @@ fn noises_through_walls() -> Event {
           notification: option.None,
           reward: [],
           combat: False,
+          blink: False,
           on_load_rng: option.None,
           setpiece: option.None,
           on_load: option.None,
@@ -1189,6 +1221,7 @@ fn noises_through_walls() -> Event {
           notification: option.None,
           reward: [#("wood", 100), #("fur", 10)],
           combat: False,
+          blink: False,
           on_load_rng: option.None,
           setpiece: option.None,
           on_load: option.None,
@@ -1216,6 +1249,7 @@ fn noises_in_store_room() -> Event {
           notification: option.Some("something's in the store room"),
           reward: [],
           combat: False,
+          blink: True,
           on_load_rng: option.None,
           setpiece: option.None,
           on_load: option.None,
@@ -1245,6 +1279,7 @@ fn scavenged_scene(litter: String, material: String) -> Scene {
     notification: option.None,
     reward: [],
     combat: False,
+    blink: False,
     on_load_rng: option.None,
     setpiece: option.None,
     on_load: option.Some(scavenge(material)),
@@ -1282,6 +1317,7 @@ fn beggar() -> Event {
           notification: option.Some("a beggar arrives"),
           reward: [],
           combat: False,
+          blink: True,
           on_load_rng: option.None,
           setpiece: option.None,
           on_load: option.None,
@@ -1323,6 +1359,7 @@ fn beggar_thanks(material: String, litter: String) -> Scene {
     notification: option.None,
     reward: [#(material, 20)],
     combat: False,
+    blink: False,
     on_load_rng: option.None,
     setpiece: option.None,
     on_load: option.None,
@@ -1350,6 +1387,7 @@ fn shady_builder() -> Event {
           notification: option.Some("a shady builder passes through"),
           reward: [],
           combat: False,
+          blink: False,
           on_load_rng: option.None,
           setpiece: option.None,
           on_load: option.None,
@@ -1375,6 +1413,7 @@ fn shady_builder() -> Event {
           ),
           reward: [],
           combat: False,
+          blink: False,
           on_load_rng: option.None,
           setpiece: option.None,
           on_load: option.None,
@@ -1388,6 +1427,7 @@ fn shady_builder() -> Event {
           notification: option.Some("the shady builder builds a hut"),
           reward: [],
           combat: False,
+          blink: False,
           on_load_rng: option.None,
           setpiece: option.None,
           on_load: option.Some(raise_hut),
@@ -1427,6 +1467,7 @@ fn scout() -> Event {
         notification: option.Some("a scout stops for the night"),
         reward: [],
         combat: False,
+        blink: True,
         on_load_rng: option.None,
         setpiece: option.None,
         on_load: option.None,
@@ -1460,6 +1501,7 @@ fn master() -> Event {
         notification: option.Some("an old wanderer arrives"),
         reward: [],
         combat: False,
+        blink: True,
         on_load_rng: option.None,
         setpiece: option.None,
         on_load: option.None,
@@ -1483,6 +1525,7 @@ fn master() -> Event {
         notification: option.None,
         reward: [],
         combat: False,
+        blink: False,
         on_load_rng: option.None,
         setpiece: option.None,
         on_load: option.None,
@@ -1510,6 +1553,7 @@ fn sick_man() -> Event {
           notification: option.Some("a sick man hobbles up"),
           reward: [],
           combat: False,
+          blink: True,
           on_load_rng: option.None,
           setpiece: option.None,
           on_load: option.None,
@@ -1579,6 +1623,7 @@ fn sick_man() -> Event {
           notification: option.None,
           reward: [],
           combat: False,
+          blink: False,
           on_load_rng: option.None,
           setpiece: option.None,
           on_load: option.None,
@@ -1596,6 +1641,7 @@ fn sick_reward(text: List(String), reward: List(#(String, Int))) -> Scene {
     notification: option.None,
     reward:,
     combat: False,
+    blink: False,
     on_load_rng: option.None,
     setpiece: option.None,
     on_load: option.None,

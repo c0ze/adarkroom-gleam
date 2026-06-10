@@ -177,6 +177,10 @@ pub type Msg {
   RestartGame
   /// The ending's app-store links.
   OpenStore(url: String)
+  /// Timer: flash the page title "*** EVENT ***" (every 3s while blinking).
+  BlinkOn
+  /// Timer: restore the page title (1.5s after each flash).
+  BlinkOff
 }
 
 pub type Model {
@@ -223,6 +227,9 @@ pub type Model {
     loot: List(#(String, Int)),
     /// The loot row whose take didn't fit, showing its drop menu. Runtime-only.
     drop_for: Option(String),
+    /// Whether the page title is blinking for an event (`blinkTitle`).
+    /// Runtime-only.
+    blinking: Bool,
     /// Whether the document key listeners are armed (once per session).
     keys_armed: Bool,
   )
@@ -262,6 +269,7 @@ pub fn init() -> Model {
     ending: None,
     loot: [],
     drop_for: None,
+    blinking: False,
     keys_armed: False,
   )
 }
@@ -745,6 +753,22 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
     )
 
     OpenStore(url: url) -> #(model, open_link(url))
+
+    BlinkOn ->
+      case model.blinking {
+        // Flash now; queue the restore and the next flash.
+        True -> #(
+          model,
+          effect.batch([
+            effect.from(fn(_) { browser.set_title("*** EVENT ***") }),
+            delayed(1500, BlinkOff),
+            delayed(3000, BlinkOn),
+          ]),
+        )
+        False -> #(model, effect.none())
+      }
+
+    BlinkOff -> #(model, restore_title(model))
   }
 }
 
@@ -1571,6 +1595,7 @@ fn die(model: Model) -> Model {
     active_event: None,
     loot: [],
     drop_for: None,
+    blinking: False,
   )
 }
 
@@ -1607,6 +1632,13 @@ fn event_pool(location: Location) -> List(events.Event) {
       ])
     _ -> []
   }
+}
+
+/// Put the location's name back on the page title (`stopTitleBlink`'s
+/// restore).
+fn restore_title(model: Model) -> Effect(Msg) {
+  let title = location_title(model.location)
+  effect.from(fn(_) { browser.set_title(title) })
 }
 
 /// Open a link button's page in a new tab.
@@ -1686,10 +1718,18 @@ fn resolve_event(model: Model, id: String, roll: Float) -> #(Model, Effect(Msg))
                   case button.link {
                     // A link button ends the event and opens the page (the
                     // JS `endEvent()` + `window.open`), skipping nextScene.
-                    Some(url) -> #(
-                      Model(..model, active_event: None),
-                      effect.batch([open_link(url), button_fx]),
-                    )
+                    Some(url) -> {
+                      let model =
+                        Model(..model, active_event: None, blinking: False)
+                      #(
+                        model,
+                        effect.batch([
+                          open_link(url),
+                          button_fx,
+                          restore_title(model),
+                        ]),
+                      )
+                    }
                     None -> {
                       let #(model, fx) = advance_event(model, event, step)
                       #(model, effect.batch([fx, button_fx]))
@@ -1790,16 +1830,30 @@ fn advance_event(
 ) -> #(Model, Effect(Msg)) {
   case step {
     events.StayOnScene -> #(model, effect.none())
-    events.EndEvent -> #(
-      Model(..model, active_event: None, loot: [], drop_for: None),
-      effect.none(),
-    )
+    events.EndEvent -> {
+      let model =
+        Model(
+          ..model,
+          active_event: None,
+          loot: [],
+          drop_for: None,
+          blinking: False,
+        )
+      #(model, restore_title(model))
+    }
     events.LoadScene(next) ->
       case list.key_find(event.scenes, next) {
-        Error(_) -> #(
-          Model(..model, active_event: None, loot: [], drop_for: None),
-          effect.none(),
-        )
+        Error(_) -> {
+          let model =
+            Model(
+              ..model,
+              active_event: None,
+              loot: [],
+              drop_for: None,
+              blinking: False,
+            )
+          #(model, restore_title(model))
+        }
         Ok(scene) ->
           load_scene(
             Model(..model, loot: [], drop_for: None),
@@ -1832,6 +1886,15 @@ fn load_scene(
   name: String,
   scene: events.Scene,
 ) -> #(Model, Effect(Msg)) {
+  // A blink-marked scene starts the title flashing (`blinkTitle`).
+  let model = case scene.blink && !model.blinking {
+    True -> Model(..model, blinking: True)
+    False -> model
+  }
+  let blink_fx = case scene.blink {
+    True -> delayed(3000, BlinkOn)
+    False -> effect.none()
+  }
   let #(model, world_messages) = apply_world_effect(model, scene)
   let #(new_state, messages) = events.enter_scene(scene, model.state)
   let model =
@@ -1868,12 +1931,20 @@ fn load_scene(
       let model = Model(..model, combat: Some(cs))
       #(
         model,
-        effect.batch([enemy_timer(model.combat), specials_timers(cs.specials)]),
+        effect.batch([
+          enemy_timer(model.combat),
+          specials_timers(cs.specials),
+          blink_fx,
+        ]),
       )
     }
     _, _ -> #(
       model,
-      effect.batch([setpiece_loot_effect(scene), scene_rng_effect(scene)]),
+      effect.batch([
+        setpiece_loot_effect(scene),
+        scene_rng_effect(scene),
+        blink_fx,
+      ]),
     )
   }
 }

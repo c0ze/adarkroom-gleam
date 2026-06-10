@@ -1225,6 +1225,7 @@ pub fn an_elevator_to_nowhere_stays_put_test() {
           notification: option.None,
           reward: [],
           combat: False,
+          blink: False,
           on_load: option.None,
           on_load_rng: option.None,
           setpiece: option.None,
@@ -1303,6 +1304,7 @@ pub fn an_elevator_button_switches_events_test() {
           notification: option.None,
           reward: [],
           combat: False,
+          blink: False,
           on_load: option.None,
           on_load_rng: option.None,
           setpiece: option.None,
@@ -1377,6 +1379,7 @@ pub fn a_world_event_can_cost_vitals_test() {
           notification: option.None,
           reward: [],
           combat: False,
+          blink: False,
           on_load: option.None,
           on_load_rng: option.None,
           setpiece: option.None,
@@ -1854,4 +1857,35 @@ pub fn scene_loot_arms_the_take_everything_cooldown_test() {
     "loot_take_et",
   )
   |> should.be_true
+}
+
+// --- the title blink ------------------------------------------------------------
+
+pub fn a_blinking_event_starts_the_title_flashing_test() {
+  // The Nomad's start scene blinks.
+  let started = run(room_with_fur(10, 1000), TriggerEvent(0.0, 0.0))
+  let assert option.Some(active) = started.active_event
+  active.event.title |> should.equal("The Nomad")
+  started.blinking |> should.be_true
+}
+
+pub fn ending_the_event_stops_the_blink_test() {
+  let started = run(room_with_fur(10, 1000), TriggerEvent(0.0, 0.0))
+  let done = run(started, ResolveEvent("goodbye", 0.5))
+  done.active_event |> should.equal(option.None)
+  done.blinking |> should.be_false
+}
+
+pub fn the_shady_builder_keeps_quiet_test() {
+  // The one room event whose start does not blink — preserved verbatim.
+  let assert Ok(shady) =
+    list.find(events.room_events(), fn(e) { e.title == "The Shady Builder" })
+  let assert Ok(start) = list.key_find(shady.scenes, "start")
+  start.blink |> should.be_false
+  // And every disaster's start does.
+  events.outside_events()
+  |> list.each(fn(e) {
+    let assert Ok(start) = list.key_find(e.scenes, "start")
+    start.blink |> should.be_true
+  })
 }

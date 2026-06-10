@@ -22,3 +22,7 @@ export function onKeys(down, up) {
 export function reload() {
   window.location.reload();
 }
+
+export function setTitle(title) {
+  document.title = title;
+}
