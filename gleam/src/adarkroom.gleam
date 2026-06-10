@@ -267,7 +267,7 @@ fn event_button(m: Model, pair: #(String, events.SceneButton)) -> Element(Msg) {
   let #(id, btn) = pair
   let enabled =
     events.button_available(btn, m.state)
-    && events.affordable(btn.cost, m.state)
+    && events.affordable(btn.cost, m.state, model.event_purse(m))
   case enabled {
     True ->
       html.div([attribute.class("button"), event.on_click(ChooseEvent(id))], [

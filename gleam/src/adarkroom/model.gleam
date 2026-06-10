@@ -863,12 +863,22 @@ fn resolve_event(model: Model, id: String, roll: Float) -> #(Model, Effect(Msg))
           case list.key_find(scene.buttons, id) {
             Error(_) -> #(model, effect.none())
             Ok(button) ->
-              case events.click_button(button, model.state, roll) {
+              case
+                events.click_button(
+                  button,
+                  model.state,
+                  roll,
+                  event_purse(model),
+                )
+              {
                 // Too expensive: a no-op, like the JS.
                 Error(_) -> #(model, effect.none())
-                Ok(#(new_state, messages, step)) -> {
+                Ok(#(new_state, purse, messages, step)) -> {
                   let model =
-                    notify_here(Model(..model, state: new_state), messages)
+                    notify_here(
+                      apply_purse(Model(..model, state: new_state), purse),
+                      messages,
+                    )
                   case button.link {
                     // A link button ends the event and opens the page (the
                     // JS `endEvent()` + `window.open`), skipping nextScene.
@@ -882,6 +892,33 @@ fn resolve_event(model: Model, id: String, roll: Float) -> #(Model, Effect(Msg))
               }
           }
       }
+  }
+}
+
+/// The purse event costs draw on here (`Events.getQuantity`): the carried
+/// outfit and vitals out in the world, the home stores otherwise.
+pub fn event_purse(model: Model) -> events.Purse {
+  case model.location, model.expedition {
+    World, Some(exp) ->
+      events.Carried(water: exp.vitals.water, hp: exp.vitals.health)
+    _, _ -> events.HomeStores
+  }
+}
+
+/// Write a paid purse's water/hp back onto the expedition.
+fn apply_purse(model: Model, purse: events.Purse) -> Model {
+  case purse, model.expedition {
+    events.Carried(water: water, hp: hp), Some(exp) ->
+      Model(
+        ..model,
+        expedition: Some(
+          world.Expedition(
+            ..exp,
+            vitals: world.Vitals(..exp.vitals, water: water, health: hp),
+          ),
+        ),
+      )
+    _, _ -> model
   }
 }
 
