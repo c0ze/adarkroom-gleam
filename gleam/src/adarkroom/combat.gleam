@@ -254,7 +254,7 @@ pub type Enemy {
     health: Int,
     damage: Int,
     hit: Float,
-    attack_delay: Int,
+    attack_delay: Float,
     ranged: Bool,
     death_message: String,
     loot: List(LootEntry),

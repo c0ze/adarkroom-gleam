@@ -618,7 +618,7 @@ fn roll_enemy_turn() -> Effect(Msg) {
 /// Re-armed after each enemy turn, so the timer naturally stops on win or death.
 fn enemy_timer(combat: Option(combat.CombatState)) -> Effect(Msg) {
   case combat {
-    Some(cs) -> delayed(cs.enemy.attack_delay * 1000, EnemyTurn)
+    Some(cs) -> delayed(float.round(cs.enemy.attack_delay *. 1000.0), EnemyTurn)
     None -> effect.none()
   }
 }

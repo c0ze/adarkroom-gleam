@@ -4,6 +4,7 @@ import adarkroom/setpieces
 import adarkroom/state
 import gleam/list
 import gleam/option.{None, Some}
+import gleam/string
 import gleeunit/should
 
 /// The current scene of a setpiece, by name.
@@ -19,10 +20,46 @@ pub fn the_registry_has_the_ported_setpieces_test() {
 }
 
 pub fn unported_setpieces_are_absent_test() {
-  // The city and the prestige cache land in later work.
-  setpieces.setpiece("city") |> should.be_error
+  // The prestige cache (and the executioner) land in later work.
   setpieces.setpiece("cache") |> should.be_error
+  setpieces.setpiece("executioner") |> should.be_error
   setpieces.setpiece("nonsense") |> should.be_error
+}
+
+pub fn the_city_is_a_fifteen_ended_dungeon_test() {
+  let assert Ok(event) = setpieces.setpiece("city")
+  // start, a1-a4, b1-b8, c1-c13, d1-d11, end1-15.
+  list.length(event.scenes) |> should.equal(52)
+}
+
+pub fn the_city_swarm_attacks_fast_test() {
+  // The elderly-squatter swarm (`c11`) is a plural enemy with a 0.5s delay —
+  // the fractional attack delay the city forced `attack_delay` to a Float for.
+  let c11 = scene("city", "c11")
+  let assert Some(events.SetpieceExtra(enemy: Some(foe), ..)) = c11.setpiece
+  foe.name |> should.equal("squatters")
+  foe.attack_delay |> should.equal(0.5)
+}
+
+pub fn the_city_end_records_the_clear_test() {
+  // The end scene's `onLoad` sets `game.cityCleared`, gating the later event.
+  let assert Some(on_load) = scene("city", "end1").on_load
+  let #(after, _) = on_load(state.new())
+  state.get_game(after, "cityCleared") |> should.equal(1)
+}
+
+pub fn the_city_back_rooms_clear_and_flag_it_test() {
+  // Every `end*` clears the dungeon and records the city cleared.
+  let assert Ok(event) = setpieces.setpiece("city")
+  let ends = list.filter(event.scenes, fn(p) { string.starts_with(p.0, "end") })
+  list.length(ends) |> should.equal(15)
+  list.each(ends, fn(p) {
+    let scene = p.1
+    let assert Some(events.SetpieceExtra(world_effect: effect, ..)) =
+      scene.setpiece
+    effect |> should.equal(events.ClearDungeon)
+    scene.on_load |> should.not_equal(None)
+  })
 }
 
 pub fn the_outpost_refills_water_and_drops_cured_meat_test() {

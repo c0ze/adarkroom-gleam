@@ -279,7 +279,7 @@ fn beast() -> combat.Enemy {
     health: 5,
     damage: 1,
     hit: 0.8,
-    attack_delay: 1,
+    attack_delay: 1.0,
     ranged: False,
     death_message: "the snarling beast is dead",
     loot: [combat.LootEntry("fur", 1, 3, 1.0)],
