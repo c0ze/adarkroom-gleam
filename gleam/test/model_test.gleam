@@ -1,4 +1,5 @@
 import adarkroom/craft
+import adarkroom/events
 import adarkroom/model.{
   CollectLoot, MaybeFight, Navigate, ResolveEnemyTurn, ResolveEvent,
   ResolveStrike, ScheduleEvent, Tick, TriggerEvent,
@@ -1006,4 +1007,22 @@ pub fn a_parched_step_onto_the_village_is_a_safe_return_not_a_death_test() {
   home.location |> should.equal(model.Room)
   home.expedition |> should.equal(option.None)
   craft.building_count(home.state, "iron mine") |> should.equal(1)
+}
+
+pub fn a_disaster_scene_exacts_its_toll_on_scene_rng_test() {
+  // A beast attack on a 20-strong village: its `on_load_rng` toll runs when the
+  // model supplies the roll (`SceneRng`).
+  let assert Ok(beast) =
+    list.find(events.outside_events(), fn(e) { e.title == "A Beast Attack" })
+  let m =
+    model.Model(
+      ..model.init(),
+      location: model.Outside,
+      state: state.set_game(state.new(), "population", 20),
+      active_event: option.Some(model.ActiveEvent(beast, "start")),
+    )
+  // roll 0.0 → one villager falls.
+  run(m, model.SceneRng(0.0))
+  |> fn(after) { outside.population(after.state) }
+  |> should.equal(19)
 }

@@ -1,5 +1,6 @@
 import adarkroom/craft
 import adarkroom/events
+import adarkroom/outside
 import adarkroom/state
 import gleam/list
 import gleam/option.{None, Some}
@@ -55,6 +56,7 @@ pub fn entering_a_scene_grants_its_reward_and_notification_test() {
       reward: [#("wood", 50)],
       buttons: [],
       combat: False,
+      on_load_rng: None,
       setpiece: None,
       on_load: None,
     )
@@ -72,6 +74,7 @@ pub fn entering_a_scene_runs_its_on_load_effect_test() {
       reward: [],
       buttons: [],
       combat: False,
+      on_load_rng: None,
       setpiece: None,
       on_load: Some(fn(s) {
         let taken = state.get_store(s, "wood") / 10
@@ -98,6 +101,7 @@ pub fn entering_a_plain_scene_changes_nothing_test() {
       reward: [],
       buttons: [],
       combat: False,
+      on_load_rng: None,
       setpiece: None,
       on_load: None,
     )
@@ -432,4 +436,47 @@ pub fn next_event_delay_spans_three_to_five_minutes_test() {
 pub fn next_event_delay_can_be_scaled_down_test() {
   // The "no events available" reschedule halves the wait.
   events.next_event_delay_ms(0.0, 0.5) |> should.equal(90_000)
+}
+
+// --- outside disasters ------------------------------------------------------
+
+fn disaster_titles(s: state.State) -> List(String) {
+  list.map(events.available_events(events.outside_events(), s), fn(e) {
+    e.title
+  })
+}
+
+pub fn outside_disasters_gate_on_the_village_test() {
+  // A bare forest courts no disaster.
+  disaster_titles(state.new()) |> should.equal([])
+  // Traps standing → the ruined trap (only).
+  disaster_titles(state.new() |> state.set_game("building.trap", 2))
+  |> should.equal(["A Ruined Trap"])
+  // A big, medicined village faces the plague, not the small-village sickness.
+  let big =
+    state.new()
+    |> state.set_game("population", 60)
+    |> state.set_store("medicine", 1)
+  disaster_titles(big) |> list.contains("Plague") |> should.be_true
+  disaster_titles(big) |> list.contains("Sickness") |> should.be_false
+}
+
+pub fn the_military_raid_waits_for_the_cleared_city_test() {
+  let s = state.new() |> state.set_game("population", 10)
+  disaster_titles(s) |> list.contains("A Military Raid") |> should.be_false
+  disaster_titles(state.set_game(s, "cityCleared", 1))
+  |> list.contains("A Military Raid")
+  |> should.be_true
+}
+
+pub fn the_beast_attack_toll_scales_with_the_roll_test() {
+  let assert Ok(event) =
+    list.find(events.outside_events(), fn(e) { e.title == "A Beast Attack" })
+  let assert Ok(start) = list.key_find(event.scenes, "start")
+  let assert Some(toll) = start.on_load_rng
+  let s = state.new() |> state.set_game("population", 20)
+  // roll 0.0 → floor(0 × 10) + 1 = 1 dead.
+  outside.population(toll(s, 0.0).0) |> should.equal(19)
+  // roll 0.9 → floor(0.9 × 10) + 1 = 10 dead.
+  outside.population(toll(s, 0.9).0) |> should.equal(10)
 }

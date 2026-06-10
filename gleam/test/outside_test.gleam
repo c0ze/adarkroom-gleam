@@ -1,3 +1,4 @@
+import adarkroom/craft
 import adarkroom/outside
 import adarkroom/state
 import gleam/dict
@@ -301,4 +302,55 @@ pub fn check_traps_classifies_each_roll_bucket_test() {
   state.get_store(s2, "teeth") |> should.equal(1)
   state.get_store(s2, "cloth") |> should.equal(1)
   state.get_store(s2, "charm") |> should.equal(1)
+}
+
+// --- disasters --------------------------------------------------------------
+
+pub fn kill_villagers_culls_the_population_test() {
+  let s = state.new() |> state.set_game("population", 10)
+  outside.kill_villagers(s, 3) |> outside.population |> should.equal(7)
+}
+
+pub fn kill_villagers_floors_at_zero_test() {
+  let s = state.new() |> state.set_game("population", 2)
+  outside.kill_villagers(s, 5) |> outside.population |> should.equal(0)
+}
+
+pub fn kill_villagers_lays_off_uncovered_workers_test() {
+  // 10 villagers, 4 hunters; a cull of 8 leaves 2, so 2 hunters are laid off.
+  let s =
+    state.new()
+    |> state.set_game("population", 10)
+    |> state.set_game("worker.hunter", 4)
+  let after = outside.kill_villagers(s, 8)
+  outside.population(after) |> should.equal(2)
+  outside.worker_count(after, "hunter") |> should.equal(2)
+  outside.num_gatherers(after) |> should.equal(0)
+}
+
+pub fn destroy_traps_tears_them_down_test() {
+  let s = state.new() |> state.set_game("building.trap", 5)
+  craft.building_count(outside.destroy_traps(s, 2), "trap") |> should.equal(3)
+}
+
+pub fn destroy_huts_razes_a_full_hut_and_its_four_test() {
+  // 3 huts, 12 residents (all full); razing the first (roll 0.0) costs a hut
+  // and four villagers.
+  let s =
+    state.new()
+    |> state.set_game("building.hut", 3)
+    |> state.set_game("population", 12)
+  let after = outside.destroy_huts(s, 1, [0.0])
+  craft.building_count(after, "hut") |> should.equal(2)
+  outside.population(after) |> should.equal(8)
+}
+
+pub fn destroy_huts_a_half_full_hut_kills_only_its_few_test() {
+  // 3 huts, 10 residents: two full, one with two. roll 0.7 targets the
+  // half-full hut, so only two die.
+  let s =
+    state.new()
+    |> state.set_game("building.hut", 3)
+    |> state.set_game("population", 10)
+  outside.destroy_huts(s, 1, [0.7]) |> outside.population |> should.equal(8)
 }
