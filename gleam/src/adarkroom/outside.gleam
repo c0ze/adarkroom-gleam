@@ -119,12 +119,17 @@ pub fn decrease_worker(s: State, role: String, n: Int) -> State {
 /// applies its store deltas, guarded so no store is driven negative. Income can
 /// be fractional (a lone hunter yields half a fur), so the sub-unit remainder is
 /// carried in `buffer` between collections; the stores themselves stay whole.
+/// The thieves, when they're about, skim last — and answer to no guard.
 pub fn collect_income(
   s: State,
   buffer: dict.Dict(String, Float),
 ) -> #(State, dict.Dict(String, Float)) {
   let sources = income_sources(s)
-  let names = touched(sources)
+  let names = case thieving(s) {
+    True ->
+      touched(list.append(sources, [#("thieves", thieves_drain_deltas())]))
+    False -> touched(sources)
+  }
   // The true value of each touched store: its whole amount plus carried fraction.
   let start =
     list.fold(names, dict.new(), fn(acc, k) {
@@ -136,6 +141,10 @@ pub fn collect_income(
     })
   let totals =
     list.fold(sources, start, fn(acc, source) { apply_source(acc, source.1) })
+  let #(s, totals) = case thieving(s) {
+    True -> skim(s, totals)
+    False -> #(s, totals)
+  }
   // Split each total back into a whole store value and a carried remainder.
   list.fold(names, #(s, buffer), fn(acc, k) {
     let #(st, buf) = acc
@@ -217,6 +226,65 @@ fn touched(sources: List(#(String, List(#(String, Float))))) -> List(String) {
 
 fn get_float(m: dict.Dict(String, Float), k: String) -> Float {
   result.unwrap(dict.get(m, k), 0.0)
+}
+
+// --- thieves ----------------------------------------------------------------
+
+/// What the thieves demand of each store per collection (`startThieves`).
+const thieves_drain = [#("wood", 10), #("fur", 5), #("meat", 5)]
+
+/// Whether the thieves are currently skimming: `game.thieves` is 1 between
+/// their arrival and the day a thief is caught (then it's 2 for good).
+fn thieving(s: State) -> Bool {
+  state.get_game(s, "thieves") == 1
+}
+
+/// The drain as income-source deltas, for the touched-store bookkeeping.
+fn thieves_drain_deltas() -> List(#(String, Float)) {
+  list.map(thieves_drain, fn(d) { #(d.0, 0.0 -. int.to_float(d.1)) })
+}
+
+/// Once any store swells past 5000 in the world era, thieves move in and start
+/// skimming (`startThieves`; the original checks on every stores redraw). They
+/// only ever come once.
+pub fn maybe_start_thieves(s: State) -> State {
+  let tempted =
+    state.get_game(s, "thieves") == 0
+    && state.has_feature(s, "location.world")
+    && list.any(state.stores_list(s), fn(store) { store.1 > 5000 })
+  case tempted {
+    True -> state.set_game(s, "thieves", 1)
+    False -> s
+  }
+}
+
+/// The thieves' cut of one collection: each store loses what they demand or all
+/// it holds (`addStolen` plus the guard-free `collectIncome` branch — stores
+/// clamp at zero rather than blocking the take). Whole units only: the sub-unit
+/// fraction carried between collections stays behind. The take is tallied under
+/// `game.stolen.*` so justice can one day return it.
+fn skim(
+  s: State,
+  totals: dict.Dict(String, Float),
+) -> #(State, dict.Dict(String, Float)) {
+  list.fold(thieves_drain, #(s, totals), fn(acc, d) {
+    let #(st, tot) = acc
+    let have = get_float(tot, d.0)
+    let taken = int.min(float.truncate(have), d.1)
+    let tally = "stolen." <> d.0
+    #(
+      state.set_game(st, tally, state.get_game(st, tally) + taken),
+      dict.insert(tot, d.0, have -. int.to_float(taken)),
+    )
+  })
+}
+
+/// Return everything the thieves took (`addM('stores', game.stolen)`). Only the
+/// drained stores are checked — nothing else ever lands in the tally.
+pub fn return_stolen(s: State) -> State {
+  list.fold(thieves_drain, s, fn(st, d) {
+    state.add_store(st, d.0, state.get_game(st, "stolen." <> d.0))
+  })
 }
 
 // --- village & population ---------------------------------------------------

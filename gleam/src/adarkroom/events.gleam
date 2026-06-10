@@ -660,7 +660,77 @@ fn give_then_home(notification: String) -> SceneButton {
 
 /// Events available in any settled location (Room or Outside).
 pub fn global_events() -> List(Event) {
-  []
+  [thief()]
+}
+
+/// The Thief — once the thieves have skimmed enough, the villagers catch one.
+/// Hang him and the missing supplies come back; spare him and he shares what
+/// he knows about sneaking. Either way, the skimming ends.
+fn thief() -> Event {
+  Event(
+    title: "The Thief",
+    is_available: fn(s) { state.get_game(s, "thieves") == 1 },
+    scenes: [
+      #(
+        "start",
+        Scene(
+          text: [
+            "the villagers haul a filthy man out of the store room.",
+            "say his folk have been skimming the supplies.",
+            "say he should be strung up as an example.",
+          ],
+          notification: option.Some("a thief is caught"),
+          reward: [],
+          combat: False,
+          on_load: option.None,
+          on_load_rng: option.None,
+          setpiece: option.None,
+          buttons: [
+            #("kill", choice("hang him", Goto("hang"))),
+            #("spare", choice("spare him", Goto("spare"))),
+          ],
+        ),
+      ),
+      #(
+        "hang",
+        Scene(
+          text: [
+            "the villagers hang the thief high in front of the store room.",
+            "the point is made. in the next few days, the missing supplies are returned.",
+          ],
+          notification: option.None,
+          reward: [],
+          combat: False,
+          on_load: option.Some(fn(s) {
+            #(state.set_game(s, "thieves", 2) |> outside.return_stolen, [])
+          }),
+          on_load_rng: option.None,
+          setpiece: option.None,
+          buttons: [#("leave", choice("leave", End))],
+        ),
+      ),
+      #(
+        "spare",
+        Scene(
+          text: [
+            "the man says he's grateful. says he won't come around any more.",
+            "shares what he knows about sneaking before he goes.",
+          ],
+          notification: option.None,
+          reward: [],
+          combat: False,
+          on_load: option.Some(fn(s) {
+            #(state.set_game(s, "thieves", 2) |> state.add_perk("stealthy"), [
+              "learned how not to be seen",
+            ])
+          }),
+          on_load_rng: option.None,
+          setpiece: option.None,
+          buttons: [#("leave", choice("leave", End))],
+        ),
+      ),
+    ],
+  )
 }
 
 /// The Nomad — a wandering merchant who buys fur for scales, teeth, bait, and

@@ -1026,3 +1026,17 @@ pub fn a_disaster_scene_exacts_its_toll_on_scene_rng_test() {
   |> fn(after) { outside.population(after.state) }
   |> should.equal(19)
 }
+
+pub fn cool_check_summons_thieves_on_swollen_stores_test() {
+  // Any store over 5000 once the world has been seen brings the skimming.
+  let m =
+    model.Model(
+      ..model.init(),
+      state: state.new()
+        |> state.set_store("wood", 5001)
+        |> state.set_feature("location.world", True),
+    )
+  run(m, model.CoolCheck(at: 1000)).state
+  |> state.get_game("thieves")
+  |> should.equal(1)
+}
