@@ -9,12 +9,13 @@ import adarkroom/clock
 import adarkroom/combat
 import adarkroom/craft.{type Craftable}
 import adarkroom/events
+import adarkroom/fabricator
 import adarkroom/model.{
   type Model, type Msg, AdjustTemp, Build, BuilderProgress, Buy, CheckLiftoff,
   CheckTraps, ChooseEvent, CollectIncome, CoolCheck, DecreaseSupply,
-  DecreaseWorker, Embark, GatherWood, Heal, IncreaseSupply, IncreaseWorker,
-  LightFire, MoveEast, MoveNorth, MoveSouth, MoveWest, Navigate, ReinforceHull,
-  StokeFire, StrikeEnemy, Tick, UpgradeEngine,
+  DecreaseWorker, Embark, Fabricate, GatherWood, Heal, IncreaseSupply,
+  IncreaseWorker, LightFire, MoveEast, MoveNorth, MoveSouth, MoveWest, Navigate,
+  ReinforceHull, StokeFire, StrikeEnemy, Tick, UpgradeEngine,
 }
 import adarkroom/notifications.{type Notifications}
 import adarkroom/outside
@@ -335,6 +336,7 @@ fn location_panel(m: Model) -> Element(Msg) {
     model.Outside -> outside_panel(m)
     model.Path -> path_panel(m)
     model.Ship -> ship_panel(m)
+    model.Fabricator -> fabricator_panel(m)
     model.World ->
       case m.expedition {
         Some(exp) -> world_panel(exp)
@@ -649,6 +651,53 @@ fn ship_panel(m: Model) -> Element(Msg) {
       id: "liftoffButton",
     )),
   ])
+}
+
+/// A Whirring Fabricator: the redeemed blueprints, then the bench — every
+/// recipe whose blueprint (if any) has fed the data port, disabled at its
+/// maximum (`fabricator.js`).
+fn fabricator_panel(m: Model) -> Element(Msg) {
+  let blueprints = case fabricator.redeemed_blueprints(m.state) {
+    [] -> []
+    redeemed -> [
+      html.div(
+        [
+          attribute.id("blueprints"),
+          attribute.attribute("data-legend", "blueprints"),
+        ],
+        list.map(redeemed, fn(name) {
+          html.div([attribute.class("blueprintRow")], [
+            html.div([attribute.class("row_key")], [element.text(name)]),
+          ])
+        }),
+      ),
+    ]
+  }
+  let bench =
+    html.div(
+      [
+        attribute.id("fabricateButtons"),
+        attribute.attribute("data-legend", "fabricate:"),
+      ],
+      list.map(fabricator.bench(m.state), fn(c) {
+        let label = case c.quantity > 1 {
+          True -> c.name <> " (x" <> int.to_string(c.quantity) <> ")"
+          False -> c.name
+        }
+        button.button(button.Config(
+          text: label,
+          on_click: Fabricate(c.key),
+          cost: [#("alien alloy", c.alloy)],
+          disabled: fabricator.at_maximum(m.state, c),
+          cooldown: 0.0,
+          id: "fabricate_" <> c.key,
+        ))
+      }),
+    )
+  html.div(
+    [attribute.id("fabricatorPanel"), attribute.class("location")],
+    list.append(blueprints, [bench]),
+  )
 }
 
 fn world_panel(exp: Expedition) -> Element(Msg) {
