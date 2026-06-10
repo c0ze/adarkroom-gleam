@@ -1509,3 +1509,88 @@ pub fn a_felled_enemy_throws_no_blows_test() {
   let assert option.Some(cs) = after.combat
   cs.player_hp |> should.equal(50)
 }
+
+// --- safe-return commissions (M6) ------------------------------------------------
+
+/// One step east of the village, ready to walk home.
+fn homebound(s: state.State) -> model.Model {
+  let exp =
+    world.Expedition(
+      pos: #(31, 30),
+      map: dict.from_list([
+        #(#(31, 30), world.Forest),
+        #(#(30, 30), world.Village),
+      ]),
+      seen: set.new(),
+      vitals: world.Vitals(10, 10, 0, 0, False, False),
+      visited: set.new(),
+      used_outposts: set.new(),
+      mines_cleared: set.new(),
+    )
+  model.Model(
+    ..model.init(),
+    state: s,
+    location: model.World,
+    expedition: option.Some(exp),
+  )
+}
+
+pub fn a_safe_return_commissions_the_old_starship_test() {
+  let s = state.set_game(state.new(), "world.ship", 1)
+  let home = run(homebound(s), model.MoveWest)
+  state.has_feature(home.state, "location.ship") |> should.be_true
+  state.get_game(home.state, "spaceShip.thrusters") |> should.equal(1)
+  state.get_game(home.state, "spaceShip.hull") |> should.equal(0)
+  model.unlocked_locations(home)
+  |> list.contains(model.Ship)
+  |> should.be_true
+}
+
+pub fn the_starship_is_commissioned_only_once_test() {
+  // A reinforced hull survives later returns (the Ship.init guard).
+  let s =
+    state.new()
+    |> state.set_game("world.ship", 1)
+    |> state.set_feature("location.ship", True)
+    |> state.set_game("spaceShip.hull", 5)
+  let home = run(homebound(s), model.MoveWest)
+  state.get_game(home.state, "spaceShip.hull") |> should.equal(5)
+}
+
+pub fn the_strange_device_opens_the_fabricator_test() {
+  let s = state.set_game(state.new(), "world.executioner", 1)
+  let home = run(homebound(s), model.MoveWest)
+  state.has_feature(home.state, "location.fabricator") |> should.be_true
+  notifications.messages(home.notifications)
+  |> list.contains(
+    "builder knows the strange device when she sees it. takes it for herself real quick. doesn’t ask where it came from.",
+  )
+  |> should.be_true
+}
+
+pub fn carried_blueprints_feed_the_data_port_test() {
+  let s =
+    state.new()
+    |> state.set_outfit("hypo blueprint", 1)
+    |> state.set_outfit("stim blueprint", 1)
+  let home = run(homebound(s), model.MoveWest)
+  state.get_character(home.state, "blueprints.hypo") |> should.equal(1)
+  state.get_character(home.state, "blueprints.stim") |> should.equal(1)
+  // Spent from the pack, never credited to the stores.
+  state.get_outfit(home.state, "hypo blueprint") |> should.equal(0)
+  state.get_store(home.state, "hypo blueprint") |> should.equal(0)
+  notifications.messages(home.notifications)
+  |> list.contains(
+    "blueprints feed into the fabricator data port. possibilities grow.",
+  )
+  |> should.be_true
+}
+
+pub fn an_empty_pack_redeems_nothing_test() {
+  let home = run(homebound(state.new()), model.MoveWest)
+  notifications.messages(home.notifications)
+  |> list.contains(
+    "blueprints feed into the fabricator data port. possibilities grow.",
+  )
+  |> should.be_false
+}

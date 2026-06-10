@@ -754,6 +754,39 @@ fn in_bounds(p: #(Int, Int)) -> Bool {
   p.0 >= 0 && p.0 <= radius * 2 && p.1 >= 0 && p.1 <= radius * 2
 }
 
+/// Feed carried blueprints into the fabricator's data port on a safe return
+/// (`World.redeemBlueprints`): each is spent from the pack — never reaching
+/// the stores — and recorded under `character.blueprints.<item>`.
+pub fn redeem_blueprints(s: State) -> #(State, List(String)) {
+  let pairs = [
+    #("hypo blueprint", "hypo"),
+    #("kinetic armour blueprint", "kinetic armour"),
+    #("disruptor blueprint", "disruptor"),
+    #("plasma rifle blueprint", "plasma rifle"),
+    #("stim blueprint", "stim"),
+    #("glowstone blueprint", "glowstone"),
+  ]
+  let #(s, redeemed) =
+    list.fold(pairs, #(s, False), fn(acc, pair) {
+      let #(s, any) = acc
+      case state.get_outfit(s, pair.0) > 0 {
+        True -> #(
+          s
+            |> state.set_character("blueprints." <> pair.1, 1)
+            |> state.set_outfit(pair.0, 0),
+          True,
+        )
+        False -> #(s, any)
+      }
+    })
+  case redeemed {
+    True -> #(s, [
+      "blueprints feed into the fabricator data port. possibilities grow.",
+    ])
+    False -> #(s, [])
+  }
+}
+
 /// A scavenged surface map (`World.applyMap`): reveal the radius-5 diamond
 /// around a random still-unseen spot. The JS rejection-samples coordinates
 /// until it lands on an unseen one — a uniform pick over the unseen positions
