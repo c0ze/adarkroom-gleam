@@ -19,11 +19,28 @@ pub fn the_registry_has_the_ported_setpieces_test() {
   |> list.each(fn(name) { setpieces.setpiece(name) |> should.be_ok })
 }
 
-pub fn unported_setpieces_are_absent_test() {
-  // The prestige cache (and the executioner) land in later work.
-  setpieces.setpiece("cache") |> should.be_error
+pub fn every_setpiece_is_ported_test() {
+  // All 13 landmarks resolve; the executioner rides its own registry, and
+  // unknown keys still error.
+  setpieces.setpiece("cache") |> should.be_ok
   setpieces.setpiece("executioner") |> should.be_error
   setpieces.setpiece("nonsense") |> should.be_error
+}
+
+pub fn the_destroyed_village_claims_the_cache_test() {
+  let assert Ok(ev) = setpieces.setpiece("cache")
+  ev.title |> should.equal("A Destroyed Village")
+  let assert Ok(start) = list.key_find(ev.scenes, "start")
+  start.notification
+  |> should.equal(Some(
+    "the metallic tang of wanderer afterburner hangs in the air.",
+  ))
+  // No way out of the shack but with the supplies.
+  let assert Ok(underground) = list.key_find(ev.scenes, "underground")
+  underground.buttons |> list.map(fn(b) { b.0 }) |> should.equal(["take"])
+  let assert Ok(exit) = list.key_find(ev.scenes, "exit")
+  let assert Some(extra) = exit.setpiece
+  extra.world_effect |> should.equal(events.CollectCache)
 }
 
 pub fn the_city_is_a_fifteen_ended_dungeon_test() {

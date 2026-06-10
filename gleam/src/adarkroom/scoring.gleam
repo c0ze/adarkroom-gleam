@@ -173,6 +173,20 @@ pub fn save(s: State, rolls: List(Float)) -> Nil {
   storage.set(prestige_key, int.to_string(total) <> "|" <> stores)
 }
 
+/// Take the cached stores (`Prestige.collectStores`): each carried amount
+/// paired with its store name, in map order, and the slot's stores emptied —
+/// the score stays. (As in the JS, the emptied slot still counts as prestige,
+/// so the destroyed village keeps appearing; it just holds nothing.)
+pub fn collect() -> List(#(String, Int)) {
+  case load() {
+    Some(Prestige(stores: stores, score: score)) -> {
+      storage.set(prestige_key, int.to_string(score) <> "|0")
+      list.zip(list.map(stores_map(), fn(e) { e.0 }), stores)
+    }
+    None -> []
+  }
+}
+
 /// The accumulated score across every life so far.
 pub fn total_score() -> Int {
   case load() {

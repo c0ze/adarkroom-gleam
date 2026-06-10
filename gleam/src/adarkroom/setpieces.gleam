@@ -29,6 +29,7 @@ pub fn setpiece(name: String) -> Result(Event, Nil) {
 /// dungeons (cave, mines, town, city) and the ship/cache join this as they land.
 fn setpieces() -> List(#(String, Event)) {
   [
+    #("cache", cache()),
     #("outpost", outpost()),
     #("swamp", swamp()),
     #("battlefield", battlefield()),
@@ -1879,6 +1880,50 @@ fn always(_s: state.State) -> Bool {
 
 /// A bare prose scene with sensible empty defaults; the callers override the
 /// fields they need with record-update syntax.
+/// A Destroyed Village — the prestige cache: the previous generation's
+/// supplies, waiting under a shack (`Prestige.collectStores`).
+fn cache() -> Event {
+  Event(title: "A Destroyed Village", is_available: fn(_) { True }, scenes: [
+    #(
+      "start",
+      Scene(
+        ..story([
+          "a destroyed village lies in the dust.",
+          "charred bodies litter the ground.",
+        ]),
+        notification: Some(
+          "the metallic tang of wanderer afterburner hangs in the air.",
+        ),
+        buttons: [
+          #("enter", to("enter", "underground")),
+          #("leave", leave("leave")),
+        ],
+      ),
+    ),
+    #(
+      "underground",
+      Scene(
+        ..story([
+          "a shack stands at the center of the village.",
+          "there are still supplies inside.",
+        ]),
+        buttons: [#("take", to("take", "exit"))],
+      ),
+    ),
+    #(
+      "exit",
+      Scene(
+        ..story([
+          "all the work of a previous generation is here.",
+          "ripe for the picking.",
+        ]),
+        setpiece: extra([], events.CollectCache),
+        buttons: [#("leave", leave("leave"))],
+      ),
+    ),
+  ])
+}
+
 fn story(text: List(String)) -> Scene {
   Scene(
     text: text,

@@ -52,3 +52,21 @@ pub fn a_zero_divisor_is_coerced_to_one_test() {
 pub fn ammunition_takes_two_rolls_test() {
   scoring.rolls_needed() |> should.equal(28)
 }
+
+pub fn collecting_the_cache_empties_the_slot_but_keeps_the_score_test() {
+  // Seed a slot as a previous game's save would have left it.
+  let s =
+    state.new()
+    |> state.set_store("wood", 50)
+    |> state.set_store("fur", 20)
+  scoring.save(s, list.repeat(0.15, scoring.rolls_needed()))
+  // Divisor 1 everywhere (0.15 → floor 1): the full amounts carry.
+  let collected = scoring.collect()
+  list.key_find(collected, "wood") |> should.equal(Ok(50))
+  list.key_find(collected, "fur") |> should.equal(Ok(20))
+  // The slot keeps its score but holds nothing more.
+  let assert Ok(#(_, wood_again)) =
+    scoring.collect() |> list.find(fn(p) { p.0 == "wood" })
+  wood_again |> should.equal(0)
+  { scoring.total_score() > 0 } |> should.be_true
+}

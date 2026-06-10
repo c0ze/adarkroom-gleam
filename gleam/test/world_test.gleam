@@ -396,3 +396,13 @@ pub fn maps_with_nothing_left_to_see_are_quiet_test() {
   |> set.size
   |> should.equal(set.size(all))
 }
+
+pub fn the_prestige_map_holds_one_destroyed_village_test() {
+  let plain = world.generate_map(rng.seed(11))
+  let blessed = world.generate_prestige_map(rng.seed(11))
+  world.positions_of(plain, world.Cache) |> should.equal([])
+  world.positions_of(blessed, world.Cache) |> list.length |> should.equal(1)
+  // Placed last: the rest of the world is identical for the seed.
+  world.positions_of(plain, world.City)
+  |> should.equal(world.positions_of(blessed, world.City))
+}
