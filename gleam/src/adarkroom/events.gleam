@@ -8,6 +8,7 @@
 
 import adarkroom/combat
 import adarkroom/craft
+import adarkroom/outside
 import adarkroom/state
 import gleam/float
 import gleam/int
@@ -101,6 +102,10 @@ pub type Scene {
     /// Arbitrary effect run on entry (`onLoad`): computed rewards, flags, perks.
     /// Returns the new state and any extra messages.
     on_load: Option(fn(state.State) -> #(state.State, List(String))),
+    /// An `onLoad` that needs a random roll — the disasters compute how many
+    /// villagers/huts/traps to destroy from one. The model supplies the roll via
+    /// an effect on scene entry, keeping `update` pure.
+    on_load_rng: Option(fn(state.State, Float) -> #(state.State, List(String))),
     /// Present on setpiece scenes: loot and world-level `onLoad`. `None` on the
     /// random events, which touch only `State`.
     setpiece: Option(SetpieceExtra),
@@ -300,8 +305,357 @@ fn learn(text: String, cost: List(#(String, Int)), perk: String) -> SceneButton 
 }
 
 /// Events available while Outside.
+/// The Outside disasters: when the village is large enough, fortune turns on it
+/// — traps wrecked, huts burned, sickness, plagues, beasts and raids. Each
+/// computes its toll from a random roll (`on_load_rng`). The pool is only
+/// offered while the player is Outside, so availability checks just the village.
 pub fn outside_events() -> List(Event) {
-  []
+  [
+    ruined_trap(),
+    hut_fire(),
+    sickness(),
+    plague(),
+    beast_attack(),
+    military_raid(),
+  ]
+}
+
+/// A villager cull of `floor(roll * span) + base`.
+fn cull(span: Int, base: Int) -> Toll {
+  fn(s, roll) {
+    #(
+      outside.kill_villagers(
+        s,
+        float.truncate(roll *. int.to_float(span)) + base,
+      ),
+      [],
+    )
+  }
+}
+
+type Toll =
+  fn(state.State, Float) -> #(state.State, List(String))
+
+/// A scene whose `onLoad` exacts a roll-sized toll on the village.
+fn toll_scene(
+  text: List(String),
+  notification: String,
+  toll: Toll,
+  buttons: List(#(String, SceneButton)),
+) -> Scene {
+  Scene(
+    text:,
+    notification: option.Some(notification),
+    reward: [],
+    buttons:,
+    combat: False,
+    on_load: option.None,
+    on_load_rng: option.Some(toll),
+    setpiece: option.None,
+  )
+}
+
+/// A plain disaster scene (no toll), with an optional reward on entry.
+fn relief_scene(
+  text: List(String),
+  notification: String,
+  reward: List(#(String, Int)),
+  buttons: List(#(String, SceneButton)),
+) -> Scene {
+  Scene(
+    text:,
+    notification: option.Some(notification),
+    reward:,
+    buttons:,
+    combat: False,
+    on_load: option.None,
+    on_load_rng: option.None,
+    setpiece: option.None,
+  )
+}
+
+/// `go home` — close the event.
+fn go_home() -> #(String, SceneButton) {
+  #("end", choice("go home", End))
+}
+
+/// Beasts tore some traps apart; track them for a kill, or let it lie.
+fn ruined_trap() -> Event {
+  Event(
+    title: "A Ruined Trap",
+    is_available: fn(s) { craft.building_count(s, "trap") > 0 },
+    scenes: [
+      #(
+        "start",
+        toll_scene(
+          [
+            "some of the traps have been torn apart.",
+            "large prints lead away, into the forest.",
+          ],
+          "some traps have been destroyed",
+          fn(s, roll) {
+            let span = craft.building_count(s, "trap")
+            #(
+              outside.destroy_traps(
+                s,
+                float.truncate(roll *. int.to_float(span)) + 1,
+              ),
+              [],
+            )
+          },
+          [
+            #(
+              "track",
+              choice("track them", Branch([#(0.5, "nothing"), #(1.0, "catch")])),
+            ),
+            #("ignore", choice("ignore them", End)),
+          ],
+        ),
+      ),
+      #(
+        "nothing",
+        relief_scene(
+          [
+            "the tracks disappear after just a few minutes.",
+            "the forest is silent.",
+          ],
+          "nothing was found",
+          [],
+          [go_home()],
+        ),
+      ),
+      #(
+        "catch",
+        relief_scene(
+          [
+            "not far from the village lies a large beast, its fur matted with blood.",
+            "it puts up little resistance before the knife.",
+          ],
+          "there was a beast. it's dead now",
+          [#("fur", 100), #("meat", 100), #("teeth", 10)],
+          [go_home()],
+        ),
+      ),
+    ],
+  )
+}
+
+/// A fire takes a hut, and everyone in it.
+fn hut_fire() -> Event {
+  Event(
+    title: "Fire",
+    is_available: fn(s) {
+      craft.building_count(s, "hut") > 0 && outside.population(s) > 50
+    },
+    scenes: [
+      #(
+        "start",
+        toll_scene(
+          [
+            "a fire rampages through one of the huts, destroying it.",
+            "all residents in the hut perished in the fire.",
+          ],
+          "a fire has started",
+          fn(s, roll) { #(outside.destroy_huts(s, 1, [roll]), []) },
+          [#("mourn", choice("mourn", End))],
+        ),
+      ),
+    ],
+  )
+}
+
+/// Sickness — spend medicine to heal, or leave them to die.
+fn sickness() -> Event {
+  Event(
+    title: "Sickness",
+    is_available: fn(s) {
+      outside.population(s) > 10
+      && outside.population(s) < 50
+      && state.get_store(s, "medicine") > 0
+    },
+    scenes: [
+      #(
+        "start",
+        relief_scene(
+          [
+            "a sickness is spreading through the village.",
+            "medicine is needed immediately.",
+          ],
+          "some villagers are ill",
+          [],
+          [
+            #("heal", give("1 medicine", [#("medicine", 1)], Goto("healed"))),
+            #("ignore", choice("ignore it", Goto("death"))),
+          ],
+        ),
+      ),
+      #(
+        "healed",
+        relief_scene(
+          ["the sickness is cured in time."],
+          "sufferers are healed",
+          [],
+          [
+            go_home(),
+          ],
+        ),
+      ),
+      #(
+        "death",
+        toll_scene(
+          [
+            "the sickness spreads through the village.",
+            "the days are spent with burials.",
+            "the nights are rent with screams.",
+          ],
+          "sufferers are left to die",
+          fn(s, roll) {
+            let span = outside.population(s) / 2
+            #(
+              outside.kill_villagers(
+                s,
+                float.truncate(roll *. int.to_float(span)) + 1,
+              ),
+              [],
+            )
+          },
+          [go_home()],
+        ),
+      ),
+    ],
+  )
+}
+
+/// Plague — costlier medicine, and a heavier toll if it spreads.
+fn plague() -> Event {
+  Event(
+    title: "Plague",
+    is_available: fn(s) {
+      outside.population(s) > 50 && state.get_store(s, "medicine") > 0
+    },
+    scenes: [
+      #(
+        "start",
+        relief_scene(
+          [
+            "a terrible plague is fast spreading through the village.",
+            "medicine is needed immediately.",
+          ],
+          "a plague afflicts the village",
+          [],
+          [
+            #(
+              "buyMedicine",
+              SceneButton(
+                text: "buy medicine",
+                cost: [#("scales", 70), #("teeth", 50)],
+                reward: [#("medicine", 1)],
+                notification: option.None,
+                available: option.None,
+                on_click: option.None,
+                next: Stay,
+              ),
+            ),
+            #("heal", give("5 medicine", [#("medicine", 5)], Goto("healed"))),
+            #("ignore", choice("do nothing", Goto("death"))),
+          ],
+        ),
+      ),
+      #(
+        "healed",
+        toll_scene(
+          [
+            "the plague is kept from spreading.",
+            "only a few die.",
+            "the rest bury them.",
+          ],
+          "epidemic is eradicated eventually",
+          cull(5, 2),
+          [go_home()],
+        ),
+      ),
+      #(
+        "death",
+        toll_scene(
+          [
+            "the plague rips through the village.",
+            "the nights are rent with screams.",
+            "the only hope is a quick death.",
+          ],
+          "population is almost exterminated",
+          cull(80, 10),
+          [go_home()],
+        ),
+      ),
+    ],
+  )
+}
+
+/// Beasts pour from the trees; the village pays in blood for fur and meat.
+fn beast_attack() -> Event {
+  Event(
+    title: "A Beast Attack",
+    is_available: fn(s) { outside.population(s) > 0 },
+    scenes: [
+      #(
+        "start",
+        Scene(
+          ..toll_scene(
+            [
+              "a pack of snarling beasts pours out of the trees.",
+              "the fight is short and bloody, but the beasts are repelled.",
+              "the villagers retreat to mourn the dead.",
+            ],
+            "wild beasts attack the villagers",
+            cull(10, 1),
+            [#("end", give_then_home("predators become prey. price is unfair"))],
+          ),
+          reward: [#("fur", 100), #("meat", 100), #("teeth", 10)],
+        ),
+      ),
+    ],
+  )
+}
+
+/// Once the city is cleared, the military comes for the village.
+fn military_raid() -> Event {
+  Event(
+    title: "A Military Raid",
+    is_available: fn(s) {
+      outside.population(s) > 0 && state.get_game(s, "cityCleared") > 0
+    },
+    scenes: [
+      #(
+        "start",
+        Scene(
+          ..toll_scene(
+            [
+              "a gunshot rings through the trees.",
+              "well armed men charge out of the forest, firing into the crowd.",
+              "after a skirmish they are driven away, but not without losses.",
+            ],
+            "troops storm the village",
+            cull(40, 1),
+            [#("end", give_then_home("warfare is bloodthirsty"))],
+          ),
+          reward: [#("bullets", 10), #("cured meat", 50)],
+        ),
+      ),
+    ],
+  )
+}
+
+/// A `go home` button that surfaces a parting notification.
+fn give_then_home(notification: String) -> SceneButton {
+  SceneButton(
+    text: "go home",
+    cost: [],
+    reward: [],
+    notification: option.Some(notification),
+    available: option.None,
+    on_click: option.None,
+    next: End,
+  )
 }
 
 /// Events available in any settled location (Room or Outside).
@@ -321,6 +675,7 @@ fn nomad() -> Event {
       notification: option.Some("a nomad arrives, looking to trade"),
       reward: [],
       combat: False,
+      on_load_rng: option.None,
       setpiece: option.None,
       on_load: option.None,
       buttons: [
@@ -414,6 +769,7 @@ fn noises_through_walls() -> Event {
           ),
           reward: [],
           combat: False,
+          on_load_rng: option.None,
           setpiece: option.None,
           on_load: option.None,
           buttons: [
@@ -435,6 +791,7 @@ fn noises_through_walls() -> Event {
           notification: option.None,
           reward: [],
           combat: False,
+          on_load_rng: option.None,
           setpiece: option.None,
           on_load: option.None,
           buttons: [#("backinside", choice("go back inside", End))],
@@ -450,6 +807,7 @@ fn noises_through_walls() -> Event {
           notification: option.None,
           reward: [#("wood", 100), #("fur", 10)],
           combat: False,
+          on_load_rng: option.None,
           setpiece: option.None,
           on_load: option.None,
           buttons: [#("backinside", choice("go back inside", End))],
@@ -476,6 +834,7 @@ fn noises_in_store_room() -> Event {
           notification: option.Some("something's in the store room"),
           reward: [],
           combat: False,
+          on_load_rng: option.None,
           setpiece: option.None,
           on_load: option.None,
           buttons: [
@@ -504,6 +863,7 @@ fn scavenged_scene(litter: String, material: String) -> Scene {
     notification: option.None,
     reward: [],
     combat: False,
+    on_load_rng: option.None,
     setpiece: option.None,
     on_load: option.Some(scavenge(material)),
     buttons: [#("leave", choice("leave", End))],
@@ -540,6 +900,7 @@ fn beggar() -> Event {
           notification: option.Some("a beggar arrives"),
           reward: [],
           combat: False,
+          on_load_rng: option.None,
           setpiece: option.None,
           on_load: option.None,
           buttons: [
@@ -580,6 +941,7 @@ fn beggar_thanks(material: String, litter: String) -> Scene {
     notification: option.None,
     reward: [#(material, 20)],
     combat: False,
+    on_load_rng: option.None,
     setpiece: option.None,
     on_load: option.None,
     buttons: [#("leave", choice("say goodbye", End))],
@@ -606,6 +968,7 @@ fn shady_builder() -> Event {
           notification: option.Some("a shady builder passes through"),
           reward: [],
           combat: False,
+          on_load_rng: option.None,
           setpiece: option.None,
           on_load: option.None,
           buttons: [
@@ -630,6 +993,7 @@ fn shady_builder() -> Event {
           ),
           reward: [],
           combat: False,
+          on_load_rng: option.None,
           setpiece: option.None,
           on_load: option.None,
           buttons: [#("end", choice("go home", End))],
@@ -642,6 +1006,7 @@ fn shady_builder() -> Event {
           notification: option.Some("the shady builder builds a hut"),
           reward: [],
           combat: False,
+          on_load_rng: option.None,
           setpiece: option.None,
           on_load: option.Some(raise_hut),
           buttons: [#("end", choice("go home", End))],
@@ -680,6 +1045,7 @@ fn scout() -> Event {
         notification: option.Some("a scout stops for the night"),
         reward: [],
         combat: False,
+        on_load_rng: option.None,
         setpiece: option.None,
         on_load: option.None,
         buttons: [
@@ -712,6 +1078,7 @@ fn master() -> Event {
         notification: option.Some("an old wanderer arrives"),
         reward: [],
         combat: False,
+        on_load_rng: option.None,
         setpiece: option.None,
         on_load: option.None,
         buttons: [
@@ -734,6 +1101,7 @@ fn master() -> Event {
         notification: option.None,
         reward: [],
         combat: False,
+        on_load_rng: option.None,
         setpiece: option.None,
         on_load: option.None,
         buttons: [
@@ -760,6 +1128,7 @@ fn sick_man() -> Event {
           notification: option.Some("a sick man hobbles up"),
           reward: [],
           combat: False,
+          on_load_rng: option.None,
           setpiece: option.None,
           on_load: option.None,
           buttons: [
@@ -826,6 +1195,7 @@ fn sick_man() -> Event {
           notification: option.None,
           reward: [],
           combat: False,
+          on_load_rng: option.None,
           setpiece: option.None,
           on_load: option.None,
           buttons: [#("bye", choice("say goodbye", End))],
@@ -842,6 +1212,7 @@ fn sick_reward(text: List(String), reward: List(#(String, Int))) -> Scene {
     notification: option.None,
     reward:,
     combat: False,
+    on_load_rng: option.None,
     setpiece: option.None,
     on_load: option.None,
     buttons: [#("bye", choice("say goodbye", End))],

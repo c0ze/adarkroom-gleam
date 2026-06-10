@@ -107,6 +107,8 @@ pub type Msg {
   Heal(item: String)
   /// Grant a setpiece scene's loot from the supplied rolls (two per drop).
   SetpieceLoot(rolls: List(Float))
+  /// Run a scene's random `onLoad` (a disaster's toll) with the supplied roll.
+  SceneRng(roll: Float)
 }
 
 pub type Model {
@@ -433,6 +435,8 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
       grant_setpiece_loot(model, rolls),
       effect.none(),
     )
+
+    SceneRng(roll: roll) -> #(run_scene_rng(model, roll), effect.none())
   }
 }
 
@@ -889,7 +893,31 @@ fn load_scene(
       let model = Model(..model, combat: Some(cs))
       #(model, enemy_timer(model.combat))
     }
-    _, _ -> #(model, setpiece_loot_effect(scene))
+    _, _ -> #(
+      model,
+      effect.batch([setpiece_loot_effect(scene), scene_rng_effect(scene)]),
+    )
+  }
+}
+
+/// An effect that rolls for a scene's random `onLoad` (a disaster's toll),
+/// reported as `SceneRng`. Nothing when the scene has no such `onLoad`.
+fn scene_rng_effect(scene: events.Scene) -> Effect(Msg) {
+  case scene.on_load_rng {
+    Some(_) -> effect.from(fn(dispatch) { dispatch(SceneRng(rng.random())) })
+    None -> effect.none()
+  }
+}
+
+/// Run the active scene's random `onLoad` with `roll` (the disasters cut the
+/// population, raze huts or wreck traps), logging what it reports.
+fn run_scene_rng(model: Model, roll: Float) -> Model {
+  case active_scene(model) {
+    Ok(events.Scene(on_load_rng: Some(f), ..)) -> {
+      let #(state, messages) = f(model.state, roll)
+      notify_here(Model(..model, state:), messages)
+    }
+    _ -> model
   }
 }
 
