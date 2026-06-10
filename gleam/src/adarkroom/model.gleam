@@ -161,6 +161,18 @@ pub type Msg {
   OutroStep
   /// The outro's wait button: on to the scores.
   EndingWait
+  /// Take one of a pending loot row (capacity allowing).
+  TakeLoot(name: String)
+  /// Take as much of a row as the pack fits.
+  TakeAllLoot(name: String)
+  /// Take all you can of every row — and leave, if everything fit.
+  TakeEverything
+  /// Drop `count` of a carried item to make room, then take what wanted it.
+  DropCarried(name: String, count: Int)
+  /// Close the drop menu untouched.
+  CancelDrop
+  /// Done looting an encounter: the fight closes and the walk resumes.
+  LootDone
   /// Start again — the save is wiped (prestige stays) and the page reloads.
   RestartGame
   /// The ending's app-store links.
@@ -206,6 +218,11 @@ pub type Model {
     /// The ending, once the ascent is survived. Runtime-only — the game is
     /// over.
     ending: Option(Ending),
+    /// Loot waiting to be taken (a won fight's drops, a scene's cache), as
+    /// `(name, count)` rows. Runtime-only; advancing forfeits what's left.
+    loot: List(#(String, Int)),
+    /// The loot row whose take didn't fit, showing its drop menu. Runtime-only.
+    drop_for: Option(String),
     /// Whether the document key listeners are armed (once per session).
     keys_armed: Bool,
   )
@@ -243,6 +260,8 @@ pub fn init() -> Model {
     flight_last_move: 0,
     flight_run: 0,
     ending: None,
+    loot: [],
+    drop_for: None,
     keys_armed: False,
   )
 }
@@ -702,6 +721,21 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
         _ -> #(model, effect.none())
       }
 
+    TakeLoot(name: name) -> #(take_loot(model, name), effect.none())
+
+    TakeAllLoot(name: name) -> #(take_all_loot(model, name), effect.none())
+
+    TakeEverything -> take_everything(model)
+
+    DropCarried(name: name, count: count) -> #(
+      drop_carried(model, name, count),
+      effect.none(),
+    )
+
+    CancelDrop -> #(Model(..model, drop_for: None), effect.none())
+
+    LootDone -> #(finish_looting(model), effect.none())
+
     RestartGame -> #(
       model,
       effect.from(fn(_) {
@@ -968,34 +1002,177 @@ fn resolve_enemy_turn(model: Model, roll: Float) -> Model {
 /// Take the defeated enemy's loot into the carried outfit, carry the wound back
 /// to the expedition, and resume walking.
 fn collect_loot(model: Model, rolls: List(Float)) -> Model {
-  case model.combat, model.expedition {
-    Some(cs), Some(exp) -> {
-      let loot = combat.roll_loot(cs.enemy.loot, rolls)
-      let state =
-        list.fold(loot, model.state, fn(s, item) {
-          state.set_outfit(s, item.0, state.get_outfit(s, item.0) + item.1)
-        })
-      let exp =
-        world.Expedition(
-          ..exp,
-          vitals: world.Vitals(..exp.vitals, health: cs.player_hp),
-        )
-      // A setpiece enemy carries no death message (the scene's buttons take
-      // over); drop the blank so it isn't logged.
-      let messages =
-        [
-          cs.enemy.death_message,
-          ..list.map(loot, fn(l) { int.to_string(l.1) <> " " <> l.0 })
-        ]
-        |> list.filter(fn(m) { m != "" })
-      notify_world(
-        Model(..model, state:, expedition: Some(exp), combat: None),
-        messages,
-      )
+  case model.combat {
+    // The fight stays on screen as a looting phase (`winFight`): the drops
+    // wait in rows, and only the death message is announced.
+    Some(cs) -> {
+      let loot =
+        combat.roll_loot(cs.enemy.loot, rolls)
+        |> list.filter(fn(l) { l.1 > 0 })
+      let messages = [cs.enemy.death_message] |> list.filter(fn(m) { m != "" })
+      // The leave and take-everything buttons start their second of cooling
+      // as the screen appears (`Button.cooldown` on creation).
+      let model =
+        model
+        |> start_cooldown("loot_leave", leave_cooldown_ms)
+        |> start_cooldown("loot_take_et", leave_cooldown_ms)
+      notify_world(Model(..model, loot: loot, drop_for: None), messages)
     }
+    None -> model
+  }
+}
+
+/// Done looting a won fight: the wound carries back to the expedition, the
+/// leftovers are forfeited, and the walk resumes.
+fn finish_looting(model: Model) -> Model {
+  let model = Model(..model, loot: [], drop_for: None)
+  case model.combat, model.expedition {
+    Some(cs), Some(exp) ->
+      Model(
+        ..model,
+        combat: None,
+        expedition: Some(
+          world.Expedition(
+            ..exp,
+            vitals: world.Vitals(..exp.vitals, health: cs.player_hp),
+          ),
+        ),
+      )
     _, _ -> Model(..model, combat: None)
   }
 }
+
+/// Take one of a row (`getLoot`): into the pack if it fits, else the row's
+/// drop menu opens.
+fn take_loot(model: Model, name: String) -> Model {
+  case path.weight(name) <=. path.free_space(model.state) {
+    True -> {
+      let model =
+        Model(
+          ..model,
+          state: state.set_outfit(
+            model.state,
+            name,
+            state.get_outfit(model.state, name) + 1,
+          ),
+          drop_for: None,
+        )
+      shrink_row(model, name, 1)
+    }
+    False -> Model(..model, drop_for: Some(name))
+  }
+}
+
+/// Take as much of a row as fits (`takeAll`): `min(floor(free / weight), n)`.
+fn take_all_loot(model: Model, name: String) -> Model {
+  case list.key_find(model.loot, name) {
+    Error(_) -> model
+    Ok(left) -> {
+      let fits = fits_of(model.state, name)
+      let num = int.min(fits, left)
+      case num > 0 {
+        False -> model
+        True -> {
+          let model =
+            Model(
+              ..model,
+              state: state.set_outfit(
+                model.state,
+                name,
+                state.get_outfit(model.state, name) + num,
+              ),
+            )
+          shrink_row(model, name, num)
+        }
+      }
+    }
+  }
+}
+
+/// How many of an item the pack can still fit.
+fn fits_of(s: State, name: String) -> Int {
+  case path.weight(name) >. 0.0 {
+    True -> float.truncate(path.free_space(s) /. path.weight(name))
+    False -> 1_000_000
+  }
+}
+
+/// Take all you can of every row (`takeEverything`); when everything fit and
+/// it's a plain encounter, that's also the leave.
+fn take_everything(model: Model) -> #(Model, Effect(Msg)) {
+  let everything_fits = loot_fits_entirely(model)
+  let taken =
+    list.fold(model.loot, model, fn(m, row) { take_all_loot(m, row.0) })
+  let taken = start_cooldown(taken, "loot_take_et", leave_cooldown_ms)
+  case everything_fits && taken.active_event == None && taken.combat != None {
+    True -> #(finish_looting(taken), effect.none())
+    False -> #(taken, effect.none())
+  }
+}
+
+/// Whether every pending row would fit in the pack at once (`setTakeAll`'s
+/// running tally) — the difference between "take everything" and "take all
+/// you can".
+pub fn loot_fits_entirely(model: Model) -> Bool {
+  let needed =
+    list.fold(model.loot, 0.0, fn(acc, row) {
+      acc +. int.to_float(row.1) *. path.weight(row.0)
+    })
+  needed <=. path.free_space(model.state)
+}
+
+/// Drop `count` of a carried item to make room (`dropStuff`): the dropped
+/// join the loot rows — they can be taken back — and the wanted item is
+/// taken in the same motion.
+fn drop_carried(model: Model, name: String, count: Int) -> Model {
+  let had = state.get_outfit(model.state, name)
+  let count = int.min(count, had)
+  let model =
+    Model(
+      ..model,
+      state: state.set_outfit(model.state, name, had - count),
+      loot: grow_row(model.loot, name, count),
+    )
+  case model.drop_for {
+    Some(wanted) -> take_loot(Model(..model, drop_for: None), wanted)
+    None -> model
+  }
+}
+
+/// Take `n` off a row, removing it when spent.
+fn shrink_row(model: Model, name: String, n: Int) -> Model {
+  let loot =
+    list.filter_map(model.loot, fn(row) {
+      case row.0 == name, row.1 - n {
+        True, left if left <= 0 -> Error(Nil)
+        True, left -> Ok(#(name, left))
+        False, _ -> Ok(row)
+      }
+    })
+  Model(..model, loot: loot)
+}
+
+/// Add `n` to a row, creating it at the end if absent.
+fn grow_row(
+  loot: List(#(String, Int)),
+  name: String,
+  n: Int,
+) -> List(#(String, Int)) {
+  case list.key_find(loot, name) {
+    Ok(have) ->
+      list.map(loot, fn(row) {
+        case row.0 == name {
+          True -> #(name, have + n)
+          False -> row
+        }
+      })
+    Error(_) -> list.append(loot, [#(name, n)])
+  }
+}
+
+/// `Events._LEAVE_COOLDOWN` — the second the leave/take-everything buttons
+/// spend cooling.
+pub const leave_cooldown_ms = 1000
 
 /// Use a healing item mid-fight: spend one from the outfit and mend the player,
 /// once its cooldown is up. Cured meat is the gastronome-boosted `meat_heal`;
@@ -1392,6 +1569,8 @@ fn die(model: Model) -> Model {
     combat: None,
     // A setpiece modal closes with the death — there's no scene to return to.
     active_event: None,
+    loot: [],
+    drop_for: None,
   )
 }
 
@@ -1491,6 +1670,17 @@ fn resolve_event(model: Model, id: String, roll: Float) -> #(Model, Effect(Msg))
                       apply_purse(Model(..model, state: new_state), purse),
                       messages,
                     )
+                  // A scene button pressed over a won fight's loot screen
+                  // closes the fight: the wound carries home, leftovers are
+                  // forfeited (the JS take-it-or-leave-it).
+                  let model = case model.combat {
+                    Some(cs) ->
+                      case cs.won {
+                        True -> finish_looting(model)
+                        False -> model
+                      }
+                    None -> model
+                  }
                   let #(model, button_fx) =
                     apply_button_effect(model, button.effect)
                   case button.link {
@@ -1600,11 +1790,23 @@ fn advance_event(
 ) -> #(Model, Effect(Msg)) {
   case step {
     events.StayOnScene -> #(model, effect.none())
-    events.EndEvent -> #(Model(..model, active_event: None), effect.none())
+    events.EndEvent -> #(
+      Model(..model, active_event: None, loot: [], drop_for: None),
+      effect.none(),
+    )
     events.LoadScene(next) ->
       case list.key_find(event.scenes, next) {
-        Error(_) -> #(Model(..model, active_event: None), effect.none())
-        Ok(scene) -> load_scene(model, event, next, scene)
+        Error(_) -> #(
+          Model(..model, active_event: None, loot: [], drop_for: None),
+          effect.none(),
+        )
+        Ok(scene) ->
+          load_scene(
+            Model(..model, loot: [], drop_for: None),
+            event,
+            next,
+            scene,
+          )
       }
     // The JS switchEvent: close this event, start the keyed one. The registry
     // spans the setpieces and the executioner chain, in that lookup order. An
@@ -1796,16 +1998,13 @@ fn setpiece_loot_effect(scene: events.Scene) -> Effect(Msg) {
 /// credited to stores on a safe return), logging what was found.
 fn grant_setpiece_loot(model: Model, rolls: List(Float)) -> Model {
   case active_scene(model) {
+    // The scene's drops wait in rows for the player to take (`drawLoot`),
+    // not in the pack.
     Ok(events.Scene(setpiece: Some(extra), ..)) -> {
-      let loot = combat.roll_loot(extra.loot, rolls)
-      let new_state =
-        list.fold(loot, model.state, fn(s, item) {
-          state.set_outfit(s, item.0, state.get_outfit(s, item.0) + item.1)
-        })
-      notify_world(
-        Model(..model, state: new_state),
-        list.map(loot, fn(l) { int.to_string(l.1) <> " " <> l.0 }),
-      )
+      let loot =
+        combat.roll_loot(extra.loot, rolls)
+        |> list.filter(fn(l) { l.1 > 0 })
+      Model(..model, loot: loot, drop_for: None)
     }
     _ -> model
   }

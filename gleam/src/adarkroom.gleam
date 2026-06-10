@@ -267,6 +267,26 @@ fn game_view(m: Model) -> Element(Msg) {
 fn combat_overlay(m: Model) -> List(Element(Msg)) {
   case m.combat {
     None -> []
+    // The fight is won: the looting phase (`winFight`) — the death message,
+    // the loot rows, and the way onward.
+    Some(cs) if cs.won -> [
+      html.div([attribute.id("event"), attribute.class("eventPanel")], [
+        html.div(
+          [attribute.id("description")],
+          list.append(
+            case cs.enemy.death_message {
+              "" -> []
+              message -> [html.div([], [element.text(message)])]
+            },
+            loot_section(m),
+          ),
+        ),
+        html.div([attribute.id("buttons")], [
+          html.div([attribute.id("exitButtons")], loot_exit_buttons(m)),
+          html.div([attribute.id("healButtons")], heal_buttons(m)),
+        ]),
+      ]),
+    ]
     Some(cs) -> [
       html.div([attribute.id("event"), attribute.class("eventPanel")], [
         html.div([attribute.id("description")], [
@@ -292,6 +312,151 @@ fn combat_overlay(m: Model) -> List(Element(Msg)) {
           html.div([attribute.id("healButtons")], heal_buttons(m)),
         ]),
       ]),
+    ]
+  }
+}
+
+/// The pending loot, as rows of take buttons with a take-everything tail
+/// (`drawLoot`/`drawLootRow`). Empty when there's nothing to take.
+fn loot_section(m: Model) -> List(Element(Msg)) {
+  case m.loot {
+    [] -> []
+    rows -> [
+      html.div(
+        [
+          attribute.id("lootButtons"),
+          attribute.attribute("data-legend", "take:"),
+        ],
+        list.append(list.map(rows, loot_row(m, _)), [take_everything_row(m)]),
+      ),
+    ]
+  }
+}
+
+/// One loot row: take one ("name [n]") and take-all ("take all" — or
+/// "take N" when only N fit). A refused take opens the row's drop menu.
+fn loot_row(m: Model, row: #(String, Int)) -> Element(Msg) {
+  let #(name, num) = row
+  let fits = case path.weight(name) >. 0.0 {
+    True -> float.truncate(path.free_space(m.state) /. path.weight(name))
+    False -> num
+  }
+  let can_take = int.min(fits, num)
+  let take_all_label = case can_take < num {
+    True -> "take " <> int.to_string(can_take)
+    False -> "take all"
+  }
+  let take_all_class = case can_take > 0 {
+    True -> "button lootTakeAll"
+    False -> "button lootTakeAll disabled"
+  }
+  let drop = case m.drop_for == Some(name) {
+    True -> [drop_menu(m, name)]
+    False -> []
+  }
+  html.div([attribute.class("lootRow")], [
+    html.div(
+      [
+        attribute.class("button lootTake"),
+        event.on_click(model.TakeLoot(name)),
+      ],
+      list.append(
+        [element.text(name <> " [" <> int.to_string(num) <> "]")],
+        drop,
+      ),
+    ),
+    html.div(
+      [attribute.class(take_all_class), event.on_click(model.TakeAllLoot(name))],
+      [element.text(take_all_label)],
+    ),
+  ])
+}
+
+/// Drop options for a take that didn't fit (`drawDrop`): each carried,
+/// weighty item offers just enough of itself to make room.
+fn drop_menu(m: Model, wanted: String) -> Element(Msg) {
+  let shortfall = path.weight(wanted) -. path.free_space(m.state)
+  let options =
+    state.outfit_list(m.state)
+    |> list.filter_map(fn(item) {
+      let #(name, owned) = item
+      let w = path.weight(name)
+      case name != wanted && w >. 0.0 && owned > 0 {
+        False -> Error(Nil)
+        True -> {
+          let to_drop =
+            int.min(float.round(float.ceiling(shortfall /. w)), owned)
+          case to_drop > 0 {
+            True ->
+              Ok(
+                html.div([event.on_click(model.DropCarried(name, to_drop))], [
+                  element.text(name <> " x" <> int.to_string(to_drop)),
+                ]),
+              )
+            False -> Error(Nil)
+          }
+        }
+      }
+    })
+  html.div(
+    [attribute.id("dropMenu"), attribute.attribute("data-legend", "drop:")],
+    list.append(options, [
+      html.div([attribute.id("no_drop"), event.on_click(model.CancelDrop)], [
+        element.text("nothing"),
+      ]),
+    ]),
+  )
+}
+
+/// The take-everything tail: "take everything" when it all fits ("… and
+/// leave" on a plain encounter), "take all you can" otherwise.
+fn take_everything_row(m: Model) -> Element(Msg) {
+  let fits = model.loot_fits_entirely(m)
+  let label = case fits, m.active_event, m.combat {
+    True, None, Some(_) -> "take everything and leave"
+    True, _, _ -> "take everything"
+    False, _, _ -> "take all you can"
+  }
+  html.div([attribute.class("takeETrow")], [
+    button.button(button.Config(
+      text: label,
+      on_click: model.TakeEverything,
+      cost: [],
+      disabled: False,
+      cooldown: model.cooldown_fraction(
+        m,
+        "loot_take_et",
+        model.leave_cooldown_ms,
+      ),
+      cooldown_ms: model.leave_cooldown_ms,
+      id: "loot_takeEverything",
+    )),
+  ])
+}
+
+/// The way out of a won fight: the scene's own buttons for a setpiece, a
+/// plain cooling leave for an encounter.
+fn loot_exit_buttons(m: Model) -> List(Element(Msg)) {
+  case m.active_event {
+    Some(active) ->
+      case list.key_find(active.event.scenes, active.scene) {
+        Ok(scene) -> list.map(scene.buttons, fn(pair) { event_button(m, pair) })
+        Error(_) -> []
+      }
+    None -> [
+      button.button(button.Config(
+        text: "leave",
+        on_click: model.LootDone,
+        cost: [],
+        disabled: False,
+        cooldown: model.cooldown_fraction(
+          m,
+          "loot_leave",
+          model.leave_cooldown_ms,
+        ),
+        cooldown_ms: model.leave_cooldown_ms,
+        id: "loot_leave",
+      )),
     ]
   }
 }
@@ -398,6 +563,7 @@ fn event_overlay(m: Model) -> List(Element(Msg)) {
                 html.div([], [element.text(line)])
               }),
             ),
+            html.div([], loot_section(m)),
             html.div(
               [attribute.id("buttons")],
               list.map(scene.buttons, fn(pair) { event_button(m, pair) }),

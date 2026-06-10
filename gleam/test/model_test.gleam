@@ -604,18 +604,53 @@ pub fn a_calm_step_starts_no_fight_test() {
   |> should.equal(option.None)
 }
 
-pub fn felling_the_enemy_wins_and_drops_loot_into_the_outfit_test() {
+pub fn felling_the_enemy_offers_its_loot_in_rows_test() {
   let fighting = run(world_model(10), MaybeFight(0.0, 0.0))
   // steel sword deals 6 > the beast's 5 HP; a 0.5 roll lands.
   let won = run(fighting, ResolveStrike("steel sword", 0.5))
   let assert option.Some(cs) = won.combat
   cs.won |> should.equal(True)
-  // Collect: fur/meat/teeth, each chance roll passes and each qty roll → min 1.
-  let done = run(won, CollectLoot([0.0, 0.0, 0.0, 0.0, 0.0, 0.0]))
+  // The drops wait in rows — the fight stays open as a looting phase.
+  let looting = run(won, CollectLoot([0.0, 0.0, 0.0, 0.0, 0.0, 0.0]))
+  looting.combat |> should.not_equal(option.None)
+  looting.loot |> should.equal([#("fur", 1), #("meat", 1), #("teeth", 1)])
+  // Take everything: all fits, so the encounter also closes.
+  let done = run(looting, model.TakeEverything)
   done.combat |> should.equal(option.None)
+  done.loot |> should.equal([])
   state.get_outfit(done.state, "fur") |> should.equal(1)
   state.get_outfit(done.state, "meat") |> should.equal(1)
   state.get_outfit(done.state, "teeth") |> should.equal(1)
+}
+
+pub fn loot_that_does_not_fit_offers_the_drop_menu_test() {
+  // A pack stuffed with 10 bone spears (20 of 10 capacity? no — capacity 10,
+  // spears weigh 2: 5 fill it). Taking a fur (weight 1) cannot fit.
+  let fighting = run(world_model(10), MaybeFight(0.0, 0.0))
+  let won = run(fighting, ResolveStrike("steel sword", 0.5))
+  let stuffed =
+    model.Model(..won, state: state.set_outfit(won.state, "bone spear", 5))
+  let looting = run(stuffed, CollectLoot([0.0, 0.0, 0.0, 0.0, 0.0, 0.0]))
+  let refused = run(looting, model.TakeLoot("fur"))
+  refused.drop_for |> should.equal(option.Some("fur"))
+  state.get_outfit(refused.state, "fur") |> should.equal(0)
+  // Drop a spear: room for two furs' weight; the wanted fur is taken in the
+  // same motion, and the spear joins the rows for the taking.
+  let dropped = run(refused, model.DropCarried("bone spear", 1))
+  state.get_outfit(dropped.state, "bone spear") |> should.equal(4)
+  state.get_outfit(dropped.state, "fur") |> should.equal(1)
+  list.key_find(dropped.loot, "bone spear") |> should.equal(Ok(1))
+  dropped.drop_for |> should.equal(option.None)
+}
+
+pub fn leaving_the_loot_screen_forfeits_the_rest_test() {
+  let fighting = run(world_model(10), MaybeFight(0.0, 0.0))
+  let won = run(fighting, ResolveStrike("steel sword", 0.5))
+  let looting = run(won, CollectLoot([0.0, 0.0, 0.0, 0.0, 0.0, 0.0]))
+  let left = run(looting, model.LootDone)
+  left.combat |> should.equal(option.None)
+  left.loot |> should.equal([])
+  state.get_outfit(left.state, "fur") |> should.equal(0)
 }
 
 pub fn a_lethal_enemy_blow_ends_the_expedition_test() {
@@ -763,13 +798,18 @@ pub fn arriving_at_the_battlefield_marks_it_visited_test() {
   set.contains(exp.visited, exp.pos) |> should.be_true
 }
 
-pub fn battlefield_loot_lands_in_the_outfit_test() {
+pub fn battlefield_loot_waits_in_rows_until_taken_test() {
   let open = run(at_landmark(world.Battlefield), model.MoveEast)
   // Each chance roll of 0.0 passes; each qty roll of 0.0 → the entry's min.
-  let looted = run(open, model.SetpieceLoot(list.repeat(0.0, 12)))
+  let offered = run(open, model.SetpieceLoot(list.repeat(0.0, 12)))
+  state.get_outfit(offered.state, "rifle") |> should.equal(0)
+  list.key_find(offered.loot, "rifle") |> should.equal(Ok(1))
+  let looted = run(offered, model.TakeEverything)
   state.get_outfit(looted.state, "rifle") |> should.equal(1)
   state.get_outfit(looted.state, "bullets") |> should.equal(5)
   state.get_outfit(looted.state, "alien alloy") |> should.equal(1)
+  // A scene's loot screen has its own buttons; the event stays.
+  looted.active_event |> should.not_equal(option.None)
 }
 
 pub fn arriving_at_an_outpost_refills_water_and_spends_it_test() {
@@ -829,16 +869,20 @@ pub fn winning_the_squatter_fight_drops_loot_and_keeps_the_scene_test() {
     |> run(ResolveStrike("steel sword", 0.5))
   let assert option.Some(cs) = won.combat
   cs.won |> should.be_true
-  // The squatter's loot (cured meat/leather/cloth: 3 entries) lands in the
-  // outfit; the scene stays active so its leave button shows.
-  let done = run(won, CollectLoot([0.0, 0.0, 0.0, 0.0, 0.0, 0.0]))
-  done.combat |> should.equal(option.None)
-  done.active_event |> should.not_equal(option.None)
+  // The squatter's loot waits in rows over the still-open fight; the scene
+  // stays active beneath.
+  let looting = run(won, CollectLoot([0.0, 0.0, 0.0, 0.0, 0.0, 0.0]))
+  looting.combat |> should.not_equal(option.None)
+  looting.active_event |> should.not_equal(option.None)
+  let done = run(looting, model.TakeEverything)
   state.get_outfit(done.state, "cured meat") |> should.equal(1)
   state.get_outfit(done.state, "cloth") |> should.equal(1)
-  // Leaving ends the setpiece.
-  run(done, ResolveEvent("leave", 0.5)).active_event
-  |> should.equal(option.None)
+  // A setpiece's take-everything never auto-leaves; the scene button does,
+  // closing the fight on the way out.
+  done.combat |> should.not_equal(option.None)
+  let out = run(done, ResolveEvent("leave", 0.5))
+  out.active_event |> should.equal(option.None)
+  out.combat |> should.equal(option.None)
 }
 
 pub fn dying_in_the_house_closes_the_setpiece_test() {
@@ -883,7 +927,8 @@ pub fn the_house_floorboards_hide_medicine_test() {
   // 0.1 lands in the first branch (medicine).
   let medicine = enter_house(0.1)
   medicine.combat |> should.equal(option.None)
-  let looted = run(medicine, model.SetpieceLoot([0.0, 0.0]))
+  let offered = run(medicine, model.SetpieceLoot([0.0, 0.0]))
+  let looted = run(offered, model.TakeAllLoot("medicine"))
   state.get_outfit(looted.state, "medicine") |> should.equal(2)
 }
 
