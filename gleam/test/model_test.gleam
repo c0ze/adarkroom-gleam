@@ -961,6 +961,24 @@ pub fn delving_the_cave_clears_it_into_an_outpost_test() {
   state.get_store(cleared.state, "torch") |> should.equal(0)
 }
 
+pub fn clearing_the_town_turns_it_into_an_outpost_test() {
+  let base = at_landmark(world.Town)
+  let ready =
+    model.Model(..base, state: state.set_store(base.state, "torch", 1))
+  // Explore (0.5 -> a3, the clinic), torch the door (0.9 -> end5), which clears
+  // the town — no fight on this branch.
+  let cleared =
+    ready
+    |> run(model.MoveEast)
+    |> run(ResolveEvent("enter", 0.5))
+    |> run(ResolveEvent("enter", 0.9))
+  cleared.combat |> should.equal(option.None)
+  let assert option.Some(exp) = cleared.expedition
+  world.tile_at(exp.map, exp.pos.0, exp.pos.1)
+  |> should.equal(Ok(world.Outpost))
+  state.get_store(cleared.state, "torch") |> should.equal(0)
+}
+
 pub fn a_parched_step_onto_the_village_is_a_safe_return_not_a_death_test() {
   // Bone dry and already thirsty, one step from home, having cleared the iron
   // mine. The village costs no supplies, so this is a safe return — not a death
