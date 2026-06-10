@@ -10,6 +10,7 @@ import adarkroom/notifications
 import adarkroom/outside
 import adarkroom/rng
 import adarkroom/room
+import adarkroom/ship
 import adarkroom/state
 import adarkroom/world
 import gleam/dict
@@ -1593,4 +1594,63 @@ pub fn an_empty_pack_redeems_nothing_test() {
     "blueprints feed into the fabricator data port. possibilities grow.",
   )
   |> should.be_false
+}
+
+// --- the old starship -------------------------------------------------------------
+
+fn at_the_ship() -> model.Model {
+  let base = model.init()
+  model.Model(
+    ..base,
+    location: model.Ship,
+    state: state.new()
+      |> state.set_feature("location.ship", True)
+      |> state.set_game("spaceShip.thrusters", 1)
+      |> state.set_game("spaceShip.hull", 1),
+  )
+}
+
+pub fn the_first_liftoff_press_warns_test() {
+  let after = run(at_the_ship(), model.CheckLiftoff)
+  let assert option.Some(active) = after.active_event
+  active.event.title |> should.equal("Ready to Leave?")
+  // The button went on cooldown with the press.
+  model.on_cooldown(model.Model(..after, now: 1), "liftoff")
+  |> should.be_true
+}
+
+pub fn lingering_refunds_the_cooldown_test() {
+  let warned = run(at_the_ship(), model.CheckLiftoff)
+  let after = run(warned, model.ResolveEvent("wait", 0.5))
+  after.active_event |> should.equal(option.None)
+  model.on_cooldown(model.Model(..after, now: 1), "liftoff")
+  |> should.be_false
+}
+
+pub fn flying_lifts_off_for_good_test() {
+  let warned = run(at_the_ship(), model.CheckLiftoff)
+  let after = run(warned, model.ResolveEvent("fly", 0.5))
+  after.location |> should.equal(model.Space)
+  ship.seen_warning(after.state) |> should.be_true
+  after.active_event |> should.equal(option.None)
+}
+
+pub fn a_warned_pilot_lifts_off_directly_test() {
+  let base = at_the_ship()
+  let m =
+    model.Model(
+      ..base,
+      state: state.set_game(base.state, "spaceShip.seenWarning", 1),
+    )
+  run(m, model.CheckLiftoff).location |> should.equal(model.Space)
+}
+
+pub fn arriving_at_the_wreck_notes_the_fleet_test() {
+  let m = model.Model(..at_the_ship(), location: model.Room)
+  let after = run(m, model.Navigate(to: model.Ship))
+  notifications.messages(after.notifications)
+  |> list.contains(
+    "somewhere above the debris cloud, the wanderer fleet hovers. been on this rock too long.",
+  )
+  |> should.be_true
 }

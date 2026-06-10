@@ -15,6 +15,7 @@ import adarkroom/path
 import adarkroom/rng
 import adarkroom/room
 import adarkroom/setpieces
+import adarkroom/ship
 import adarkroom/state.{type State}
 import adarkroom/timer
 import adarkroom/trade
@@ -124,6 +125,12 @@ pub type Msg {
   /// Timer: the felled enemy detonates — take the blast, then the win or the
   /// grave.
   ExplosionResolve
+  /// Plate the starship's hull with an alien alloy.
+  ReinforceHull
+  /// Tune the starship's engine with an alien alloy.
+  UpgradeEngine
+  /// Press the lift-off button: the warning first, then up and away.
+  CheckLiftoff
 }
 
 pub type Model {
@@ -237,6 +244,8 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
       let arrived = case location {
         Room -> apply_room(navigated, room.become_helper(navigated.state))
         Outside -> apply_outside(navigated, outside.see_forest(navigated.state))
+        // First sight of the old wreck.
+        Ship -> apply_at(navigated, "ship", ship.see_ship(navigated.state))
         _ -> navigated
       }
       #(arrived, effect.none())
@@ -479,6 +488,25 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
     MapsScavenged(rolls: rolls) -> #(scavenge_maps(model, rolls), effect.none())
 
     ExplosionResolve -> resolve_explosion(model)
+
+    ReinforceHull -> #(
+      apply_at(model, "ship", ship.reinforce_hull(model.state)),
+      effect.none(),
+    )
+
+    UpgradeEngine -> #(
+      apply_at(model, "ship", ship.upgrade_engine(model.state)),
+      effect.none(),
+    )
+
+    CheckLiftoff -> {
+      // The button arms its cooldown either way; lingering refunds it.
+      let model = start_cooldown(model, "liftoff", ship.liftoff_cooldown_ms)
+      case ship.seen_warning(model.state) {
+        False -> start_event(model, ship.ready_to_leave())
+        True -> update(model, Navigate(to: Space))
+      }
+    }
   }
 }
 
@@ -1191,6 +1219,11 @@ fn apply_button_effect(
         let rolls = list.map(list.repeat(Nil, times), fn(_) { rng.random() })
         dispatch(MapsScavenged(rolls))
       }),
+    )
+    Some(events.LiftOff), _ -> update(model, Navigate(to: Space))
+    Some(events.ClearCooldown(id)), _ -> #(
+      Model(..model, cooldowns: dict.delete(model.cooldowns, id)),
+      effect.none(),
     )
     _, _ -> #(model, effect.none())
   }
