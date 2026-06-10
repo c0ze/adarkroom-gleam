@@ -1844,3 +1844,14 @@ pub fn waiting_brings_the_scores_test() {
   after.ending
   |> should.equal(option.Some(model.EndOptions(500, 1200)))
 }
+
+pub fn scene_loot_arms_the_take_everything_cooldown_test() {
+  // Cache scenes honour _LEAVE_COOLDOWN like won fights (CodeRabbit on #111).
+  let open = run(at_landmark(world.Battlefield), model.MoveEast)
+  let offered = run(open, model.SetpieceLoot(list.repeat(0.0, 12)))
+  model.on_cooldown(
+    model.Model(..offered, now: offered.now + 1),
+    "loot_take_et",
+  )
+  |> should.be_true
+}

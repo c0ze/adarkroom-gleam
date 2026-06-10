@@ -388,11 +388,15 @@ fn drop_menu(m: Model, wanted: String) -> Element(Msg) {
             int.min(float.round(float.ceiling(shortfall /. w)), owned)
           case to_drop > 0 {
             True ->
-              Ok(
-                html.div([event.on_click(model.DropCarried(name, to_drop))], [
-                  element.text(name <> " x" <> int.to_string(to_drop)),
-                ]),
-              )
+              Ok(html.div(
+                [
+                  // The menu sits inside the take button; the click must
+                  // not bubble into another take (`e.stopPropagation()`).
+                  event.on_click(model.DropCarried(name, to_drop))
+                  |> event.stop_propagation,
+                ],
+                [element.text(name <> " x" <> int.to_string(to_drop))],
+              ))
             False -> Error(Nil)
           }
         }
@@ -401,9 +405,13 @@ fn drop_menu(m: Model, wanted: String) -> Element(Msg) {
   html.div(
     [attribute.id("dropMenu"), attribute.attribute("data-legend", "drop:")],
     list.append(options, [
-      html.div([attribute.id("no_drop"), event.on_click(model.CancelDrop)], [
-        element.text("nothing"),
-      ]),
+      html.div(
+        [
+          attribute.id("no_drop"),
+          event.on_click(model.CancelDrop) |> event.stop_propagation,
+        ],
+        [element.text("nothing")],
+      ),
     ]),
   )
 }
