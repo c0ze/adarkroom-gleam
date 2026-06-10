@@ -8,6 +8,7 @@ import adarkroom/combat
 import adarkroom/craft
 import adarkroom/encounters
 import adarkroom/events
+import adarkroom/executioner
 import adarkroom/notifications.{type Notifications}
 import adarkroom/outside
 import adarkroom/path
@@ -670,7 +671,7 @@ fn step(model: Model, dir: world.Dir) -> #(Model, Effect(Msg)) {
           let model = Model(..model, expedition: Some(s.expedition))
           // A landmark launches its setpiece (the `doSpace` order); open ground
           // may instead spring an encounter.
-          case setpiece_at(s.expedition) {
+          case setpiece_at(s.expedition, s.state) {
             Ok(event) -> start_event(model, event)
             Error(_) -> #(model, roll_fight())
           }
@@ -683,14 +684,25 @@ fn step(model: Model, dir: world.Dir) -> #(Model, Effect(Msg)) {
 /// The setpiece to launch on arriving here: a landmark not yet dealt with this
 /// trip whose scene we have ported. Open ground and visited landmarks are
 /// `Error`, leaving the step to the ordinary encounter roll.
-fn setpiece_at(exp: Expedition) -> Result(events.Event, Nil) {
+fn setpiece_at(exp: Expedition, s: State) -> Result(events.Event, Nil) {
   use tile <- result.try(world.tile_at(exp.map, exp.pos.0, exp.pos.1))
-  case world.should_trigger_setpiece(exp, tile) {
-    False -> Error(Nil)
-    True -> {
-      use name <- result.try(world.setpiece_scene(tile))
-      setpieces.setpiece(name)
-    }
+  case tile {
+    // The battleship is its own gate (the `doSpace` executioner branch, ahead
+    // of the landmark table): the intro until the ship is unsealed, the
+    // elevator antechamber ever after — never marked visited.
+    world.Executioner ->
+      case state.get_game(s, "world.executioner") == 0 {
+        True -> executioner.event("executioner-intro")
+        False -> executioner.event("executioner-antechamber")
+      }
+    _ ->
+      case world.should_trigger_setpiece(exp, tile) {
+        False -> Error(Nil)
+        True -> {
+          use name <- result.try(world.setpiece_scene(tile))
+          setpieces.setpiece(name)
+        }
+      }
   }
 }
 
@@ -887,6 +899,16 @@ fn advance_event(
         Error(_) -> #(Model(..model, active_event: None), effect.none())
         Ok(scene) -> load_scene(model, event, next, scene)
       }
+    // The JS switchEvent: close this event, start the keyed one. The registry
+    // spans the setpieces and the executioner chain, in that lookup order.
+    events.SwitchEvent(key) ->
+      case
+        setpieces.setpiece(key)
+        |> result.lazy_or(fn() { executioner.event(key) })
+      {
+        Error(_) -> #(Model(..model, active_event: None), effect.none())
+        Ok(next_event) -> start_event(model, next_event)
+      }
   }
 }
 
@@ -1002,6 +1024,15 @@ fn apply_world_effect(
         )
         events.ClearDungeon -> #(
           Model(..model, expedition: Some(world.clear_dungeon(exp))),
+          [],
+        )
+        events.FoundExecutioner -> #(
+          Model(
+            ..model,
+            expedition: Some(world.lay_road(exp)),
+            // Unsealed: from now on the antechamber's elevators await.
+            state: state.set_game(model.state, "world.executioner", 1),
+          ),
           [],
         )
         events.NoWorldEffect -> #(model, [])

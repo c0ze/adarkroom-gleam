@@ -27,6 +27,9 @@ pub type NextScene {
   /// Pick the lowest-threshold scene whose threshold exceeds the roll, matching
   /// the JS `nextScene` probability map (`{ "0.5": a, "1": b }`).
   Branch(List(#(Float, String)))
+  /// Close this event and start another by registry key (the JS button
+  /// `nextEvent` → `Events.switchEvent` — the battleship's elevators).
+  GotoEvent(String)
 }
 
 /// A choice the player can make within a scene.
@@ -80,6 +83,10 @@ pub type WorldEffect {
   /// A cleared dungeon (`World.clearDungeon`) — turn the tile into a friendly
   /// outpost and road it home.
   ClearDungeon
+  /// The ravaged battleship unsealed (`drawRoad` + `World.state.executioner`):
+  /// road it home and record that its antechamber now opens to elevators. The
+  /// tile is not marked visited — it can be re-entered.
+  FoundExecutioner
 }
 
 /// The extra machinery a setpiece scene carries on top of a plain event scene:
@@ -142,6 +149,8 @@ pub type Step {
   EndEvent
   /// Remain on the current scene.
   StayOnScene
+  /// Close this event and start the named one (`Events.switchEvent`).
+  SwitchEvent(String)
 }
 
 /// Resolve a `NextScene` into a concrete step, using `roll` for `Branch`. A
@@ -151,6 +160,7 @@ pub fn resolve_next(next: NextScene, roll: Float) -> Step {
     End -> EndEvent
     Stay -> StayOnScene
     Goto(name) -> LoadScene(name)
+    GotoEvent(key) -> SwitchEvent(key)
     Branch(branches) ->
       case
         branches
