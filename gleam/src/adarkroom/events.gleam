@@ -538,7 +538,9 @@ fn learn(text: String, cost: List(#(String, Int)), perk: String) -> SceneButton 
     reward: [],
     notification: option.None,
     available: option.Some(fn(s) { !state.has_perk(s, perk) }),
-    on_click: option.Some(fn(s) { #(state.add_perk(s, perk), []) }),
+    on_click: option.Some(fn(s) {
+      #(state.add_perk(s, perk), [state.perk_notify(perk)])
+    }),
     link: option.None,
     effect: option.None,
     next: End,
@@ -1021,7 +1023,7 @@ fn thief() -> Event {
           combat: False,
           on_load: option.Some(fn(s) {
             #(state.set_game(s, "thieves", 2) |> state.add_perk("stealthy"), [
-              "learned how not to be seen",
+              state.perk_notify("stealthy"),
             ])
           }),
           on_load_rng: option.None,

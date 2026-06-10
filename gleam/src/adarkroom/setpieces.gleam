@@ -104,7 +104,9 @@ fn swamp() -> Event {
           "unfathomable destruction to fuel wanderer hungers.",
           "his time here, now, is his penance.",
         ]),
-        on_load: Some(fn(s) { #(state.add_perk(s, "gastronome"), []) }),
+        on_load: Some(fn(s) {
+          #(state.add_perk(s, "gastronome"), [state.perk_notify("gastronome")])
+        }),
         setpiece: extra([], MarkVisited),
         buttons: [#("leave", leave("leave"))],
       ),

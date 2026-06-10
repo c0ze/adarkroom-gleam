@@ -64,3 +64,11 @@ pub fn stores_list_sorted_test() {
 pub fn stores_list_empty_test() {
   state.stores_list(state.new()) |> should.equal([])
 }
+
+pub fn every_perk_announces_its_lesson_test() {
+  state.perk_notify("stealthy") |> should.equal("learned how not to be seen")
+  state.perk_notify("gastronome")
+  |> should.equal("learned to make the most of food")
+  state.perk_notify("barbarian")
+  |> should.equal("learned to swing weapons with force")
+}

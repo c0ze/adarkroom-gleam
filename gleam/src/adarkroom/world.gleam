@@ -416,8 +416,9 @@ fn eat(s: State, v: Vitals) -> Supplies {
                 True,
               )
             True -> {
-              let s = note_affliction(s, "starved", "slow metabolism")
-              Supplies(state.set_outfit(s, "cured meat", 0), v, [], False)
+              let #(s, learned) =
+                note_affliction(s, "starved", "slow metabolism")
+              Supplies(state.set_outfit(s, "cured meat", 0), v, learned, False)
             }
           }
         remaining -> {
@@ -464,8 +465,13 @@ fn drink(s: State, v: Vitals, messages: List(String)) -> Supplies {
                 True,
               )
             True -> {
-              let s = note_affliction(s, "dehydrated", "desert rat")
-              Supplies(s, Vitals(..v, water: 0), messages, False)
+              let #(s, learned) = note_affliction(s, "dehydrated", "desert rat")
+              Supplies(
+                s,
+                Vitals(..v, water: 0),
+                list.append(messages, learned),
+                False,
+              )
             }
           }
         remaining ->
@@ -481,12 +487,16 @@ fn drink(s: State, v: Vitals, messages: List(String)) -> Supplies {
 }
 
 /// Record another bout of an affliction; ten of them earn the matching perk.
-fn note_affliction(s: State, counter: String, perk: String) -> State {
+fn note_affliction(
+  s: State,
+  counter: String,
+  perk: String,
+) -> #(State, List(String)) {
   let count = state.get_character(s, counter) + 1
   let s = state.set_character(s, counter, count)
   case count >= 10 && !state.has_perk(s, perk) {
-    True -> state.add_perk(s, perk)
-    False -> s
+    True -> #(state.add_perk(s, perk), [state.perk_notify(perk)])
+    False -> #(s, [])
   }
 }
 
