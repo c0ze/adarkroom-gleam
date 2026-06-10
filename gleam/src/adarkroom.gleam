@@ -155,8 +155,20 @@ fn combat_overlay(m: Model) -> List(Element(Msg)) {
       html.div([attribute.id("event"), attribute.class("eventPanel")], [
         html.div([attribute.id("description")], [
           html.div([attribute.id("fight")], [
-            fighter_div("wanderer", "@", cs.player_hp, cs.player_max),
-            fighter_div("enemy", cs.enemy.chara, cs.enemy_hp, cs.enemy.health),
+            fighter_div(
+              "wanderer",
+              "@",
+              cs.player_hp,
+              cs.player_max,
+              combat.NoStatus,
+            ),
+            fighter_div(
+              "enemy",
+              cs.enemy.chara,
+              cs.enemy_hp,
+              cs.enemy.health,
+              cs.enemy_status,
+            ),
           ]),
         ]),
         html.div([attribute.id("buttons")], [
@@ -196,8 +208,24 @@ fn heal_buttons(m: Model) -> List(Element(Msg)) {
 }
 
 /// One fighter: a glyph and its HP, as `createFighterDiv` builds.
-fn fighter_div(id: String, label: String, hp: Int, max: Int) -> Element(Msg) {
-  html.div([attribute.id(id), attribute.class("fighter")], [
+fn fighter_div(
+  id: String,
+  label: String,
+  hp: Int,
+  max: Int,
+  status: combat.Status,
+) -> Element(Msg) {
+  // An active status rides as a class on the fighter, the way the JS
+  // updateFighterDiv styles it (`fighter shield` etc.).
+  let class = case status {
+    combat.NoStatus -> "fighter"
+    combat.Shield -> "fighter shield"
+    combat.Enraged -> "fighter enraged"
+    combat.Meditation -> "fighter meditation"
+    combat.Venomous -> "fighter venomous"
+    combat.Energised -> "fighter energised"
+  }
+  html.div([attribute.id(id), attribute.class(class)], [
     html.div([attribute.class("label")], [element.text(label)]),
     html.div([attribute.class("hp")], [
       element.text(int.to_string(hp) <> "/" <> int.to_string(max)),

@@ -464,3 +464,10 @@ pub fn crossing_an_at_health_threshold_takes_a_status_test() {
     combat.player_strike(after, weapon_named("iron sword"), state.new(), 0.5)
   deeper.enemy_status |> should.equal(combat.Venomous)
 }
+
+pub fn an_enraged_enemy_swings_every_half_second_test() {
+  let cs = statused(combat.Enraged)
+  combat.effective_attack_delay(cs) |> should.equal(0.5)
+  combat.effective_attack_delay(statused(combat.NoStatus))
+  |> should.equal(1.0)
+}

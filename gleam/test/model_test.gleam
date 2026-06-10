@@ -1,3 +1,4 @@
+import adarkroom/combat
 import adarkroom/craft
 import adarkroom/events
 import adarkroom/executioner
@@ -1247,4 +1248,114 @@ pub fn a_world_event_can_cost_vitals_test() {
   let assert option.Some(exp) = after.expedition
   exp.vitals.water |> should.equal(6)
   exp.vitals.health |> should.equal(10)
+}
+
+// --- boss specials and statuses ------------------------------------------------
+
+/// A model mid-fight against a brute with the given specials armed.
+fn special_fight(
+  specials: List(combat.Special),
+  last: combat.Status,
+) -> model.Model {
+  let brute =
+    combat.Enemy(
+      name: "brute",
+      chara: "B",
+      health: 60,
+      damage: 3,
+      hit: 0.8,
+      attack_delay: 2.0,
+      ranged: False,
+      death_message: "",
+      loot: [],
+    )
+  let cs =
+    combat.CombatState(
+      ..combat.begin_combat(brute, 10, 10),
+      specials: specials,
+      last_special: last,
+    )
+  model.Model(
+    ..model.init(),
+    location: model.World,
+    expedition: option.Some(forest_expedition(3, 10)),
+    combat: option.Some(cs),
+  )
+}
+
+pub fn a_fixed_special_takes_hold_test() {
+  let m =
+    special_fight([combat.SetStatusEvery(5.0, combat.Shield)], combat.NoStatus)
+  let after = run(m, model.SpecialFire(0))
+  let assert option.Some(cs) = after.combat
+  cs.enemy_status |> should.equal(combat.Shield)
+}
+
+pub fn a_won_fight_silences_the_specials_test() {
+  let m =
+    special_fight([combat.SetStatusEvery(5.0, combat.Shield)], combat.NoStatus)
+  let assert option.Some(cs) = m.combat
+  let m =
+    model.Model(..m, combat: option.Some(combat.CombatState(..cs, won: True)))
+  let after = run(m, model.SpecialFire(0))
+  let assert option.Some(after_cs) = after.combat
+  after_cs.enemy_status |> should.equal(combat.NoStatus)
+}
+
+pub fn the_rotation_never_repeats_itself_test() {
+  // Last pick was shield; a 0.0 roll takes the first of the remaining two.
+  let rotation =
+    combat.RotateStatusEvery(7.0, [
+      combat.Shield,
+      combat.Enraged,
+      combat.Meditation,
+    ])
+  let m = special_fight([rotation], combat.Shield)
+  let after = run(m, model.ResolveSpecial(0, 0.0))
+  let assert option.Some(cs) = after.combat
+  cs.enemy_status |> should.equal(combat.Enraged)
+  cs.last_special |> should.equal(combat.Enraged)
+}
+
+pub fn a_status_expires_on_its_clock_test() {
+  let m = special_fight([], combat.NoStatus)
+  let assert option.Some(cs) = m.combat
+  let raging =
+    model.Model(
+      ..m,
+      combat: option.Some(
+        combat.CombatState(..cs, enemy_status: combat.Enraged),
+      ),
+    )
+  let after = run(raging, model.StatusExpire)
+  let assert option.Some(calm) = after.combat
+  calm.enemy_status |> should.equal(combat.NoStatus)
+}
+
+pub fn poison_drips_each_tick_test() {
+  let m = special_fight([], combat.NoStatus)
+  let assert option.Some(cs) = m.combat
+  let poisoned =
+    model.Model(
+      ..m,
+      combat: option.Some(combat.CombatState(..cs, player_dot: 3)),
+    )
+  let after = run(poisoned, model.DotTick)
+  let assert option.Some(dripping) = after.combat
+  dripping.player_hp |> should.equal(7)
+}
+
+pub fn poison_can_finish_the_fight_test() {
+  let m = special_fight([], combat.NoStatus)
+  let assert option.Some(cs) = m.combat
+  let nearly =
+    model.Model(
+      ..m,
+      combat: option.Some(combat.CombatState(..cs, player_dot: 3, player_hp: 2)),
+    )
+  let after = run(nearly, model.DotTick)
+  // The world fades: gear lost, back to the room.
+  after.combat |> should.equal(option.None)
+  after.expedition |> should.equal(option.None)
+  after.location |> should.equal(model.Room)
 }

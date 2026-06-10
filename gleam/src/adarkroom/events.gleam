@@ -98,6 +98,10 @@ pub type SetpieceExtra {
     loot: List(combat.LootEntry),
     world_effect: WorldEffect,
     enemy: Option(combat.Enemy),
+    /// A combat scene's recurring boss specials (`scene.specials`).
+    specials: List(combat.Special),
+    /// A combat scene's `atHealth` triggers, threshold → status.
+    at_health: List(#(Int, combat.Status)),
   )
 }
 

@@ -1898,7 +1898,15 @@ fn extra(
   loot: List(combat.LootEntry),
   world_effect: events.WorldEffect,
 ) -> option.Option(SetpieceExtra) {
-  Some(SetpieceExtra(loot: loot, world_effect: world_effect, enemy: None))
+  Some(
+    SetpieceExtra(
+      loot: loot,
+      world_effect: world_effect,
+      enemy: None,
+      specials: [],
+      at_health: [],
+    ),
+  )
 }
 
 /// A button that ends the setpiece.
@@ -1994,7 +2002,15 @@ fn fight(
     combat: True,
     on_load: None,
     on_load_rng: None,
-    setpiece: Some(SetpieceExtra(loot: [], world_effect:, enemy: Some(foe))),
+    setpiece: Some(
+      SetpieceExtra(
+        loot: [],
+        world_effect:,
+        enemy: Some(foe),
+        specials: [],
+        at_health: [],
+      ),
+    ),
   )
 }
 
