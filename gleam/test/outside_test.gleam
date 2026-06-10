@@ -99,6 +99,22 @@ pub fn unlocked_roles_follow_the_buildings_test() {
   |> should.equal(["hunter", "trapper", "tanner", "charcutier"])
 }
 
+pub fn the_mines_and_workshops_unlock_their_workers_test() {
+  // The mines (granted by clearing their setpiece) and the late workshops open
+  // up the miner/steelworker/armourer roles.
+  let s =
+    state.new()
+    |> state.set_game("building.iron mine", 1)
+    |> state.set_game("building.coal mine", 1)
+    |> state.set_game("building.sulphur mine", 1)
+    |> state.set_game("building.steelworks", 1)
+    |> state.set_game("building.armoury", 1)
+  outside.unlocked_roles(s)
+  |> should.equal([
+    "iron miner", "coal miner", "sulphur miner", "steelworker", "armourer",
+  ])
+}
+
 // --- income -----------------------------------------------------------------
 
 /// Collect once from empty buffers, returning the new state.
@@ -125,6 +141,18 @@ pub fn collect_income_gatherers_gather_wood_test() {
   // 3 unassigned villagers gather 1 wood each.
   let s = state.new() |> state.set_game("population", 3)
   collect(s) |> state.get_store("wood") |> should.equal(3)
+}
+
+pub fn collect_income_an_iron_miner_eats_meat_for_iron_test() {
+  // One iron miner spends a cured meat to mine an iron each collection.
+  let s =
+    state.new()
+    |> state.set_store("cured meat", 5)
+    |> state.set_game("population", 1)
+    |> state.set_game("worker.iron miner", 1)
+  let after = collect(s)
+  state.get_store(after, "iron") |> should.equal(1)
+  state.get_store(after, "cured meat") |> should.equal(4)
 }
 
 pub fn collect_income_accumulates_fractional_hunter_yield_test() {

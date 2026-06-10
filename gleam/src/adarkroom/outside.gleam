@@ -53,6 +53,13 @@ const role_unlocks = [
   #("lodge", ["hunter", "trapper"]),
   #("tannery", ["tanner"]),
   #("smokehouse", ["charcutier"]),
+  // The mines (cleared as setpieces) and the late village workshops open up
+  // their own workers, mirroring the original's `jobMap`.
+  #("iron mine", ["iron miner"]),
+  #("coal mine", ["coal miner"]),
+  #("sulphur mine", ["sulphur miner"]),
+  #("steelworks", ["steelworker"]),
+  #("armoury", ["armourer"]),
 ]
 
 /// Every assignable role.
@@ -168,6 +175,11 @@ fn role_income(role: String) -> List(#(String, Float)) {
     "trapper" -> [#("meat", -1.0), #("bait", 1.0)]
     "tanner" -> [#("fur", -5.0), #("leather", 1.0)]
     "charcutier" -> [#("meat", -5.0), #("wood", -5.0), #("cured meat", 1.0)]
+    "iron miner" -> [#("cured meat", -1.0), #("iron", 1.0)]
+    "coal miner" -> [#("cured meat", -1.0), #("coal", 1.0)]
+    "sulphur miner" -> [#("cured meat", -1.0), #("sulphur", 1.0)]
+    "steelworker" -> [#("iron", -1.0), #("coal", -1.0), #("steel", 1.0)]
+    "armourer" -> [#("steel", -1.0), #("sulphur", -1.0), #("bullets", 1.0)]
     _ -> []
   }
 }
