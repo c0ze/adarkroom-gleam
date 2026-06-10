@@ -354,3 +354,118 @@ pub fn destroy_huts_a_half_full_hut_kills_only_its_few_test() {
     |> state.set_game("population", 10)
   outside.destroy_huts(s, 1, [0.7]) |> outside.population |> should.equal(8)
 }
+
+// --- thieves ----------------------------------------------------------------
+
+pub fn thieves_move_in_when_a_store_tops_5000_test() {
+  let s =
+    state.new()
+    |> state.set_store("wood", 5001)
+    |> state.set_feature("location.world", True)
+  outside.maybe_start_thieves(s)
+  |> state.get_game("thieves")
+  |> should.equal(1)
+}
+
+pub fn thieves_wait_until_the_world_is_seen_test() {
+  let s = state.new() |> state.set_store("wood", 9000)
+  outside.maybe_start_thieves(s)
+  |> state.get_game("thieves")
+  |> should.equal(0)
+}
+
+pub fn thieves_need_more_than_5000_test() {
+  let s =
+    state.new()
+    |> state.set_store("wood", 5000)
+    |> state.set_feature("location.world", True)
+  outside.maybe_start_thieves(s)
+  |> state.get_game("thieves")
+  |> should.equal(0)
+}
+
+pub fn thieves_never_return_once_dealt_with_test() {
+  let s =
+    state.new()
+    |> state.set_store("wood", 9000)
+    |> state.set_feature("location.world", True)
+    |> state.set_game("thieves", 2)
+  outside.maybe_start_thieves(s)
+  |> state.get_game("thieves")
+  |> should.equal(2)
+}
+
+pub fn thieves_skim_the_stores_test() {
+  let s =
+    state.new()
+    |> state.set_store("wood", 100)
+    |> state.set_store("fur", 50)
+    |> state.set_store("meat", 50)
+    |> state.set_game("thieves", 1)
+  let after = collect(s)
+  state.get_store(after, "wood") |> should.equal(90)
+  state.get_store(after, "fur") |> should.equal(45)
+  state.get_store(after, "meat") |> should.equal(45)
+  state.get_game(after, "stolen.wood") |> should.equal(10)
+  state.get_game(after, "stolen.fur") |> should.equal(5)
+  state.get_game(after, "stolen.meat") |> should.equal(5)
+}
+
+pub fn thieves_take_only_what_is_there_test() {
+  // 3 wood on hand against a demand of 10: the store empties, never negative,
+  // and the tally records only the 3 actually taken.
+  let s =
+    state.new()
+    |> state.set_store("wood", 3)
+    |> state.set_game("thieves", 1)
+  let after = collect(s)
+  state.get_store(after, "wood") |> should.equal(0)
+  state.get_game(after, "stolen.wood") |> should.equal(3)
+  state.get_game(after, "stolen.fur") |> should.equal(0)
+}
+
+pub fn thieves_skim_the_same_pass_as_income_test() {
+  // The helping builder lands 2 wood first, so the thieves see 6 to take.
+  let s =
+    state.new()
+    |> state.set_store("wood", 4)
+    |> state.set_game("builder", 4)
+    |> state.set_game("thieves", 1)
+  let after = collect(s)
+  state.get_store(after, "wood") |> should.equal(0)
+  state.get_game(after, "stolen.wood") |> should.equal(6)
+}
+
+pub fn thieves_take_whole_units_only_test() {
+  // A lone hunter's half-fur isn't a whole pelt yet; the carried fraction
+  // stays behind in the buffer.
+  let s =
+    state.new()
+    |> state.set_game("building.lodge", 1)
+    |> state.set_game("population", 1)
+    |> state.set_game("worker.hunter", 1)
+    |> state.set_game("thieves", 1)
+  let #(after, buf) = outside.collect_income(s, dict.new())
+  state.get_store(after, "fur") |> should.equal(0)
+  state.get_game(after, "stolen.fur") |> should.equal(0)
+  dict.get(buf, "fur") |> should.equal(Ok(0.5))
+}
+
+pub fn thieves_rest_once_dealt_with_test() {
+  let s =
+    state.new()
+    |> state.set_store("wood", 100)
+    |> state.set_game("thieves", 2)
+  collect(s) |> state.get_store("wood") |> should.equal(100)
+}
+
+pub fn return_stolen_gives_everything_back_test() {
+  let s =
+    state.new()
+    |> state.set_store("wood", 1)
+    |> state.set_game("stolen.wood", 30)
+    |> state.set_game("stolen.fur", 15)
+  let after = outside.return_stolen(s)
+  state.get_store(after, "wood") |> should.equal(31)
+  state.get_store(after, "fur") |> should.equal(15)
+}

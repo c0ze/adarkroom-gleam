@@ -233,7 +233,11 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
     CoolCheck(at: now) -> {
       let cooled =
         apply_room(Model(..model, now:), room.tick_cool(model.state, now))
-      #(cooled, event_schedule_effect(cooled))
+      // The swollen-stores check that summons thieves rides the same heartbeat
+      // (the original runs it on every stores redraw).
+      let checked =
+        Model(..cooled, state: outside.maybe_start_thieves(cooled.state))
+      #(checked, event_schedule_effect(checked))
     }
     AdjustTemp -> #(
       apply_room(model, room.adjust_temp(model.state)),
@@ -777,14 +781,15 @@ fn roll_seed() -> Effect(Msg) {
 // --- random events ----------------------------------------------------------
 
 /// The event pool that can fire at the current location: the global pool plus
-/// the location's own. The World runs its own encounters, so it has none here.
+/// the location's own. The global events only call on the settled locations —
+/// the Thief needs a store room to be caught in — and the World runs its own
+/// encounters, so away from home there is none.
 fn event_pool(location: Location) -> List(events.Event) {
-  let local = case location {
-    Room -> events.room_events()
-    Outside -> events.outside_events()
+  case location {
+    Room -> list.append(events.global_events(), events.room_events())
+    Outside -> list.append(events.global_events(), events.outside_events())
     _ -> []
   }
-  list.append(events.global_events(), local)
 }
 
 /// The effect that drives event scheduling, run each second from `CoolCheck`:

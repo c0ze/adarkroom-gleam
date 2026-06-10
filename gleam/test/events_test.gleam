@@ -480,3 +480,47 @@ pub fn the_beast_attack_toll_scales_with_the_roll_test() {
   // roll 0.9 → floor(0.9 × 10) + 1 = 10 dead.
   outside.population(toll(s, 0.9).0) |> should.equal(10)
 }
+
+// --- the Thief (global) -------------------------------------------------------
+
+fn the_thief() -> events.Event {
+  let assert Ok(ev) =
+    list.find(events.global_events(), fn(e) { e.title == "The Thief" })
+  ev
+}
+
+pub fn the_thief_calls_only_while_thieves_skim_test() {
+  the_thief().is_available(state.new()) |> should.be_false
+  state.new()
+  |> state.set_game("thieves", 1)
+  |> the_thief().is_available
+  |> should.be_true
+  // Dealt with — hanged or spared — he never returns.
+  state.new()
+  |> state.set_game("thieves", 2)
+  |> the_thief().is_available
+  |> should.be_false
+}
+
+pub fn hanging_the_thief_returns_the_stolen_supplies_test() {
+  let assert Ok(hang) = list.key_find(the_thief().scenes, "hang")
+  let s =
+    state.new()
+    |> state.set_store("wood", 5)
+    |> state.set_game("thieves", 1)
+    |> state.set_game("stolen.wood", 100)
+    |> state.set_game("stolen.fur", 40)
+  let #(after, _) = events.enter_scene(hang, s)
+  state.get_game(after, "thieves") |> should.equal(2)
+  state.get_store(after, "wood") |> should.equal(105)
+  state.get_store(after, "fur") |> should.equal(40)
+}
+
+pub fn sparing_the_thief_teaches_stealth_test() {
+  let assert Ok(spare) = list.key_find(the_thief().scenes, "spare")
+  let s = state.new() |> state.set_game("thieves", 1)
+  let #(after, msgs) = events.enter_scene(spare, s)
+  state.get_game(after, "thieves") |> should.equal(2)
+  state.has_perk(after, "stealthy") |> should.be_true
+  msgs |> should.equal(["learned how not to be seen"])
+}
