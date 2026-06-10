@@ -38,6 +38,9 @@ pub type ButtonEffect {
   /// A regenerative machine (`World.setHp(World.getMaxHealth())`): muscle and
   /// bone reknit, good as new.
   HealToMax
+  /// Scavenged surface maps (`World.applyMap()` run `times` times): each
+  /// reveals a patch of the world around a random unexplored spot.
+  ApplyMap(times: Int)
 }
 
 /// A choice the player can make within a scene.

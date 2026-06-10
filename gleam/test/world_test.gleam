@@ -372,3 +372,27 @@ pub fn lay_road_paves_from_the_players_tile_test() {
   // The ship landmark itself is untouched.
   world.tile_at(roaded.map, 33, 30) |> should.equal(Ok(world.Ship))
 }
+
+pub fn a_scavenged_map_reveals_a_patch_test() {
+  // A fresh expedition has seen only its starting diamond; one map reveals a
+  // radius-5 diamond somewhere unseen — strictly more of the world.
+  let exp = world.begin(world.generate_map(rng.seed(7)), state.new())
+  let before = set.size(exp.seen)
+  let revealed = world.apply_map(exp, 0.5)
+  { set.size(revealed.seen) > before } |> should.be_true
+}
+
+pub fn maps_with_nothing_left_to_see_are_quiet_test() {
+  // Every tile already seen: the map changes nothing.
+  let exp = world.begin(world.generate_map(rng.seed(7)), state.new())
+  let axis =
+    list.index_map(list.repeat(Nil, world.radius * 2 + 1), fn(_, i) { i })
+  let all =
+    list.fold(axis, set.new(), fn(acc, x) {
+      list.fold(axis, acc, fn(acc, y) { set.insert(acc, #(x, y)) })
+    })
+  let omniscient = world.Expedition(..exp, seen: all)
+  world.apply_map(omniscient, 0.5).seen
+  |> set.size
+  |> should.equal(set.size(all))
+}

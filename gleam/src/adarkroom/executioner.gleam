@@ -24,8 +24,290 @@ pub fn event(key: String) -> Result(Event, Nil) {
     "executioner-intro" -> Ok(intro())
     "executioner-antechamber" -> Ok(antechamber())
     "executioner-engineering" -> Ok(engineering())
+    "executioner-martial" -> Ok(martial())
     _ -> Error(Nil)
   }
+}
+
+/// The Martial Wing: past the barricaded elevators, a sealed armoury door
+/// (grenades open it), containment cells, a planning room of surface maps,
+/// the second regenerative machine, and the sparring automaton.
+fn martial() -> Event {
+  Event(title: "Martial Wing", is_available: fn(_) { True }, scenes: [
+    #(
+      "start",
+      Scene(
+        ..story([
+          "metal grinds, and the elevator doors open halfway. beyond is a brightly lit battlefield. remains litter the corridor, undisturbed by scavengers.",
+          "looks like they tried to barricade the elevators.",
+        ]),
+        buttons: continue_or_leave("1"),
+      ),
+    ),
+    #(
+      "1",
+      Scene(
+        ..story([
+          "further along, the corridor branches.",
+          "the door to the left is sealed and refuses to open.",
+        ]),
+        buttons: [
+          #(
+            "explode",
+            SceneButton(..to("blow it down", "2-1"), cost: [#("grenade", 1)]),
+          ),
+          #("right", branch("continue right", [#(0.5, "2-2"), #(1.0, "2-3")])),
+          #("leave", leave("leave")),
+        ],
+      ),
+    ),
+    // Behind the sealed door: the armoury.
+    #(
+      "2-1",
+      passage(
+        [
+          "the blast throws the door inwards.",
+          "through the bulkhead is a large room, walls lined with weapon racks. fighting seems to have passed it by.",
+        ],
+        [
+          combat.LootEntry("energy blade", 2, 5, 1.0),
+          combat.LootEntry("laser rifle", 2, 5, 1.0),
+          combat.LootEntry("energy cell", 5, 20, 1.0),
+          combat.LootEntry("grenade", 1, 5, 0.8),
+          combat.LootEntry("plasma rifle", 1, 1, 0.2),
+        ],
+        "3-1",
+      ),
+    ),
+    #("3-1", defence_turret("4-1")),
+    #(
+      "4-1",
+      Scene(
+        ..story([
+          "another door at the end of the hall, sealed from this side.",
+          "should be able to open it.",
+        ]),
+        buttons: continue_or_leave("5"),
+      ),
+    ),
+    // The right-hand corridor.
+    #(
+      "2-2",
+      Scene(..defence_turret("ignored"), buttons: [
+        #("continue", branch("continue", [#(0.5, "3-2a"), #(1.0, "3-2b")])),
+        #("leave", leave("leave")),
+      ]),
+    ),
+    #("3-2a", quadruped_patrol("4-2")),
+    #(
+      "3-2b",
+      Scene(
+        ..story(["the corridor is eerily silent."]),
+        buttons: continue_or_leave("4-2"),
+      ),
+    ),
+    #(
+      "4-2",
+      passage(
+        [
+          "crew cabins flank the hall, devoid of life.",
+          "a few useful items can be scavenged.",
+        ],
+        [
+          combat.LootEntry("energy cell", 1, 5, 1.0),
+          combat.LootEntry("energy blade", 1, 1, 0.2),
+        ],
+        "5",
+      ),
+    ),
+    #(
+      "2-3",
+      Scene(
+        ..story([
+          "ruined defence turrets flank the corridor.",
+          "could put the scrap to good use.",
+        ]),
+        setpiece: extra(
+          [combat.LootEntry("alien alloy", 1, 3, 1.0)],
+          events.NoWorldEffect,
+        ),
+        buttons: [
+          #("continue", branch("continue", [#(0.5, "3-3a"), #(1.0, "3-3b")])),
+          #("leave", leave("leave")),
+        ],
+      ),
+    ),
+    #("3-3a", guard_post("4-3")),
+    #(
+      "3-3b",
+      Scene(
+        ..story([
+          "small sensors in the walls still look to be operational.",
+          "easily avoided.",
+        ]),
+        buttons: continue_or_leave("4-3"),
+      ),
+    ),
+    #("4-3", quadruped_patrol("5")),
+    // The corridors converge.
+    #(
+      "5",
+      Scene(
+        ..story([
+          "large barricades bisect the corridor, scorched by weapons fire.",
+          "bodies litter the ground on either side.",
+        ]),
+        buttons: continue_or_leave("6"),
+      ),
+    ),
+    #(
+      "6",
+      Scene(
+        ..story([
+          "documents are scattered down the hall, most charred and curled.",
+          "this one looks interesting.",
+        ]),
+        setpiece: extra(
+          [combat.LootEntry("plasma rifle blueprint", 1, 1, 1.0)],
+          events.NoWorldEffect,
+        ),
+        buttons: [
+          #("continue", branch("continue", [#(0.5, "7-1"), #(1.0, "7-2")])),
+          #("leave", leave("leave")),
+        ],
+      ),
+    ),
+    // The planning room.
+    #(
+      "7-1",
+      Scene(
+        ..story([
+          "the next door leads to a ransacked planning room.",
+          "maps of the surface can still be found amongst the debris.",
+        ]),
+        buttons: [
+          #(
+            "scavenge",
+            SceneButton(
+              ..to("scavenge maps", "8-1a"),
+              effect: Some(events.ApplyMap(3)),
+            ),
+          ),
+          #("continue", to("continue", "8-1b")),
+          #("leave", leave("leave")),
+        ],
+      ),
+    ),
+    #(
+      "8-1a",
+      guarded("drew some attention with all that noise.", guard(), "9-1"),
+    ),
+    #(
+      "8-1b",
+      Scene(
+        ..story([
+          "slipped past an automated sentry.",
+          "if only they'd been destroyed along with everything else.",
+        ]),
+        buttons: continue_or_leave("9-1"),
+      ),
+    ),
+    #("9-1", guarded("ran straight into another one.", guard(), "10")),
+    // The containment cells.
+    #(
+      "7-2",
+      Scene(
+        ..story([
+          "the corridor passes through a security checkpoint. the defences are blown apart, ragged edges scorched by laser fire.",
+          "past the checkpoint, banks of containment cells can be seen.",
+        ]),
+        buttons: [
+          #("continue", branch("continue", [#(0.5, "8-2a"), #(1.0, "8-2b")])),
+          #("leave", leave("leave")),
+        ],
+      ),
+    ),
+    #(
+      "8-2a",
+      Scene(
+        ..story([
+          "the cells are all empty.",
+          "power cables running across the ceiling are split in several places, sparking occasionally.",
+        ]),
+        buttons: continue_or_leave("9-2"),
+      ),
+    ),
+    #(
+      "8-2b",
+      passage(
+        [
+          "the guards died at their posts, shot through with superheated plasma.",
+          "their weapons lie on the floor beside them.",
+        ],
+        [
+          combat.LootEntry("laser rifle", 2, 2, 1.0),
+          combat.LootEntry("energy cell", 5, 10, 1.0),
+        ],
+        "9-2",
+      ),
+    ),
+    #("9-2", quadruped_patrol("10")),
+    // The training complex.
+    #(
+      "10",
+      Scene(
+        ..story([
+          "the corridor opens onto a vast training complex, obstacles and features blackened by real combat.",
+          "a regenerative machine hums uncannily by one of the courses.",
+        ]),
+        buttons: [
+          #(
+            "use",
+            SceneButton(
+              ..to("use machine", "11"),
+              cost: [#("alien alloy", 1)],
+              effect: Some(events.HealToMax),
+            ),
+          ),
+          #("continue", to("continue", "11")),
+          #("leave", leave("leave")),
+        ],
+      ),
+    ),
+    #(
+      "11",
+      Scene(
+        ..story([
+          "motion from the centre of the yard.",
+          "a sparring automaton, still fully function and crusted with timeworn blood, lunges forward.",
+        ]),
+        buttons: [#("engage", to("engage", "12"))],
+      ),
+    ),
+    #(
+      "12",
+      boss_fight(
+        "the machine attacks, blades whirling.",
+        enemy("murderous robot", "M", 250, 10, 0.8, 3.0, False, [
+          combat.LootEntry("alien alloy", 1, 3, 1.0),
+          combat.LootEntry("disruptor blueprint", 1, 1, 1.0),
+        ]),
+        [combat.SetStatusEvery(13.0, combat.Energised)],
+        [#("continue", to("continue", "13"))],
+      ),
+    ),
+    #(
+      "13",
+      Scene(
+        ..story([
+          "the ruins of the sparring machine clatter to the ground.",
+          "picked this deck clean.",
+        ]),
+        on_load: Some(fn(s) { #(state.set_game(s, "world.martial", 1), []) }),
+        buttons: [#("leave", leave("leave"))],
+      ),
+    ),
+  ])
 }
 
 /// Deeper into a ravaged battleship: the elevator bank. Each wing's elevator
@@ -314,12 +596,26 @@ fn engineering() -> Event {
 /// `Enemies.Executioner.guard` — a mechanical guard scene, posted all over the
 /// ship.
 fn guard_post(next: String) -> Scene {
+  guarded("tripped a motion sensor.", guard(), next)
+}
+
+/// The mechanical guard itself, for scenes that override the notification.
+fn guard() -> combat.Enemy {
+  enemy("mechanical guard", "G", 60, 10, 0.8, 2.0, True, [
+    combat.LootEntry("energy cell", 1, 5, 0.8),
+    combat.LootEntry("laser rifle", 1, 1, 0.8),
+    combat.LootEntry("alien alloy", 1, 1, 0.2),
+  ])
+}
+
+/// `Enemies.Executioner.quadruped` — a mobile defence platform. Its JS loot
+/// table has two 'alien alloy' keys, and the later one wins the object
+/// literal: the effective table is just alloy 2-4 at 0.2 — preserved verbatim.
+fn quadruped_patrol(next: String) -> Scene {
   guarded(
-    "tripped a motion sensor.",
-    enemy("mechanical guard", "G", 60, 10, 0.8, 2.0, True, [
-      combat.LootEntry("energy cell", 1, 5, 0.8),
-      combat.LootEntry("laser rifle", 1, 1, 0.8),
-      combat.LootEntry("alien alloy", 1, 1, 0.2),
+    "a mobile defence platform trundles around the corner.",
+    enemy("mechanical quadruped", "Q", 70, 8, 0.8, 1.0, False, [
+      combat.LootEntry("alien alloy", 2, 4, 0.2),
     ]),
     next,
   )

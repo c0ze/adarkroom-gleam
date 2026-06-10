@@ -119,6 +119,8 @@ pub type Msg {
   StatusExpire
   /// Timer: armed poison drips on the player.
   DotTick
+  /// Apply scavenged surface maps (one reveal roll per map).
+  MapsScavenged(rolls: List(Float))
 }
 
 pub type Model {
@@ -470,6 +472,8 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
     StatusExpire -> #(set_enemy_status(model, combat.NoStatus), effect.none())
 
     DotTick -> dot_tick(model)
+
+    MapsScavenged(rolls: rolls) -> #(scavenge_maps(model, rolls), effect.none())
   }
 }
 
@@ -1039,20 +1043,22 @@ fn resolve_event(model: Model, id: String, roll: Float) -> #(Model, Effect(Msg))
                 Ok(#(new_state, purse, messages, step)) -> {
                   let model =
                     notify_here(
-                      apply_button_effect(
-                        apply_purse(Model(..model, state: new_state), purse),
-                        button.effect,
-                      ),
+                      apply_purse(Model(..model, state: new_state), purse),
                       messages,
                     )
+                  let #(model, button_fx) =
+                    apply_button_effect(model, button.effect)
                   case button.link {
                     // A link button ends the event and opens the page (the
                     // JS `endEvent()` + `window.open`), skipping nextScene.
                     Some(url) -> #(
                       Model(..model, active_event: None),
-                      open_link(url),
+                      effect.batch([open_link(url), button_fx]),
                     )
-                    None -> advance_event(model, event, step)
+                    None -> {
+                      let #(model, fx) = advance_event(model, event, step)
+                      #(model, effect.batch([fx, button_fx]))
+                    }
                   }
                 }
               }
@@ -1072,13 +1078,14 @@ pub fn event_purse(model: Model) -> events.Purse {
 }
 
 /// A button's world-level `onChoose`: the wings' regenerative machines reknit
-/// muscle and bone (`World.setHp(World.getMaxHealth())`).
+/// muscle and bone (`World.setHp(World.getMaxHealth())`); scavenged maps roll
+/// their reveals.
 fn apply_button_effect(
   model: Model,
-  effect: Option(events.ButtonEffect),
-) -> Model {
-  case effect, model.expedition {
-    Some(events.HealToMax), Some(exp) ->
+  button_effect: Option(events.ButtonEffect),
+) -> #(Model, Effect(Msg)) {
+  case button_effect, model.expedition {
+    Some(events.HealToMax), Some(exp) -> #(
       Model(
         ..model,
         expedition: Some(
@@ -1090,8 +1097,31 @@ fn apply_button_effect(
             ),
           ),
         ),
+      ),
+      effect.none(),
+    )
+    Some(events.ApplyMap(times: times)), Some(_) -> #(
+      model,
+      effect.from(fn(dispatch) {
+        let rolls = list.map(list.repeat(Nil, times), fn(_) { rng.random() })
+        dispatch(MapsScavenged(rolls))
+      }),
+    )
+    _, _ -> #(model, effect.none())
+  }
+}
+
+/// Reveal a patch of the world per scavenged map.
+fn scavenge_maps(model: Model, rolls: List(Float)) -> Model {
+  case model.expedition {
+    Some(exp) ->
+      Model(
+        ..model,
+        expedition: Some(
+          list.fold(rolls, exp, fn(e, roll) { world.apply_map(e, roll) }),
+        ),
       )
-    _, _ -> model
+    None -> model
   }
 }
 
