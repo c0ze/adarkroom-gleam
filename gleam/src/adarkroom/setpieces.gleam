@@ -1933,6 +1933,7 @@ fn story(text: List(String)) -> Scene {
     reward: [],
     buttons: [],
     combat: False,
+    blink: False,
     on_load: None,
     on_load_rng: None,
     setpiece: None,
@@ -2051,6 +2052,7 @@ fn fight(
     reward: [],
     buttons: buttons,
     combat: True,
+    blink: False,
     on_load: None,
     on_load_rng: None,
     setpiece: Some(SetpieceExtra(

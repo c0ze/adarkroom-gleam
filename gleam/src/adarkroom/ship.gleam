@@ -74,6 +74,7 @@ pub fn ready_to_leave() -> Event {
         notification: None,
         reward: [],
         combat: False,
+        blink: False,
         on_load: None,
         on_load_rng: None,
         setpiece: None,

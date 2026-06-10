@@ -12,3 +12,7 @@ pub fn on_keys(down: fn(String) -> Nil, up: fn(String) -> Nil) -> Nil
 /// Reload the page (the ending's restart).
 @external(javascript, "./browser_ffi.mjs", "reload")
 pub fn reload() -> Nil
+
+/// Set the page title (the event blink).
+@external(javascript, "./browser_ffi.mjs", "setTitle")
+pub fn set_title(title: String) -> Nil
