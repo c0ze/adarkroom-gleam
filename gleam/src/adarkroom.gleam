@@ -23,6 +23,7 @@ import adarkroom/path
 import adarkroom/room
 import adarkroom/save
 import adarkroom/ship
+import adarkroom/space
 import adarkroom/state
 import adarkroom/timer
 import adarkroom/trade.{type Good}
@@ -337,15 +338,12 @@ fn location_panel(m: Model) -> Element(Msg) {
     model.Path -> path_panel(m)
     model.Ship -> ship_panel(m)
     model.Fabricator -> fabricator_panel(m)
+    model.Space -> space_panel(m)
     model.World ->
       case m.expedition {
         Some(exp) -> world_panel(exp)
         None -> html.div([attribute.class("location")], [])
       }
-    other ->
-      html.div([attribute.class("location")], [
-        html.div([], [element.text(model.location_title(other))]),
-      ])
   }
 }
 
@@ -698,6 +696,61 @@ fn fabricator_panel(m: Model) -> Element(Msg) {
     [attribute.id("fabricatorPanel"), attribute.class("location")],
     list.append(blueprints, [bench]),
   )
+}
+
+/// The ascent (`space.js`): the ship at its clamped coordinates, the rocks at
+/// their clock-derived heights, and the hull readout. The original space.css
+/// does the styling.
+fn space_panel(m: Model) -> Element(Msg) {
+  case m.space {
+    Some(flight) -> {
+      let px = fn(v: Float) { float.to_string(v) <> "px" }
+      let rocks =
+        list.map(flight.asteroids, fn(a) {
+          html.div(
+            [
+              attribute.class("asteroid"),
+              attribute.style("left", px(a.x)),
+              attribute.style(
+                "top",
+                px(space.asteroid_y(a, m.flight_last_move)),
+              ),
+            ],
+            [element.text(a.chara)],
+          )
+        })
+      html.div(
+        [attribute.id("spacePanel"), attribute.class("location")],
+        list.flatten([
+          [
+            html.div(
+              [
+                attribute.id("ship"),
+                attribute.style("left", px(flight.x)),
+                attribute.style("top", px(flight.y)),
+              ],
+              [element.text("@")],
+            ),
+          ],
+          rocks,
+          [
+            html.div([attribute.id("hullRemaining")], [
+              html.div([attribute.class("row_key")], [element.text("hull: ")]),
+              html.div([attribute.class("row_val")], [
+                element.text(
+                  int.to_string(flight.hull)
+                  <> "/"
+                  <> int.to_string(ship.hull(m.state)),
+                ),
+              ]),
+            ]),
+          ],
+        ]),
+      )
+    }
+    None ->
+      html.div([attribute.id("spacePanel"), attribute.class("location")], [])
+  }
 }
 
 fn world_panel(exp: Expedition) -> Element(Msg) {
