@@ -233,10 +233,13 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
     CoolCheck(at: now) -> {
       let cooled =
         apply_room(Model(..model, now:), room.tick_cool(model.state, now))
-      // The swollen-stores check that summons thieves rides the same heartbeat
-      // (the original runs it on every stores redraw).
+      // Pending delayed returns (the wanderers' carts) count down on the same
+      // heartbeat, announcing in the room when they arrive.
+      let delivered = apply_room(cooled, events.tick_delays(cooled.state))
+      // The swollen-stores check that summons thieves rides it too (the
+      // original runs it on every stores redraw).
       let checked =
-        Model(..cooled, state: outside.maybe_start_thieves(cooled.state))
+        Model(..delivered, state: outside.maybe_start_thieves(delivered.state))
       #(checked, event_schedule_effect(checked))
     }
     AdjustTemp -> #(

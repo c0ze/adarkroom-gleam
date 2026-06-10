@@ -254,10 +254,156 @@ pub fn room_events() -> List(Event) {
     noises_in_store_room(),
     beggar(),
     shady_builder(),
+    mysterious_wanderer_wood(),
+    mysterious_wanderer_fur(),
     scout(),
     master(),
     sick_man(),
   ]
+}
+
+// --- delayed returns (saveDelay) ----------------------------------------------
+
+/// How long a wanderer takes to come back (the JS hands `action(60)` seconds).
+const wanderer_return_seconds = 60
+
+/// Every delayed action that can be pending (`Events.saveDelay`): the key's
+/// remaining seconds live in the game state under `delay.<key>`, so a pending
+/// return survives a reload. Only the Mysterious Wanderers gamble with it.
+fn delayed_actions() -> List(
+  #(String, fn(state.State) -> #(state.State, List(String))),
+) {
+  [
+    #("wanderer.wood100", wanderer_return("wood", 300, "wood")),
+    #("wanderer.wood500", wanderer_return("wood", 1500, "wood")),
+    #("wanderer.fur100", wanderer_return("fur", 300, "furs")),
+    #("wanderer.fur500", wanderer_return("fur", 1500, "furs")),
+  ]
+}
+
+fn wanderer_return(
+  store: String,
+  amount: Int,
+  cargo: String,
+) -> fn(state.State) -> #(state.State, List(String)) {
+  fn(s) {
+    #(state.add_store(s, store, amount), [
+      "the mysterious wanderer returns, cart piled high with " <> cargo <> ".",
+    ])
+  }
+}
+
+/// Start (or restart) a delayed action's countdown.
+fn start_delay(s: state.State, key: String, seconds: Int) -> state.State {
+  state.set_game(s, "delay." <> key, seconds)
+}
+
+/// Advance every pending countdown by one second — the model calls this on the
+/// 1s heartbeat (the JS ticks the saved delay every half second). A countdown
+/// reaching zero fires its action and is cleared.
+pub fn tick_delays(s: state.State) -> #(state.State, List(String)) {
+  list.fold(delayed_actions(), #(s, []), fn(acc, entry) {
+    let #(s, messages) = acc
+    let #(key, action) = entry
+    case state.get_game(s, "delay." <> key) {
+      remaining if remaining > 1 -> #(
+        state.set_game(s, "delay." <> key, remaining - 1),
+        messages,
+      )
+      1 -> {
+        let #(s, fired) = action(state.set_game(s, "delay." <> key, 0))
+        #(s, list.append(messages, fired))
+      }
+      _ -> acc
+    }
+  })
+}
+
+// --- the Mysterious Wanderers ---------------------------------------------------
+
+/// The wood-gambling Mysterious Wanderer: load his cart and he *might* come
+/// back with triple.
+fn mysterious_wanderer_wood() -> Event {
+  mysterious_wanderer(
+    is_available: fn(s) { state.get_store(s, "wood") > 0 },
+    arrival: "a wanderer arrives with an empty cart. says if he leaves with wood, he'll be back with more.",
+    distrust: "builder's not sure he's to be trusted.",
+    departure: "the wanderer leaves, cart loaded with wood",
+    deny: "turn him away",
+    store: "wood",
+  )
+}
+
+/// The fur-gambling Mysterious Wanderer.
+fn mysterious_wanderer_fur() -> Event {
+  mysterious_wanderer(
+    is_available: fn(s) { state.get_store(s, "fur") > 0 },
+    arrival: "a wanderer arrives with an empty cart. says if she leaves with furs, she'll be back with more.",
+    distrust: "builder's not sure she's to be trusted.",
+    departure: "the wanderer leaves, cart loaded with furs",
+    deny: "turn her away",
+    store: "fur",
+  )
+}
+
+/// Both wanderers share a shape: give 100 (even odds) or 500 (longer odds —
+/// 0.3) of a store, and the cart leaves; a winning roll starts the 60s
+/// countdown to a triple return. The countdown rides `delay.wanderer.*`.
+fn mysterious_wanderer(
+  is_available is_available: fn(state.State) -> Bool,
+  arrival arrival: String,
+  distrust distrust: String,
+  departure departure: String,
+  deny deny: String,
+  store store: String,
+) -> Event {
+  Event(title: "The Mysterious Wanderer", is_available:, scenes: [
+    #(
+      "start",
+      Scene(
+        text: [arrival, distrust],
+        notification: option.Some("a mysterious wanderer arrives"),
+        reward: [],
+        combat: False,
+        on_load: option.None,
+        on_load_rng: option.None,
+        setpiece: option.None,
+        buttons: [
+          #(
+            store <> "100",
+            give("give 100", [#(store, 100)], Goto(store <> "100")),
+          ),
+          #(
+            store <> "500",
+            give("give 500", [#(store, 500)], Goto(store <> "500")),
+          ),
+          #("deny", choice(deny, End)),
+        ],
+      ),
+    ),
+    #(store <> "100", gamble(departure, "wanderer." <> store <> "100", 0.5)),
+    #(store <> "500", gamble(departure, "wanderer." <> store <> "500", 0.3)),
+  ])
+}
+
+/// A wanderer's departure scene: on entry, a roll under `chance` quietly starts
+/// the delayed return (the JS `onLoad` calling `action(60)`).
+fn gamble(text: String, key: String, chance: Float) -> Scene {
+  Scene(
+    text: [text],
+    notification: option.None,
+    reward: [],
+    combat: False,
+    on_load: option.None,
+    on_load_rng: option.Some(fn(s, roll) {
+      case roll <. chance {
+        True -> #(start_delay(s, key, wanderer_return_seconds), [])
+        False -> #(s, [])
+      }
+    }),
+    setpiece: option.None,
+    buttons: [#("leave", choice("say goodbye", End))],
+  )
 }
 
 /// A plain choice button: just text and where it leads.

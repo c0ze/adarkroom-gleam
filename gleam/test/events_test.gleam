@@ -295,7 +295,7 @@ fn room_event_by_notification(note: String) -> events.Event {
 }
 
 pub fn the_room_pool_has_grown_test() {
-  events.room_events() |> list.length |> should.equal(8)
+  events.room_events() |> list.length |> should.equal(10)
 }
 
 // --- the perk teachers + the Sick Man ---------------------------------------
@@ -523,4 +523,92 @@ pub fn sparing_the_thief_teaches_stealth_test() {
   state.get_game(after, "thieves") |> should.equal(2)
   state.has_perk(after, "stealthy") |> should.be_true
   msgs |> should.equal(["learned how not to be seen"])
+}
+
+// --- the Mysterious Wanderers (saveDelay) -------------------------------------
+
+/// The wanderer variant whose start scene leads to the given gamble scene.
+fn wanderer_with(scene: String) -> events.Event {
+  let assert Ok(ev) =
+    list.find(events.room_events(), fn(e) {
+      e.title == "The Mysterious Wanderer"
+      && list.key_find(e.scenes, scene) != Error(Nil)
+    })
+  ev
+}
+
+pub fn the_wanderers_call_while_there_is_cargo_test() {
+  let broke = state.new()
+  wanderer_with("wood100").is_available(broke) |> should.be_false
+  wanderer_with("fur100").is_available(broke) |> should.be_false
+  let stocked = state.new() |> state.set_store("wood", 1)
+  wanderer_with("wood100").is_available(stocked) |> should.be_true
+  wanderer_with("fur100").is_available(stocked) |> should.be_false
+}
+
+pub fn a_lucky_gamble_starts_the_return_countdown_test() {
+  let assert Ok(scene) =
+    list.key_find(wanderer_with("wood100").scenes, "wood100")
+  let assert Some(gamble) = scene.on_load_rng
+  // Math.random() < 0.5 — a 0.4 roll wins, the cart comes back in 60s.
+  let #(s, msgs) = gamble(state.new(), 0.4)
+  state.get_game(s, "delay.wanderer.wood100") |> should.equal(60)
+  msgs |> should.equal([])
+}
+
+pub fn an_unlucky_gamble_starts_nothing_test() {
+  let assert Ok(scene) =
+    list.key_find(wanderer_with("wood100").scenes, "wood100")
+  let assert Some(gamble) = scene.on_load_rng
+  let #(s, _) = gamble(state.new(), 0.5)
+  state.get_game(s, "delay.wanderer.wood100") |> should.equal(0)
+}
+
+pub fn the_big_gamble_has_longer_odds_test() {
+  // The 500 scenes win only under 0.3.
+  let assert Ok(scene) = list.key_find(wanderer_with("fur500").scenes, "fur500")
+  let assert Some(gamble) = scene.on_load_rng
+  state.get_game(gamble(state.new(), 0.29).0, "delay.wanderer.fur500")
+  |> should.equal(60)
+  state.get_game(gamble(state.new(), 0.3).0, "delay.wanderer.fur500")
+  |> should.equal(0)
+}
+
+pub fn tick_delays_counts_down_one_second_test() {
+  let s = state.new() |> state.set_game("delay.wanderer.wood100", 2)
+  let #(after, msgs) = events.tick_delays(s)
+  state.get_game(after, "delay.wanderer.wood100") |> should.equal(1)
+  msgs |> should.equal([])
+  state.get_store(after, "wood") |> should.equal(0)
+}
+
+pub fn tick_delays_fires_the_return_at_zero_test() {
+  let s = state.new() |> state.set_game("delay.wanderer.wood100", 1)
+  let #(after, msgs) = events.tick_delays(s)
+  state.get_game(after, "delay.wanderer.wood100") |> should.equal(0)
+  state.get_store(after, "wood") |> should.equal(300)
+  msgs
+  |> should.equal([
+    "the mysterious wanderer returns, cart piled high with wood.",
+  ])
+  // Spent — nothing more comes.
+  let #(again, quiet) = events.tick_delays(after)
+  state.get_store(again, "wood") |> should.equal(300)
+  quiet |> should.equal([])
+}
+
+pub fn tick_delays_pays_each_gamble_its_due_test() {
+  let s = state.new() |> state.set_game("delay.wanderer.fur500", 1)
+  let #(after, msgs) = events.tick_delays(s)
+  state.get_store(after, "fur") |> should.equal(1500)
+  msgs
+  |> should.equal([
+    "the mysterious wanderer returns, cart piled high with furs.",
+  ])
+}
+
+pub fn tick_delays_idles_with_nothing_pending_test() {
+  let #(after, msgs) = events.tick_delays(state.new())
+  msgs |> should.equal([])
+  after |> should.equal(state.new())
 }
