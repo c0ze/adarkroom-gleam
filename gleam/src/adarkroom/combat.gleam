@@ -261,6 +261,38 @@ pub type Enemy {
   )
 }
 
+/// A fighter's combat status (`Events.setStatus`) — one at a time. The
+/// executioner's bosses take these via their specials; the player-side
+/// statuses (the shield button, the stim boost) arrive with their Fabricator
+/// items.
+pub type Status {
+  NoStatus
+  /// Absorbs the next hit as healing, then breaks (one hit per shield).
+  Shield
+  /// Attacks every half second while it lasts (the cadence is the model's
+  /// job; the strike itself is unchanged).
+  Enraged
+  /// Sits attacks out; damage dealt to it banks, and is repaid as one
+  /// guaranteed blow when the trance ends.
+  Meditation
+  /// One-hit buff: the next landed blow leaves poison dripping.
+  Venomous
+  /// One-hit buff: the next landed blow strikes fourfold.
+  Energised
+}
+
+/// `ENERGISE_MULTIPLIER` — an energised blow strikes fourfold.
+pub const energise_multiplier = 4
+
+/// `ENRAGE_DURATION` — how long the half-second fury lasts.
+pub const enrage_duration_ms = 4000
+
+/// `MEDITATE_DURATION` — how long the trance lasts.
+pub const meditate_duration_ms = 5000
+
+/// `DOT_TICK` — how often armed poison drips.
+pub const dot_tick_ms = 1000
+
 /// A fight in progress.
 pub type CombatState {
   CombatState(
@@ -270,6 +302,14 @@ pub type CombatState {
     player_max: Int,
     won: Bool,
     enemy_stunned: Bool,
+    /// The enemy's active status, set by its specials or an `atHealth` trigger.
+    enemy_status: Status,
+    /// Damage banked while the enemy meditates (`Events._meditateDmg`).
+    meditate_bank: Int,
+    /// Poison dripping on the player: damage per tick, `0` when unpoisoned.
+    player_dot: Int,
+    /// `atHealth` triggers: crossing a threshold from above takes the status.
+    at_health: List(#(Int, Status)),
   )
 }
 
@@ -286,11 +326,16 @@ pub fn begin_combat(
     player_max:,
     won: False,
     enemy_stunned: False,
+    enemy_status: NoStatus,
+    meditate_bank: 0,
+    player_dot: 0,
+    at_health: [],
   )
 }
 
-/// Resolve a player attack on the enemy. A stun makes it skip its next turn;
-/// numeric damage lowers its HP and may win the fight.
+/// Resolve a player attack on the enemy. A stun makes it skip its next turn
+/// (and leaves any shield intact — only a numeric hit breaks one); numeric
+/// damage lowers its HP and may win the fight.
 pub fn player_strike(
   cs: CombatState,
   weapon: Weapon,
@@ -300,31 +345,81 @@ pub fn player_strike(
   case player_attack(weapon, s, hit_roll) {
     Miss -> cs
     StunHit -> CombatState(..cs, enemy_stunned: True)
-    Damage(d) -> {
+    Damage(d) -> strike_enemy(cs, d)
+  }
+}
+
+/// Land a blow on the enemy, honouring its status: a meditating enemy banks
+/// the damage instead of taking it; a shielded one heals by it and the shield
+/// pops.
+fn strike_enemy(cs: CombatState, d: Int) -> CombatState {
+  case cs.enemy_status {
+    Meditation -> CombatState(..cs, meditate_bank: cs.meditate_bank + d)
+    Shield ->
+      CombatState(
+        ..cs,
+        enemy_hp: int.min(cs.enemy.health, cs.enemy_hp + d),
+        enemy_status: NoStatus,
+      )
+    _ -> {
       let hp = apply_damage(cs.enemy_hp, cs.enemy.health, d)
-      CombatState(..cs, enemy_hp: hp, won: hp <= 0)
+      trigger_at_health(CombatState(..cs, enemy_hp: hp, won: hp <= 0), hp, d)
     }
   }
 }
 
+/// Fire any `atHealth` trigger whose threshold this blow crossed from above
+/// (`enemyHp <= k && enemyHp + dmg > k`).
+fn trigger_at_health(cs: CombatState, hp: Int, d: Int) -> CombatState {
+  list.fold(cs.at_health, cs, fn(acc, trigger) {
+    case hp <= trigger.0 && hp + d > trigger.0 {
+      True -> CombatState(..acc, enemy_status: trigger.1)
+      False -> acc
+    }
+  })
+}
+
 /// Resolve the enemy's attack on the player. A stunned enemy whiffs and spends
-/// the stun.
+/// the stun; a meditating one sits the turn out. Once the trance ends, any
+/// banked damage lands as one guaranteed blow — no hit roll.
 pub fn enemy_strike(
   cs: CombatState,
   s: state.State,
   hit_roll: Float,
 ) -> CombatState {
-  case cs.enemy_stunned {
-    True -> CombatState(..cs, enemy_stunned: False)
-    False ->
+  case cs.enemy_stunned, cs.enemy_status, cs.meditate_bank {
+    True, _, _ -> CombatState(..cs, enemy_stunned: False)
+    False, Meditation, _ -> cs
+    False, _, bank if bank > 0 ->
+      hurt_player(CombatState(..cs, meditate_bank: 0), bank)
+    False, _, _ ->
       case enemy_attack(cs.enemy.hit, cs.enemy.damage, s, hit_roll) {
-        Damage(d) ->
-          CombatState(
-            ..cs,
-            player_hp: apply_damage(cs.player_hp, cs.player_max, d),
-          )
+        Damage(d) -> land_enemy_hit(cs, d)
         Miss -> cs
         StunHit -> cs
       }
+  }
+}
+
+fn hurt_player(cs: CombatState, d: Int) -> CombatState {
+  CombatState(..cs, player_hp: apply_damage(cs.player_hp, cs.player_max, d))
+}
+
+/// An enemy blow that connects: an energised enemy strikes fourfold, a
+/// venomous one leaves poison dripping at half the blow — each buff spends
+/// itself on the one hit.
+fn land_enemy_hit(cs: CombatState, d: Int) -> CombatState {
+  case cs.enemy_status {
+    Energised ->
+      hurt_player(
+        CombatState(..cs, enemy_status: NoStatus),
+        d * energise_multiplier,
+      )
+    Venomous ->
+      hurt_player(
+        CombatState(..cs, enemy_status: NoStatus, player_dot: d / 2),
+        d,
+      )
+    _ -> hurt_player(cs, d)
   }
 }

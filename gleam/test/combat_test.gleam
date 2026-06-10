@@ -347,3 +347,120 @@ pub fn an_enemy_miss_spares_the_player_test() {
   let after = combat.enemy_strike(cs, state.new(), 0.9)
   after.player_hp |> should.equal(10)
 }
+
+// --- statuses (setStatus) -------------------------------------------------------
+
+/// A 60-hp brute at 50 hp with the given status.
+fn statused(status: combat.Status) -> combat.CombatState {
+  let brute = combat.Enemy(..beast(), name: "brute", health: 60, damage: 10)
+  combat.CombatState(
+    ..combat.begin_combat(brute, 10, 10),
+    enemy_hp: 50,
+    enemy_status: status,
+  )
+}
+
+pub fn a_shield_absorbs_one_hit_as_healing_and_breaks_test() {
+  // An iron sword blow (4) heals the shielded enemy, capped at full health,
+  // and pops the shield.
+  let cs = statused(combat.Shield)
+  let after =
+    combat.player_strike(cs, weapon_named("iron sword"), state.new(), 0.5)
+  after.enemy_hp |> should.equal(54)
+  after.enemy_status |> should.equal(combat.NoStatus)
+  // The next blow lands normally.
+  let then =
+    combat.player_strike(after, weapon_named("iron sword"), state.new(), 0.5)
+  then.enemy_hp |> should.equal(50)
+}
+
+pub fn a_miss_leaves_the_shield_intact_test() {
+  let cs = statused(combat.Shield)
+  let after =
+    combat.player_strike(cs, weapon_named("iron sword"), state.new(), 0.9)
+  after.enemy_status |> should.equal(combat.Shield)
+  after.enemy_hp |> should.equal(50)
+}
+
+pub fn a_stun_leaves_the_shield_intact_test() {
+  // Bolas stun without numeric damage; the shield only breaks on a hit.
+  let cs = statused(combat.Shield)
+  let after = combat.player_strike(cs, weapon_named("bolas"), state.new(), 0.5)
+  after.enemy_stunned |> should.equal(True)
+  after.enemy_status |> should.equal(combat.Shield)
+}
+
+pub fn a_meditating_enemy_banks_the_damage_test() {
+  let cs = statused(combat.Meditation)
+  let after =
+    combat.player_strike(cs, weapon_named("iron sword"), state.new(), 0.5)
+  after.enemy_hp |> should.equal(50)
+  after.meditate_bank |> should.equal(4)
+  after.won |> should.equal(False)
+  // And sits its own turn out.
+  let still = combat.enemy_strike(after, state.new(), 0.0)
+  still.player_hp |> should.equal(10)
+}
+
+pub fn the_trance_pays_the_bank_back_as_one_guaranteed_blow_test() {
+  // Meditation over (status cleared), 7 banked: the blow lands with no hit
+  // roll — even a 1.0 roll cannot miss.
+  let cs = combat.CombatState(..statused(combat.NoStatus), meditate_bank: 7)
+  let after = combat.enemy_strike(cs, state.new(), 1.0)
+  after.player_hp |> should.equal(3)
+  after.meditate_bank |> should.equal(0)
+}
+
+pub fn a_stunned_enemy_cannot_pay_the_bank_test() {
+  let cs =
+    combat.CombatState(
+      ..statused(combat.NoStatus),
+      meditate_bank: 7,
+      enemy_stunned: True,
+    )
+  let after = combat.enemy_strike(cs, state.new(), 0.0)
+  after.player_hp |> should.equal(10)
+  // The bank keeps until a turn it can act.
+  after.meditate_bank |> should.equal(7)
+}
+
+pub fn an_energised_enemy_strikes_fourfold_once_test() {
+  // damage 10 — wait, the brute would kill; use the bank-free base damage 10 ×4
+  // capped by apply_damage's floor at zero.
+  let cs = statused(combat.Energised)
+  let after = combat.enemy_strike(cs, state.new(), 0.5)
+  after.player_hp |> should.equal(0)
+  after.enemy_status |> should.equal(combat.NoStatus)
+}
+
+pub fn a_venomous_hit_leaves_poison_dripping_test() {
+  // A landed venomous blow (10) arms a 5-per-tick drip and spends the buff.
+  let cs = statused(combat.Venomous)
+  let after = combat.enemy_strike(cs, state.new(), 0.5)
+  after.player_hp |> should.equal(0)
+  after.player_dot |> should.equal(5)
+  after.enemy_status |> should.equal(combat.NoStatus)
+}
+
+pub fn a_venomous_miss_spends_nothing_test() {
+  let cs = statused(combat.Venomous)
+  let after = combat.enemy_strike(cs, state.new(), 0.9)
+  after.player_dot |> should.equal(0)
+  after.enemy_status |> should.equal(combat.Venomous)
+}
+
+pub fn crossing_an_at_health_threshold_takes_a_status_test() {
+  // The broken medic turns venomous at 40 hp: 42 - 4 = 38 crosses it.
+  let cs =
+    combat.CombatState(..statused(combat.NoStatus), enemy_hp: 42, at_health: [
+      #(40, combat.Venomous),
+    ])
+  let after =
+    combat.player_strike(cs, weapon_named("iron sword"), state.new(), 0.5)
+  after.enemy_hp |> should.equal(38)
+  after.enemy_status |> should.equal(combat.Venomous)
+  // Already below: a further blow doesn't re-trigger.
+  let deeper =
+    combat.player_strike(after, weapon_named("iron sword"), state.new(), 0.5)
+  deeper.enemy_status |> should.equal(combat.Venomous)
+}
