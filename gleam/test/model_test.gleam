@@ -11,6 +11,7 @@ import adarkroom/outside
 import adarkroom/rng
 import adarkroom/room
 import adarkroom/ship
+import adarkroom/space
 import adarkroom/state
 import adarkroom/world
 import gleam/dict
@@ -1653,4 +1654,92 @@ pub fn arriving_at_the_wreck_notes_the_fleet_test() {
     "somewhere above the debris cloud, the wanderer fleet hovers. been on this rock too long.",
   )
   |> should.be_true
+}
+
+// --- the ascent ---------------------------------------------------------------
+
+fn lifting_off() -> model.Model {
+  let base = model.init()
+  let m =
+    model.Model(
+      ..base,
+      state: base.state
+        |> state.set_game("spaceShip.hull", 2)
+        |> state.set_game("spaceShip.thrusters", 1),
+    )
+  run(m, model.Navigate(to: model.Space))
+}
+
+pub fn arriving_in_space_begins_the_flight_test() {
+  let flying = lifting_off()
+  let assert option.Some(flight) = flying.space
+  flight.hull |> should.equal(2)
+  flight.x |> should.equal(350.0)
+}
+
+pub fn a_flight_frame_moves_the_held_ship_test() {
+  let flying = lifting_off()
+  let steering = run(flying, model.KeyDown("ArrowLeft"))
+  let after = run(steering, model.FlightFrame(at: 1033))
+  let assert option.Some(flight) = after.space
+  flight.x |> should.equal(346.0)
+  after.flight_last_move |> should.equal(1033)
+}
+
+pub fn releasing_the_key_stops_the_ship_test() {
+  let flying = lifting_off()
+  let coasting =
+    flying
+    |> run(model.KeyDown("a"))
+    |> run(model.KeyUp("a"))
+    |> run(model.FlightFrame(at: 1033))
+  let assert option.Some(flight) = coasting.space
+  flight.x |> should.equal(350.0)
+}
+
+pub fn a_spent_hull_crashes_back_to_the_ship_test() {
+  // A rock dead-centre and one point of hull: the frame ends the flight.
+  let flying = lifting_off()
+  let assert option.Some(flight) = flying.space
+  let doomed =
+    model.Model(
+      ..flying,
+      space: option.Some(
+        space.Flight(..flight, hull: 1, y: 375.0, asteroids: [
+          space.Asteroid(chara: "#", x: 348.0, spawned_at: 0, duration: 1000),
+        ]),
+      ),
+      flight_last_move: 467,
+    )
+  let after = run(doomed, model.FlightFrame(at: 500))
+  after.space |> should.equal(option.None)
+  after.location |> should.equal(model.Ship)
+  // The lift-off button cools again.
+  model.on_cooldown(model.Model(..after, now: 1), "liftoff")
+  |> should.be_true
+}
+
+pub fn the_climb_counts_kilometres_test() {
+  let flying = lifting_off()
+  let after = run(flying, model.ClimbTick)
+  let assert option.Some(flight) = after.space
+  flight.altitude |> should.equal(1)
+}
+
+pub fn a_wave_falls_from_its_rolls_test() {
+  let flying = lifting_off()
+  let after = run(flying, model.SpawnWave(at: 2000, rolls: [0.1, 0.5, 0.0]))
+  let assert option.Some(flight) = after.space
+  flight.asteroids |> list.length |> should.equal(1)
+}
+
+pub fn surviving_the_fade_wins_test() {
+  let flying = lifting_off()
+  let after = run(flying, model.AscentComplete)
+  let assert option.Some(flight) = after.space
+  flight.done |> should.be_true
+  // A quiet flight spawns and climbs no more.
+  let still = run(after, model.ClimbTick)
+  let assert option.Some(done_flight) = still.space
+  done_flight.altitude |> should.equal(0)
 }

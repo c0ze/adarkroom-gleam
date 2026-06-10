@@ -4,6 +4,7 @@
 //// effects (e.g. one-shot timers for the builder's timed progression).
 
 import adarkroom/browser
+import adarkroom/clock
 import adarkroom/combat
 import adarkroom/craft
 import adarkroom/encounters
@@ -17,6 +18,7 @@ import adarkroom/rng
 import adarkroom/room
 import adarkroom/setpieces
 import adarkroom/ship
+import adarkroom/space
 import adarkroom/state.{type State}
 import adarkroom/timer
 import adarkroom/trade
@@ -134,6 +136,19 @@ pub type Msg {
   CheckLiftoff
   /// Fabricate the named recipe at the whirring fabricator.
   Fabricate(name: String)
+  /// Timer: one 33ms flight frame of the ascent (time-stamped).
+  FlightFrame(at: Int)
+  /// Timer: a second of climb.
+  ClimbTick
+  /// Timer: the next asteroid wave is due; rolls then spawns.
+  WaveTick
+  /// Spawn an asteroid wave from its rolls (three per rock), time-stamped.
+  SpawnWave(at: Int, rolls: List(Float))
+  /// Timer: the fade completes — the ascent is survived.
+  AscentComplete
+  /// A key went down / came up (the ascent's controls).
+  KeyDown(key: String)
+  KeyUp(key: String)
 }
 
 pub type Model {
@@ -166,6 +181,12 @@ pub type Model {
     /// Steps taken since the last world fight (the `fightMove` counter), so
     /// encounters can't crowd together. Reset each expedition. Runtime-only.
     fight_move: Int,
+    /// The ascent in progress, while the ship climbs. Runtime-only.
+    space: Option(space.Flight),
+    /// The previous flight frame's clock, for dt-scaling. Runtime-only.
+    flight_last_move: Int,
+    /// Whether the document key listeners are armed (once per session).
+    keys_armed: Bool,
   )
 }
 
@@ -190,6 +211,9 @@ pub fn init() -> Model {
     next_event_at: 0,
     combat: None,
     fight_move: 0,
+    space: None,
+    flight_last_move: 0,
+    keys_armed: False,
   )
 }
 
@@ -258,7 +282,29 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
           )
         _ -> navigated
       }
-      #(arrived, effect.none())
+      // Lift-off proper: the ascent begins with its clocks and controls.
+      case location {
+        Space -> {
+          let flying =
+            Model(
+              ..arrived,
+              space: Some(space.begin(arrived.state)),
+              flight_last_move: 0,
+            )
+          let #(flying, keys) = arm_keys(flying)
+          #(
+            flying,
+            effect.batch([
+              keys,
+              flight_frame_timer(),
+              delayed(1000, ClimbTick),
+              delayed(space.wave_delay_ms(0), WaveTick),
+              delayed(space.ascent_ms, AscentComplete),
+            ]),
+          )
+        }
+        _ -> #(arrived, effect.none())
+      }
     }
 
     LightFire -> fire_action(model, room.light_fire(model.state))
@@ -521,6 +567,147 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
     Fabricate(name: name) -> #(
       apply_at(model, "fabricator", fabricator.fabricate(model.state, name)),
       effect.none(),
+    )
+
+    FlightFrame(at: now) -> flight_frame(model, now)
+
+    ClimbTick ->
+      case model.space {
+        // The altitude clock stops past 60km; the win is the fade completing.
+        Some(flight) if !flight.done ->
+          case flight.altitude > 60 {
+            True -> #(model, effect.none())
+            False -> #(
+              Model(..model, space: Some(space.climb(flight))),
+              delayed(1000, ClimbTick),
+            )
+          }
+        _ -> #(model, effect.none())
+      }
+
+    WaveTick ->
+      case model.space {
+        Some(flight) if !flight.done -> #(
+          model,
+          effect.from(fn(dispatch) {
+            let rolls =
+              list.map(
+                list.repeat(Nil, space.wave_size(flight.altitude) * 3),
+                fn(_) { rng.random() },
+              )
+            let _ =
+              timer.set_timeout(
+                fn() { dispatch(SpawnWave(float.round(clock.now()), rolls)) },
+                0,
+              )
+            Nil
+          }),
+        )
+        _ -> #(model, effect.none())
+      }
+
+    SpawnWave(at: now, rolls: rolls) ->
+      case model.space {
+        Some(flight) if !flight.done -> #(
+          Model(..model, space: Some(space.spawn(flight, now, rolls))),
+          delayed(space.wave_delay_ms(flight.altitude), WaveTick),
+        )
+        _ -> #(model, effect.none())
+      }
+
+    AscentComplete ->
+      case model.space {
+        // Survived the fade: the ascent is won. The ending sequence (score,
+        // prestige, the wanderer fleet) lands with the next increment; the
+        // flight simply goes quiet.
+        Some(flight) if !flight.done -> #(
+          Model(..model, space: Some(space.Flight(..flight, done: True))),
+          effect.none(),
+        )
+        _ -> #(model, effect.none())
+      }
+
+    KeyDown(key: key) -> #(hold_key(model, key, True), effect.none())
+
+    KeyUp(key: key) -> #(hold_key(model, key, False), effect.none())
+  }
+}
+
+// --- the ascent ---------------------------------------------------------------
+
+/// One 33ms flight frame: the ship moves by the real time elapsed, the rocks
+/// fall and burst, and a spent hull ends the flight (`crash`) — back to the
+/// ship with the lift-off button cooling.
+fn flight_frame(model: Model, now: Int) -> #(Model, Effect(Msg)) {
+  case model.space {
+    Some(flight) if !flight.done -> {
+      let dt = case model.flight_last_move {
+        0 -> space.frame_ms
+        last -> now - last
+      }
+      let flown =
+        flight
+        |> space.move(model.state, dt)
+        |> space.collide(now)
+      case flown.hull <= 0 {
+        True -> {
+          let crashed =
+            Model(..model, space: None, flight_last_move: 0)
+            |> start_cooldown("liftoff", ship.liftoff_cooldown_ms)
+          update(crashed, Navigate(to: Ship))
+        }
+        False -> #(
+          Model(..model, space: Some(flown), flight_last_move: now),
+          flight_frame_timer(),
+        )
+      }
+    }
+    _ -> #(model, effect.none())
+  }
+}
+
+/// The next 33ms frame, time-stamped from the wall clock.
+fn flight_frame_timer() -> Effect(Msg) {
+  effect.from(fn(dispatch) {
+    let _ =
+      timer.set_timeout(
+        fn() { dispatch(FlightFrame(float.round(clock.now()))) },
+        space.frame_ms,
+      )
+    Nil
+  })
+}
+
+/// Press or release an ascent control (`keyDown`/`keyUp`: arrows or WASD).
+fn hold_key(model: Model, key: String, held: Bool) -> Model {
+  case model.space, dir_for_key(key) {
+    Some(flight), Ok(dir) ->
+      Model(..model, space: Some(space.set_dir(flight, dir, held)))
+    _, _ -> model
+  }
+}
+
+fn dir_for_key(key: String) -> Result(space.Dir, Nil) {
+  case key {
+    "ArrowUp" | "w" | "W" -> Ok(space.Up)
+    "ArrowDown" | "s" | "S" -> Ok(space.Down)
+    "ArrowLeft" | "a" | "A" -> Ok(space.Left)
+    "ArrowRight" | "d" | "D" -> Ok(space.Right)
+    _ -> Error(Nil)
+  }
+}
+
+/// Arm the document key listeners, once.
+fn arm_keys(model: Model) -> #(Model, Effect(Msg)) {
+  case model.keys_armed {
+    True -> #(model, effect.none())
+    False -> #(
+      Model(..model, keys_armed: True),
+      effect.from(fn(dispatch) {
+        browser.on_keys(fn(key) { dispatch(KeyDown(key)) }, fn(key) {
+          dispatch(KeyUp(key))
+        })
+      }),
     )
   }
 }
