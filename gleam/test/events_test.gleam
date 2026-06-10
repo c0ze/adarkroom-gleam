@@ -7,7 +7,7 @@ import gleam/option.{None, Some}
 import gleeunit/should
 
 fn story_event(title: String, avail: fn(state.State) -> Bool) -> events.Event {
-  events.Event(title: title, is_available: avail, scenes: [])
+  events.Event(title: title, is_available: avail, scenes: [], audio: None)
 }
 
 // --- random selection (triggerEvent / pick) ---------------------------------
@@ -756,4 +756,20 @@ pub fn learning_from_the_master_announces_the_lesson_test() {
     events.click_button(evasion, state.new(), 0.5, events.HomeStores)
   state.has_perk(s, "evasive") |> should.be_true
   msgs |> should.equal(["learned to be where they're not"])
+}
+
+// --- event music ----------------------------------------------------------------
+
+pub fn every_pool_event_carries_its_track_test() {
+  let assert Ok(nomad) =
+    list.find(events.room_events(), fn(e) { e.title == "The Nomad" })
+  nomad.audio |> should.equal(Some("audio/event-nomad.flac"))
+  // Penrose reuses the store-room noises track — verbatim quirk.
+  let assert Ok(penrose) =
+    list.find(events.marketing_events(), fn(e) { e.title == "Penrose" })
+  penrose.audio |> should.equal(Some("audio/event-noises-inside.flac"))
+  // The raid plays the soldier-attack theme.
+  let assert Ok(raid) =
+    list.find(events.outside_events(), fn(e) { e.title == "A Military Raid" })
+  raid.audio |> should.equal(Some("audio/event-soldier-attack.flac"))
 }

@@ -564,9 +564,15 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
     ResolveEvent(id: id, roll: roll) -> resolve_event(model, id, roll)
 
     MaybeFight(fight_roll: fight_roll, pick_roll: pick_roll) -> {
+      let was_quiet = model.combat == None
       let model = maybe_start_fight(model, fight_roll, pick_roll)
-      // If a fight just began, set the enemy's attack ticking.
-      #(model, enemy_timer(model.combat))
+      // If a fight just began, set the enemy's attack ticking — to its
+      // depth's battle music.
+      let music = case was_quiet, model.combat, model.expedition {
+        True, Some(_), Some(exp) -> encounter_music(world.distance(exp.pos))
+        _, _, _ -> effect.none()
+      }
+      #(model, effect.batch([enemy_timer(model.combat), music]))
     }
 
     StrikeEnemy(weapon: weapon) ->
@@ -586,7 +592,13 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
 
     ResolveEnemyTurn(roll: roll) -> {
       let dot_before = current_dot(model)
+      let had_fight = model.combat != None
       let model = resolve_enemy_turn(model, roll)
+      // A killing blow fades whatever battle or event music was up.
+      let death_fx = case had_fight && model.combat == None {
+        True -> die_fx(model)
+        False -> effect.none()
+      }
       // A venomous blow that just landed arms the poison drip (one chain; a
       // later blow only changes its strength).
       let dot_armed = case dot_before == 0 && current_dot(model) > 0 {
@@ -594,7 +606,7 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
         False -> effect.none()
       }
       // The enemy keeps attacking on its delay until the fight ends.
-      #(model, effect.batch([enemy_timer(model.combat), dot_armed]))
+      #(model, effect.batch([enemy_timer(model.combat), dot_armed, death_fx]))
     }
 
     CollectLoot(rolls: rolls) -> #(collect_loot(model, rolls), effect.none())
@@ -763,7 +775,11 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
 
     CancelDrop -> #(Model(..model, drop_for: None), effect.none())
 
-    LootDone -> #(finish_looting(model), effect.none())
+    LootDone -> #(
+      finish_looting(model),
+      // The encounter is over; its battle music fades (`endEvent`).
+      effect.from(fn(_) { audio.stop_event_music() }),
+    )
 
     RestartGame -> #(
       model,
@@ -925,6 +941,17 @@ fn arm_keys(model: Model) -> #(Model, Effect(Msg)) {
 
 // --- world combat -----------------------------------------------------------
 
+/// The encounter's battle music by depth (`Events.triggerFight`):
+/// tier 3 past 20, tier 2 past 10, tier 1 nearer home.
+fn encounter_music(distance: Int) -> Effect(Msg) {
+  let track = case distance {
+    d if d > 20 -> audio.encounter_tier_3
+    d if d > 10 -> audio.encounter_tier_2
+    _ -> audio.encounter_tier_1
+  }
+  effect.from(fn(_) { audio.play_event_music(track) })
+}
+
 /// After a live step, check for an encounter and, if the dice favour it, pick
 /// one for the current distance and terrain and begin the fight.
 fn maybe_start_fight(model: Model, fight_roll: Float, pick_roll: Float) -> Model {
@@ -1006,7 +1033,10 @@ fn resolve_explosion(model: Model) -> #(Model, Effect(Msg)) {
         True, Some(blast) -> {
           let hp = int.max(0, cs.player_hp - blast)
           case hp <= 0 {
-            True -> #(die(model), effect.none())
+            True -> {
+              let dead = die(model)
+              #(dead, die_fx(dead))
+            }
             False -> #(
               Model(
                 ..model,
@@ -1421,7 +1451,10 @@ fn dot_tick(model: Model) -> #(Model, Effect(Msg)) {
         True -> {
           let hp = int.max(0, cs.player_hp - cs.player_dot)
           case hp <= 0 {
-            True -> #(die(model), effect.none())
+            True -> {
+              let dead = die(model)
+              #(dead, die_fx(dead))
+            }
             False -> #(
               Model(
                 ..model,
@@ -1466,7 +1499,10 @@ fn step(model: Model, dir: world.Dir) -> #(Model, Effect(Msg)) {
         // Death is checked first; reaching the village costs no supplies (see
         // `world.move`), so a safe return is always a live one — only then are
         // cleared mines credited.
-        False, _ -> #(die(model), effect.none())
+        False, _ -> {
+          let dead = die(model)
+          #(dead, die_fx(dead))
+        }
         True, True -> #(go_home(model), effect.none())
         True, False -> {
           let model = Model(..model, expedition: Some(s.expedition))
@@ -1610,6 +1646,11 @@ fn leave_at_home(item: String) -> Bool {
 }
 
 /// Die in the wilds: the supplies are lost and the player wakes in the room.
+/// Death's audio: whatever event or battle music was up fades out.
+fn die_fx(model: Model) -> Effect(Msg) {
+  event_closed_fx(model)
+}
+
 fn die(model: Model) -> Model {
   let model = notify_world(model, ["the world fades"])
   Model(
@@ -1740,6 +1781,15 @@ fn restore_title(model: Model) -> Effect(Msg) {
   effect.from(fn(_) { browser.set_title(title) })
 }
 
+/// Everything an event's close lets go of: the blinking title and the music
+/// (`stopTitleBlink` + `stopEventMusic`).
+fn event_closed_fx(model: Model) -> Effect(Msg) {
+  effect.batch([
+    restore_title(model),
+    effect.from(fn(_) { audio.stop_event_music() }),
+  ])
+}
+
 /// Open a link button's page in a new tab.
 fn open_link(url: String) -> Effect(Msg) {
   effect.from(fn(_) { browser.open_url(url) })
@@ -1770,7 +1820,16 @@ fn reschedule(model: Model, delay: Float, scale: Float) -> Model {
 fn start_event(model: Model, event: events.Event) -> #(Model, Effect(Msg)) {
   case list.key_find(event.scenes, "start") {
     Error(_) -> #(model, effect.none())
-    Ok(scene) -> load_scene(model, event, "start", scene)
+    Ok(scene) -> {
+      // The event's music loops over the ducked background
+      // (`event.audio && playEventMusic`).
+      let music = case event.audio {
+        Some(track) -> effect.from(fn(_) { audio.play_event_music(track) })
+        None -> effect.none()
+      }
+      let #(model, fx) = load_scene(model, event, "start", scene)
+      #(model, effect.batch([fx, music]))
+    }
   }
 }
 
@@ -1825,7 +1884,7 @@ fn resolve_event(model: Model, id: String, roll: Float) -> #(Model, Effect(Msg))
                         effect.batch([
                           open_link(url),
                           button_fx,
-                          restore_title(model),
+                          event_closed_fx(model),
                         ]),
                       )
                     }
@@ -1938,7 +1997,7 @@ fn advance_event(
           drop_for: None,
           blinking: False,
         )
-      #(model, restore_title(model))
+      #(model, event_closed_fx(model))
     }
     events.LoadScene(next) ->
       case list.key_find(event.scenes, next) {
@@ -1951,7 +2010,7 @@ fn advance_event(
               drop_for: None,
               blinking: False,
             )
-          #(model, restore_title(model))
+          #(model, event_closed_fx(model))
         }
         Ok(scene) ->
           load_scene(
@@ -1970,7 +2029,16 @@ fn advance_event(
         |> result.lazy_or(fn() { executioner.event(key) })
       {
         Error(_) -> #(model, effect.none())
-        Ok(next_event) -> start_event(model, next_event)
+        Ok(next_event) -> {
+          let #(model, fx) = start_event(model, next_event)
+          #(
+            model,
+            effect.batch([
+              effect.from(fn(_) { audio.stop_event_music() }),
+              fx,
+            ]),
+          )
+        }
       }
   }
 }

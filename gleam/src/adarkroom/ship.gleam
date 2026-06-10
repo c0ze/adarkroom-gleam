@@ -66,51 +66,56 @@ pub fn seen_warning(s: State) -> Bool {
 /// pressed (`checkLiftOff`): fly, or linger — lingering refunds the button's
 /// cooldown.
 pub fn ready_to_leave() -> Event {
-  Event(title: "Ready to Leave?", is_available: fn(_) { True }, scenes: [
-    #(
-      "start",
-      Scene(
-        text: ["time to get out of this place. won't be coming back."],
-        notification: None,
-        reward: [],
-        combat: False,
-        blink: False,
-        on_load: None,
-        on_load_rng: None,
-        setpiece: None,
-        buttons: [
-          #(
-            "fly",
-            SceneButton(
-              text: "lift off",
-              cost: [],
-              reward: [],
-              notification: None,
-              available: None,
-              on_click: Some(fn(s) {
-                #(state.set_game(s, "spaceShip.seenWarning", 1), [])
-              }),
-              link: None,
-              effect: Some(events.LiftOff),
-              next: events.End,
+  Event(
+    audio: None,
+    title: "Ready to Leave?",
+    is_available: fn(_) { True },
+    scenes: [
+      #(
+        "start",
+        Scene(
+          text: ["time to get out of this place. won't be coming back."],
+          notification: None,
+          reward: [],
+          combat: False,
+          blink: False,
+          on_load: None,
+          on_load_rng: None,
+          setpiece: None,
+          buttons: [
+            #(
+              "fly",
+              SceneButton(
+                text: "lift off",
+                cost: [],
+                reward: [],
+                notification: None,
+                available: None,
+                on_click: Some(fn(s) {
+                  #(state.set_game(s, "spaceShip.seenWarning", 1), [])
+                }),
+                link: None,
+                effect: Some(events.LiftOff),
+                next: events.End,
+              ),
             ),
-          ),
-          #(
-            "wait",
-            SceneButton(
-              text: "linger",
-              cost: [],
-              reward: [],
-              notification: None,
-              available: None,
-              on_click: None,
-              link: None,
-              effect: Some(events.ClearCooldown("liftoff")),
-              next: events.End,
+            #(
+              "wait",
+              SceneButton(
+                text: "linger",
+                cost: [],
+                reward: [],
+                notification: None,
+                available: None,
+                on_click: None,
+                link: None,
+                effect: Some(events.ClearCooldown("liftoff")),
+                next: events.End,
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
-    ),
-  ])
+    ],
+  )
 }

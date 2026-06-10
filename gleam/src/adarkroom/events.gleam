@@ -6,6 +6,7 @@
 //// next scene), and the next-event timing. The modal UI and the tick-based
 //// scheduler are wired on top in the app layer.
 
+import adarkroom/audio
 import adarkroom/combat
 import adarkroom/craft
 import adarkroom/outside
@@ -161,6 +162,9 @@ pub type Event {
     title: String,
     is_available: fn(state.State) -> Bool,
     scenes: List(#(String, Scene)),
+    /// The event's music (`audio` → `playEventMusic`), looping over the
+    /// ducked background while it is on screen.
+    audio: Option(String),
   )
 }
 
@@ -450,34 +454,39 @@ fn mysterious_wanderer(
   deny deny: String,
   store store: String,
 ) -> Event {
-  Event(title: "The Mysterious Wanderer", is_available:, scenes: [
-    #(
-      "start",
-      Scene(
-        text: [arrival, distrust],
-        notification: option.Some("a mysterious wanderer arrives"),
-        reward: [],
-        combat: False,
-        blink: True,
-        on_load: option.None,
-        on_load_rng: option.None,
-        setpiece: option.None,
-        buttons: [
-          #(
-            store <> "100",
-            give("give 100", [#(store, 100)], Goto(store <> "100")),
-          ),
-          #(
-            store <> "500",
-            give("give 500", [#(store, 500)], Goto(store <> "500")),
-          ),
-          #("deny", choice(deny, End)),
-        ],
+  Event(
+    audio: option.Some(audio.event_mysterious_wanderer),
+    title: "The Mysterious Wanderer",
+    is_available:,
+    scenes: [
+      #(
+        "start",
+        Scene(
+          text: [arrival, distrust],
+          notification: option.Some("a mysterious wanderer arrives"),
+          reward: [],
+          combat: False,
+          blink: True,
+          on_load: option.None,
+          on_load_rng: option.None,
+          setpiece: option.None,
+          buttons: [
+            #(
+              store <> "100",
+              give("give 100", [#(store, 100)], Goto(store <> "100")),
+            ),
+            #(
+              store <> "500",
+              give("give 500", [#(store, 500)], Goto(store <> "500")),
+            ),
+            #("deny", choice(deny, End)),
+          ],
+        ),
       ),
-    ),
-    #(store <> "100", gamble(departure, "wanderer." <> store <> "100", 0.5)),
-    #(store <> "500", gamble(departure, "wanderer." <> store <> "500", 0.3)),
-  ])
+      #(store <> "100", gamble(departure, "wanderer." <> store <> "100", 0.5)),
+      #(store <> "500", gamble(departure, "wanderer." <> store <> "500", 0.3)),
+    ],
+  )
 }
 
 /// A wanderer's departure scene: on entry, a roll under `chance` quietly starts
@@ -633,6 +642,7 @@ fn go_home() -> #(String, SceneButton) {
 /// Beasts tore some traps apart; track them for a kill, or let it lie.
 fn ruined_trap() -> Event {
   Event(
+    audio: option.Some(audio.event_ruined_trap),
     title: "A Ruined Trap",
     is_available: fn(s) { craft.building_count(s, "trap") > 0 },
     scenes: [
@@ -700,6 +710,7 @@ fn ruined_trap() -> Event {
 /// A fire takes a hut, and everyone in it.
 fn hut_fire() -> Event {
   Event(
+    audio: option.Some(audio.event_hut_fire),
     title: "Fire",
     is_available: fn(s) {
       craft.building_count(s, "hut") > 0 && outside.population(s) > 50
@@ -727,6 +738,7 @@ fn hut_fire() -> Event {
 /// Sickness — spend medicine to heal, or leave them to die.
 fn sickness() -> Event {
   Event(
+    audio: option.Some(audio.event_sickness),
     title: "Sickness",
     is_available: fn(s) {
       outside.population(s) > 10
@@ -792,6 +804,7 @@ fn sickness() -> Event {
 /// Plague — costlier medicine, and a heavier toll if it spreads.
 fn plague() -> Event {
   Event(
+    audio: option.Some(audio.event_plague),
     title: "Plague",
     is_available: fn(s) {
       outside.population(s) > 50 && state.get_store(s, "medicine") > 0
@@ -862,6 +875,7 @@ fn plague() -> Event {
 /// Beasts pour from the trees; the village pays in blood for fur and meat.
 fn beast_attack() -> Event {
   Event(
+    audio: option.Some(audio.event_beast_attack),
     title: "A Beast Attack",
     is_available: fn(s) { outside.population(s) > 0 },
     scenes: [
@@ -889,6 +903,7 @@ fn beast_attack() -> Event {
 /// Once the city is cleared, the military comes for the village.
 fn military_raid() -> Event {
   Event(
+    audio: option.Some(audio.event_soldier_attack),
     title: "A Military Raid",
     is_available: fn(s) {
       outside.population(s) > 0 && state.get_game(s, "cityCleared") > 0
@@ -945,6 +960,7 @@ pub fn marketing_events() -> List(Event) {
 /// (and the dream never comes back); ignoring it leaves the door open.
 fn penrose() -> Event {
   Event(
+    audio: option.Some(audio.event_noises_inside),
     title: "Penrose",
     is_available: fn(s) { state.get_game(s, "marketing.penrose") == 0 },
     scenes: [
@@ -996,6 +1012,7 @@ fn penrose() -> Event {
 /// he knows about sneaking. Either way, the skimming ends.
 fn thief() -> Event {
   Event(
+    audio: option.Some(audio.event_thief),
     title: "The Thief",
     is_available: fn(s) { state.get_game(s, "thieves") == 1 },
     scenes: [
@@ -1156,6 +1173,7 @@ fn nomad() -> Event {
       ],
     )
   Event(
+    audio: option.Some(audio.event_nomad),
     title: "The Nomad",
     is_available: fn(s) { state.get_store(s, "fur") > 0 },
     scenes: [#("start", start)],
@@ -1166,6 +1184,7 @@ fn nomad() -> Event {
 /// nothing at all.
 fn noises_through_walls() -> Event {
   Event(
+    audio: option.Some(audio.event_noises_outside),
     title: "Noises",
     is_available: fn(s) { state.get_store(s, "wood") > 0 },
     scenes: [
@@ -1236,6 +1255,7 @@ fn noises_through_walls() -> Event {
 /// cloth (a tenth of the wood becomes a fifth as much of the material).
 fn noises_in_store_room() -> Event {
   Event(
+    audio: option.Some(audio.event_noises_inside),
     title: "Noises",
     is_available: fn(s) { state.get_store(s, "wood") > 0 },
     scenes: [
@@ -1304,6 +1324,7 @@ fn scavenge(material: String) -> fn(state.State) -> #(state.State, List(String))
 /// The Beggar — give furs and he leaves a pile of scales, teeth, or cloth.
 fn beggar() -> Event {
   Event(
+    audio: option.Some(audio.event_beggar),
     title: "The Beggar",
     is_available: fn(s) { state.get_store(s, "fur") > 0 },
     scenes: [
@@ -1371,6 +1392,7 @@ fn beggar_thanks(material: String, litter: String) -> Scene {
 /// raises a hut. Stops by only once the village has 5–19 huts.
 fn shady_builder() -> Event {
   Event(
+    audio: option.Some(audio.event_shady_builder),
     title: "The Shady Builder",
     is_available: fn(s) {
       let n = craft.building_count(s, "hut")
@@ -1456,93 +1478,104 @@ fn world_reached(s: state.State) -> Bool {
 /// The Scout — teaches scouting, for a hefty price. (Her map-selling option
 /// awaits world-map persistence.)
 fn scout() -> Event {
-  Event(title: "The Scout", is_available: world_reached, scenes: [
-    #(
-      "start",
-      Scene(
-        text: [
-          "the scout says she's been all over.",
-          "willing to talk about it, for a price.",
-        ],
-        notification: option.Some("a scout stops for the night"),
-        reward: [],
-        combat: False,
-        blink: True,
-        on_load_rng: option.None,
-        setpiece: option.None,
-        on_load: option.None,
-        buttons: [
-          #(
-            "learn",
-            learn(
-              "learn scouting",
-              [#("fur", 1000), #("scales", 50), #("teeth", 20)],
-              "scout",
+  Event(
+    audio: option.Some(audio.event_scout),
+    title: "The Scout",
+    is_available: world_reached,
+    scenes: [
+      #(
+        "start",
+        Scene(
+          text: [
+            "the scout says she's been all over.",
+            "willing to talk about it, for a price.",
+          ],
+          notification: option.Some("a scout stops for the night"),
+          reward: [],
+          combat: False,
+          blink: True,
+          on_load_rng: option.None,
+          setpiece: option.None,
+          on_load: option.None,
+          buttons: [
+            #(
+              "learn",
+              learn(
+                "learn scouting",
+                [#("fur", 1000), #("scales", 50), #("teeth", 20)],
+                "scout",
+              ),
             ),
-          ),
-          #("leave", choice("say goodbye", End)),
-        ],
+            #("leave", choice("say goodbye", End)),
+          ],
+        ),
       ),
-    ),
-  ])
+    ],
+  )
 }
 
 /// The Master — lodge him for the night and he teaches one of three combat
 /// perks.
 fn master() -> Event {
-  Event(title: "The Master", is_available: world_reached, scenes: [
-    #(
-      "start",
-      Scene(
-        text: [
-          "an old wanderer arrives.",
-          "he smiles warmly and asks for lodgings for the night.",
-        ],
-        notification: option.Some("an old wanderer arrives"),
-        reward: [],
-        combat: False,
-        blink: True,
-        on_load_rng: option.None,
-        setpiece: option.None,
-        on_load: option.None,
-        buttons: [
-          #(
-            "agree",
-            give(
+  Event(
+    audio: option.Some(audio.event_wandering_master),
+    title: "The Master",
+    is_available: world_reached,
+    scenes: [
+      #(
+        "start",
+        Scene(
+          text: [
+            "an old wanderer arrives.",
+            "he smiles warmly and asks for lodgings for the night.",
+          ],
+          notification: option.Some("an old wanderer arrives"),
+          reward: [],
+          combat: False,
+          blink: True,
+          on_load_rng: option.None,
+          setpiece: option.None,
+          on_load: option.None,
+          buttons: [
+            #(
               "agree",
-              [#("cured meat", 100), #("fur", 100), #("torch", 1)],
-              Goto("agree"),
+              give(
+                "agree",
+                [#("cured meat", 100), #("fur", 100), #("torch", 1)],
+                Goto("agree"),
+              ),
             ),
-          ),
-          #("deny", choice("turn him away", End)),
-        ],
+            #("deny", choice("turn him away", End)),
+          ],
+        ),
       ),
-    ),
-    #(
-      "agree",
-      Scene(
-        text: ["in exchange, the wanderer offers his wisdom."],
-        notification: option.None,
-        reward: [],
-        combat: False,
-        blink: False,
-        on_load_rng: option.None,
-        setpiece: option.None,
-        on_load: option.None,
-        buttons: [
-          #("evasion", learn("evasion", [], "evasive")),
-          #("precision", learn("precision", [], "precise")),
-          #("force", learn("force", [], "barbarian")),
-          #("nothing", choice("nothing", End)),
-        ],
+      #(
+        "agree",
+        Scene(
+          text: ["in exchange, the wanderer offers his wisdom."],
+          notification: option.None,
+          reward: [],
+          combat: False,
+          blink: False,
+          on_load_rng: option.None,
+          setpiece: option.None,
+          on_load: option.None,
+          buttons: [
+            #("evasion", learn("evasion", [], "evasive")),
+            #("precision", learn("precision", [], "precise")),
+            #("force", learn("force", [], "barbarian")),
+            #("nothing", choice("nothing", End)),
+          ],
+        ),
       ),
-    ),
-  ])
+    ],
+  )
 }
 
 /// The Sick Man — spare a medicine and he may leave a reward.
 fn sick_man() -> Event {
   Event(
+    audio: option.Some(audio.event_sick_man),
     title: "The Sick Man",
     is_available: fn(s) { state.get_store(s, "medicine") > 0 },
     scenes: [

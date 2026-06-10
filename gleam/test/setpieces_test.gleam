@@ -247,3 +247,10 @@ pub fn the_non_combat_setpieces_carry_no_enemy_test() {
     })
   })
 }
+
+pub fn every_landmark_carries_its_theme_test() {
+  let assert Ok(cache) = setpieces.setpiece("cache")
+  cache.audio |> should.equal(Some("audio/landmark-destroyed-village.flac"))
+  let assert Ok(town) = setpieces.setpiece("town")
+  town.audio |> should.equal(Some("audio/landmark-town.flac"))
+}
