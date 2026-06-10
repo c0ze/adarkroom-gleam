@@ -1040,3 +1040,19 @@ pub fn cool_check_summons_thieves_on_swollen_stores_test() {
   |> state.get_game("thieves")
   |> should.equal(1)
 }
+
+pub fn cool_check_delivers_a_due_delayed_return_test() {
+  // A wanderer countdown at 1 fires on the next heartbeat: the cart returns.
+  let m =
+    model.Model(
+      ..model.init(),
+      state: state.set_game(state.new(), "delay.wanderer.wood100", 1),
+    )
+  let after = run(m, model.CoolCheck(at: 1000))
+  state.get_store(after.state, "wood") |> should.equal(300)
+  notifications.messages(after.notifications)
+  |> list.contains(
+    "the mysterious wanderer returns, cart piled high with wood.",
+  )
+  |> should.be_true
+}
