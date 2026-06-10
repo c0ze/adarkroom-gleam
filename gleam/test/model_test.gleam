@@ -1155,17 +1155,22 @@ pub fn riding_the_elevator_reaches_the_wing_test() {
 }
 
 pub fn an_elevator_to_nowhere_stays_put_test() {
-  // The martial wing isn't ported yet: the JS switchEvent guards a missing
-  // event with a bare return, so the antechamber stays on screen.
+  // The medical wing isn't ported yet: the JS switchEvent guards a missing
+  // event with a bare return, so the antechamber stays on screen — still on
+  // its elevator-bank scene, not the same-titled intro.
   let assert Ok(hub) = executioner.event("executioner-antechamber")
   let m =
     model.Model(
       ..battleship_model(),
       active_event: option.Some(model.ActiveEvent(hub, "start")),
     )
-  let after = run(m, model.ResolveEvent("martial", 0.5))
+  let after = run(m, model.ResolveEvent("medical", 0.5))
   let assert option.Some(active) = after.active_event
-  active.event.title |> should.equal("A Ravaged Battleship")
+  active.scene |> should.equal("start")
+  // The command-deck button only exists on the antechamber's elevator bank,
+  // distinguishing it from the same-titled intro.
+  let assert Ok(start) = list.key_find(active.event.scenes, "start")
+  let assert Ok(_) = list.key_find(start.buttons, "command")
 }
 
 pub fn the_regenerative_machine_reknits_to_full_test() {

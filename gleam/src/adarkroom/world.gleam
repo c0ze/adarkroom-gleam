@@ -754,6 +754,29 @@ fn in_bounds(p: #(Int, Int)) -> Bool {
   p.0 >= 0 && p.0 <= radius * 2 && p.1 >= 0 && p.1 <= radius * 2
 }
 
+/// A scavenged surface map (`World.applyMap`): reveal the radius-5 diamond
+/// around a random still-unseen spot. The JS rejection-samples coordinates
+/// until it lands on an unseen one — a uniform pick over the unseen positions
+/// is the same distribution in a single roll. With nothing left unseen,
+/// nothing to reveal.
+pub fn apply_map(exp: Expedition, roll: Float) -> Expedition {
+  let unseen =
+    list.flat_map(seq(0, radius * 2 + 1), fn(x) {
+      list.filter_map(seq(0, radius * 2 + 1), fn(y) {
+        case set.contains(exp.seen, #(x, y)) {
+          True -> Error(Nil)
+          False -> Ok(#(x, y))
+        }
+      })
+    })
+  let n = list.length(unseen)
+  let idx = int.min(float.truncate(roll *. int.to_float(n)), n - 1)
+  case unseen |> list.drop(idx) |> list.first {
+    Ok(pos) -> Expedition(..exp, seen: uncover(exp.seen, pos, 5))
+    Error(_) -> exp
+  }
+}
+
 /// Take a step. At the edge of the world the step is refused; otherwise the
 /// player moves, the newly-reached ground is lit, and a move's supplies are
 /// spent (which may be fatal).

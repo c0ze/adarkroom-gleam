@@ -138,3 +138,50 @@ pub fn the_wing_ends_at_the_elevators_test() {
   let #(after, _) = on_load(state.new())
   state.get_game(after, "world.engineering") |> should.equal(1)
 }
+
+// --- the martial wing -----------------------------------------------------------
+
+pub fn the_sealed_door_takes_a_grenade_test() {
+  let assert Ok(explode) =
+    list.key_find(wing("executioner-martial", "1").buttons, "explode")
+  explode.cost |> should.equal([#("grenade", 1)])
+  explode.next |> should.equal(events.Branch([#(1.0, "2-1")]))
+}
+
+pub fn the_planning_room_offers_surface_maps_test() {
+  let assert Ok(scavenge) =
+    list.key_find(wing("executioner-martial", "7-1").buttons, "scavenge")
+  scavenge.effect |> should.equal(Some(events.ApplyMap(3)))
+  // And the noise draws a guard.
+  let guard = wing("executioner-martial", "8-1a")
+  guard.notification
+  |> should.equal(Some("drew some attention with all that noise."))
+}
+
+pub fn the_quadruped_keeps_its_one_sided_loot_table_test() {
+  // The JS table has two 'alien alloy' keys; the later wins the object
+  // literal, leaving only alloy 2-4 at 0.2 — preserved verbatim.
+  let s = wing("executioner-martial", "3-2a")
+  let assert Some(extra) = s.setpiece
+  let assert Some(foe) = extra.enemy
+  foe.name |> should.equal("mechanical quadruped")
+  foe.loot |> should.equal([combat.LootEntry("alien alloy", 2, 4, 0.2)])
+}
+
+pub fn the_sparring_automaton_energises_test() {
+  let s = wing("executioner-martial", "12")
+  let assert Some(extra) = s.setpiece
+  extra.specials
+  |> should.equal([combat.SetStatusEvery(13.0, combat.Energised)])
+  let assert Some(foe) = extra.enemy
+  foe.health |> should.equal(250)
+  // No retreat from the duel: the win offers only the way on.
+  list.key_find(s.buttons, "leave") |> should.equal(Error(Nil))
+}
+
+pub fn the_martial_wing_ends_at_the_flag_test() {
+  let s = wing("executioner-martial", "13")
+  let assert Some(on_load) = s.on_load
+  let #(after, _) = on_load(state.new())
+  state.get_game(after, "world.martial") |> should.equal(1)
+}
