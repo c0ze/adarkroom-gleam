@@ -293,6 +293,16 @@ pub const meditate_duration_ms = 5000
 /// `DOT_TICK` — how often armed poison drips.
 pub const dot_tick_ms = 1000
 
+/// A boss's recurring special (`scene.specials`): every `delay` seconds it
+/// takes a status.
+pub type Special {
+  /// Always the same status (the wings' bosses).
+  SetStatusEvery(delay: Float, status: Status)
+  /// One of `options` at random, never the same twice running (the command
+  /// deck's rotation; `Events._lastSpecial`).
+  RotateStatusEvery(delay: Float, options: List(Status))
+}
+
 /// A fight in progress.
 pub type CombatState {
   CombatState(
@@ -310,6 +320,10 @@ pub type CombatState {
     player_dot: Int,
     /// `atHealth` triggers: crossing a threshold from above takes the status.
     at_health: List(#(Int, Status)),
+    /// The enemy's recurring specials; the model runs their timers.
+    specials: List(Special),
+    /// The rotation's previous pick, never repeated (`Events._lastSpecial`).
+    last_special: Status,
   )
 }
 
@@ -330,7 +344,18 @@ pub fn begin_combat(
     meditate_bank: 0,
     player_dot: 0,
     at_health: [],
+    specials: [],
+    last_special: NoStatus,
   )
+}
+
+/// Seconds between enemy attacks right now: an enraged enemy swings every half
+/// second (`startEnemyAttacks(0.5)`).
+pub fn effective_attack_delay(cs: CombatState) -> Float {
+  case cs.enemy_status {
+    Enraged -> 0.5
+    _ -> cs.enemy.attack_delay
+  }
 }
 
 /// Resolve a player attack on the enemy. A stun makes it skip its next turn

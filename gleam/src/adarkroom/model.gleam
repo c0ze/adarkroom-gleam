@@ -111,6 +111,14 @@ pub type Msg {
   SetpieceLoot(rolls: List(Float))
   /// Run a scene's random `onLoad` (a disaster's toll) with the supplied roll.
   SceneRng(roll: Float)
+  /// Timer: a boss special comes due (by index in the fight's specials).
+  SpecialFire(index: Int)
+  /// Apply a rotation special's pick (the roll chooses among the options).
+  ResolveSpecial(index: Int, roll: Float)
+  /// Timer: a timed enemy status (enrage, meditation) runs out.
+  StatusExpire
+  /// Timer: armed poison drips on the player.
+  DotTick
 }
 
 pub type Model {
@@ -431,9 +439,16 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
     EnemyTurn -> #(model, roll_enemy_turn())
 
     ResolveEnemyTurn(roll: roll) -> {
+      let dot_before = current_dot(model)
       let model = resolve_enemy_turn(model, roll)
+      // A venomous blow that just landed arms the poison drip (one chain; a
+      // later blow only changes its strength).
+      let dot_armed = case dot_before == 0 && current_dot(model) > 0 {
+        True -> delayed(combat.dot_tick_ms, DotTick)
+        False -> effect.none()
+      }
       // The enemy keeps attacking on its delay until the fight ends.
-      #(model, enemy_timer(model.combat))
+      #(model, effect.batch([enemy_timer(model.combat), dot_armed]))
     }
 
     CollectLoot(rolls: rolls) -> #(collect_loot(model, rolls), effect.none())
@@ -446,6 +461,15 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
     )
 
     SceneRng(roll: roll) -> #(run_scene_rng(model, roll), effect.none())
+
+    SpecialFire(index: index) -> fire_special(model, index)
+
+    ResolveSpecial(index: index, roll: roll) ->
+      resolve_special(model, index, roll)
+
+    StatusExpire -> #(set_enemy_status(model, combat.NoStatus), effect.none())
+
+    DotTick -> dot_tick(model)
   }
 }
 
@@ -496,15 +520,29 @@ fn resolve_strike(
   roll: Float,
 ) -> #(Model, Effect(Msg)) {
   case model.combat, combat.get_weapon(weapon_name) {
-    Some(cs), Ok(weapon) -> {
-      let cs = combat.player_strike(cs, weapon, model.state, roll)
+    Some(before), Ok(weapon) -> {
+      let cs = combat.player_strike(before, weapon, model.state, roll)
       let model = Model(..model, combat: Some(cs))
+      // An atHealth trigger may have taken hold mid-blow; timed statuses
+      // (enrage, meditation) need their expiry clock started.
+      let expiry = case cs.enemy_status != before.enemy_status {
+        True -> status_expiry(cs.enemy_status)
+        False -> effect.none()
+      }
       case cs.won {
-        True -> #(model, roll_loot(cs.enemy))
-        False -> #(model, effect.none())
+        True -> #(model, effect.batch([roll_loot(cs.enemy), expiry]))
+        False -> #(model, expiry)
       }
     }
     _, _ -> #(model, effect.none())
+  }
+}
+
+/// The poison currently dripping on the player, if a fight is on.
+fn current_dot(model: Model) -> Int {
+  case model.combat {
+    Some(cs) -> cs.player_dot
+    None -> 0
   }
 }
 
@@ -631,8 +669,133 @@ fn roll_enemy_turn() -> Effect(Msg) {
 /// Re-armed after each enemy turn, so the timer naturally stops on win or death.
 fn enemy_timer(combat: Option(combat.CombatState)) -> Effect(Msg) {
   case combat {
-    Some(cs) -> delayed(float.round(cs.enemy.attack_delay *. 1000.0), EnemyTurn)
+    Some(cs) ->
+      delayed(
+        float.round(combat.effective_attack_delay(cs) *. 1000.0),
+        EnemyTurn,
+      )
     None -> effect.none()
+  }
+}
+
+// --- boss specials and statuses ----------------------------------------------
+
+/// A boss special comes due: a fixed one takes hold and re-arms; a rotation
+/// rolls its pick first. Quiet once the fight is over.
+fn fire_special(model: Model, index: Int) -> #(Model, Effect(Msg)) {
+  case active_special(model, index) {
+    Error(_) -> #(model, effect.none())
+    Ok(combat.SetStatusEvery(delay: delay, status: status)) -> #(
+      set_enemy_status(model, status),
+      effect.batch([status_expiry(status), special_timer(index, delay)]),
+    )
+    Ok(combat.RotateStatusEvery(..)) -> #(
+      model,
+      effect.from(fn(dispatch) { dispatch(ResolveSpecial(index, rng.random())) }),
+    )
+  }
+}
+
+/// Apply a rotation's pick: one of its options at random, never the previous
+/// one again (`Events._lastSpecial`).
+fn resolve_special(
+  model: Model,
+  index: Int,
+  roll: Float,
+) -> #(Model, Effect(Msg)) {
+  case active_special(model, index), model.combat {
+    Ok(combat.RotateStatusEvery(delay: delay, options: options)), Some(cs) -> {
+      let possible = list.filter(options, fn(o) { o != cs.last_special })
+      case events.pick(possible, roll) {
+        Error(_) -> #(model, special_timer(index, delay))
+        Ok(status) -> {
+          let cs =
+            combat.CombatState(..cs, enemy_status: status, last_special: status)
+          #(
+            Model(..model, combat: Some(cs)),
+            effect.batch([status_expiry(status), special_timer(index, delay)]),
+          )
+        }
+      }
+    }
+    _, _ -> #(model, effect.none())
+  }
+}
+
+/// The indexed special of the live, still-unwon fight.
+fn active_special(model: Model, index: Int) -> Result(combat.Special, Nil) {
+  case model.combat {
+    Some(cs) ->
+      case cs.won {
+        True -> Error(Nil)
+        False -> cs.specials |> list.drop(index) |> list.first
+      }
+    None -> Error(Nil)
+  }
+}
+
+/// Re-arm a special's timer.
+fn special_timer(index: Int, delay: Float) -> Effect(Msg) {
+  delayed(float.round(delay *. 1000.0), SpecialFire(index))
+}
+
+/// Arm a fight's boss-special timers, one per special.
+fn specials_timers(specials: List(combat.Special)) -> Effect(Msg) {
+  specials
+  |> list.index_map(fn(special, index) {
+    case special {
+      combat.SetStatusEvery(delay: delay, ..)
+      | combat.RotateStatusEvery(delay: delay, ..) ->
+        special_timer(index, delay)
+    }
+  })
+  |> effect.batch
+}
+
+/// Put a status on the live enemy.
+fn set_enemy_status(model: Model, status: combat.Status) -> Model {
+  case model.combat {
+    Some(cs) ->
+      Model(
+        ..model,
+        combat: Some(combat.CombatState(..cs, enemy_status: status)),
+      )
+    None -> model
+  }
+}
+
+/// Enrage and meditation run out on their clocks (the JS setTimeout sets
+/// 'none' unconditionally); shields and the one-hit buffs spend themselves.
+fn status_expiry(status: combat.Status) -> Effect(Msg) {
+  case status {
+    combat.Enraged -> delayed(combat.enrage_duration_ms, StatusExpire)
+    combat.Meditation -> delayed(combat.meditate_duration_ms, StatusExpire)
+    _ -> effect.none()
+  }
+}
+
+/// Armed poison drips on the player each tick for as long as the fight lasts
+/// (the JS interval is only cleared by the fight ending).
+fn dot_tick(model: Model) -> #(Model, Effect(Msg)) {
+  case model.combat {
+    Some(cs) ->
+      case cs.player_dot > 0 {
+        True -> {
+          let hp = int.max(0, cs.player_hp - cs.player_dot)
+          case hp <= 0 {
+            True -> #(die(model), effect.none())
+            False -> #(
+              Model(
+                ..model,
+                combat: Some(combat.CombatState(..cs, player_hp: hp)),
+              ),
+              delayed(combat.dot_tick_ms, DotTick),
+            )
+          }
+        }
+        False -> #(model, effect.none())
+      }
+    None -> #(model, effect.none())
   }
 }
 
@@ -980,8 +1143,21 @@ fn load_scene(
           exp.vitals.health,
           world.max_health(model.state),
         )
+      // A boss scene's specials and atHealth triggers ride on the fight.
+      let cs = case scene.setpiece {
+        Some(extra) ->
+          combat.CombatState(
+            ..cs,
+            specials: extra.specials,
+            at_health: extra.at_health,
+          )
+        None -> cs
+      }
       let model = Model(..model, combat: Some(cs))
-      #(model, enemy_timer(model.combat))
+      #(
+        model,
+        effect.batch([enemy_timer(model.combat), specials_timers(cs.specials)]),
+      )
     }
     _, _ -> #(
       model,
