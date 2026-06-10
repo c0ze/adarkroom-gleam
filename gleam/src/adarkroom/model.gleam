@@ -84,8 +84,9 @@ pub type Msg {
   DecreaseSupply(item: String, by: Int)
   /// Set off into the world; rolls a map seed, then dispatches `Embarked`.
   Embark
-  /// Arrive in the world on a freshly-seeded map.
-  Embarked(seed: Int)
+  /// Arrive in the world on a freshly-seeded map (`cache`: whether prestige
+  /// data exists, placing the destroyed village).
+  Embarked(seed: Int, cache: Bool)
   /// Step through the world.
   MoveNorth
   MoveSouth
@@ -460,7 +461,7 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
         _, _ -> #(model, effect.none())
       }
 
-    Embarked(seed: seed) ->
+    Embarked(seed: seed, cache: cache) ->
       case model.location, model.expedition {
         Path, None -> {
           // Take the packed supplies out of the village and set out. Reaching
@@ -471,7 +472,11 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
               state.add_store(s, item.0, -item.1)
             })
             |> state.set_feature("location.world", True)
-          let exp = world.begin(world.generate_map(rng.seed(seed)), stocked)
+          let map = case cache {
+            True -> world.generate_prestige_map(rng.seed(seed))
+            False -> world.generate_map(rng.seed(seed))
+          }
+          let exp = world.begin(map, stocked)
           #(
             Model(
               ..model,
@@ -1393,7 +1398,11 @@ fn die(model: Model) -> Model {
 /// An effect that rolls a map seed and dispatches `Embarked`.
 fn roll_seed() -> Effect(Msg) {
   effect.from(fn(dispatch) {
-    dispatch(Embarked(float.round(rng.random() *. 1_000_000.0)))
+    dispatch(Embarked(
+      seed: float.round(rng.random() *. 1_000_000.0),
+      // Prestige data places the destroyed village on this world.
+      cache: option.is_some(scoring.load()),
+    ))
   })
 }
 
@@ -1749,6 +1758,18 @@ fn apply_world_effect(
           ),
           [],
         )
+        events.CollectCache -> {
+          // The previous generation's supplies, claimed — read and emptied
+          // synchronously, exactly as collectStores mutates $SM in its onLoad.
+          let s =
+            list.fold(scoring.collect(), model.state, fn(acc, item) {
+              state.add_store(acc, item.0, item.1)
+            })
+          #(
+            Model(..model, expedition: Some(world.mark_visited(exp)), state: s),
+            [],
+          )
+        }
         events.NoWorldEffect -> #(model, [])
       }
     _, _ -> #(model, [])

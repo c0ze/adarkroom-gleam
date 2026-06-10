@@ -400,7 +400,7 @@ pub fn embarking_drops_into_the_world_with_supplies_taken_test() {
         |> state.set_store("cured meat", 5)
         |> state.set_outfit("cured meat", 3),
     )
-  let after = run(m, model.Embarked(seed: 1))
+  let after = run(m, model.Embarked(seed: 1, cache: False))
   after.location |> should.equal(model.World)
   // The 3 packed meat leave the village stores.
   state.get_store(after.state, "cured meat") |> should.equal(2)
@@ -415,7 +415,7 @@ pub fn moving_keeps_exploring_until_home_or_dead_test() {
       location: model.Path,
       state: state.set_outfit(state.new(), "cured meat", 5),
     )
-  let embarked = run(m, model.Embarked(seed: 1))
+  let embarked = run(m, model.Embarked(seed: 1, cache: False))
   let moved = run(embarked, model.MoveEast)
   moved.location |> should.equal(model.World)
   option.is_some(moved.expedition) |> should.equal(True)
@@ -429,7 +429,7 @@ pub fn reaching_the_village_ends_the_expedition_test() {
       location: model.Path,
       state: state.set_outfit(state.new(), "cured meat", 5),
     )
-  let embarked = run(m, model.Embarked(seed: 1))
+  let embarked = run(m, model.Embarked(seed: 1, cache: False))
   // Step out and back onto the village.
   let home = run(run(embarked, model.MoveEast), model.MoveWest)
   home.location |> should.equal(model.Room)
@@ -544,7 +544,7 @@ pub fn embarking_marks_the_world_as_reached_test() {
       location: model.Path,
       state: base.state |> state.set_outfit("cured meat", 5),
     )
-  let after = run(m, model.Embarked(42))
+  let after = run(m, model.Embarked(seed: 42, cache: False))
   state.has_feature(after.state, "location.world") |> should.equal(True)
 }
 

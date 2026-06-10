@@ -79,13 +79,24 @@ fn terrain_prob(t: Tile) -> Float {
 /// Generate a full overworld for `seed`: terrain, then every landmark scattered
 /// across it at its allotted distance band.
 pub fn generate_map(seed: Seed) -> Map {
+  generate_map_seeded(seed).0
+}
+
+fn generate_map_seeded(seed: Seed) -> #(Map, Seed) {
   let #(terrain, after_terrain) = generate_terrain(seed)
-  let #(map, _) =
-    list.fold(landmarks(), #(terrain, after_terrain), fn(acc, landmark) {
-      let #(tile, count, min_radius, max_radius) = landmark
-      place_n(acc.0, tile, count, min_radius, max_radius, acc.1)
-    })
-  map
+  list.fold(landmarks(), #(terrain, after_terrain), fn(acc, landmark) {
+    let #(tile, count, min_radius, max_radius) = landmark
+    place_n(acc.0, tile, count, min_radius, max_radius, acc.1)
+  })
+}
+
+/// The world with a prestige cache (`World.LANDMARKS[CACHE]`): the destroyed
+/// village holding the previous game's supplies. The original registers the
+/// cache landmark only when prestige data exists, and registers it last — so
+/// the rest of the map stays identical for a seed.
+pub fn generate_prestige_map(seed: Seed) -> Map {
+  let #(map, seed) = generate_map_seeded(seed)
+  place_landmark(map, Cache, 10, radius * 3 / 2, seed).0
 }
 
 /// Each landmark as `(tile, count, min_radius, max_radius)`, in placement order.

@@ -104,6 +104,9 @@ pub type WorldEffect {
   /// road it home and record that its antechamber now opens to elevators. The
   /// tile is not marked visited — it can be re-entered.
   FoundExecutioner
+  /// The destroyed village's shack (`markVisited` + `Prestige.collectStores`):
+  /// the previous generation's supplies, claimed.
+  CollectCache
 }
 
 /// The extra machinery a setpiece scene carries on top of a plain event scene:
