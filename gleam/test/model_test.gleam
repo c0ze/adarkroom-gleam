@@ -1155,22 +1155,45 @@ pub fn riding_the_elevator_reaches_the_wing_test() {
 }
 
 pub fn an_elevator_to_nowhere_stays_put_test() {
-  // The command deck isn't ported yet: the JS switchEvent guards a missing
-  // event with a bare return, so the antechamber stays on screen — still on
-  // its elevator-bank scene, not the same-titled intro.
-  let assert Ok(hub) = executioner.event("executioner-antechamber")
+  // The whole chain is ported now, so probe the runtime guard with a stub: a
+  // GotoEvent to an unknown key stays put (the JS switchEvent's bare return).
+  let ride =
+    events.SceneButton(
+      text: "descend",
+      cost: [],
+      reward: [],
+      notification: option.None,
+      available: option.None,
+      on_click: option.None,
+      link: option.None,
+      effect: option.None,
+      next: events.GotoEvent("no-such-event"),
+    )
+  let hub =
+    events.Event(title: "hub", is_available: fn(_) { True }, scenes: [
+      #(
+        "start",
+        events.Scene(
+          text: ["a dark stairwell"],
+          notification: option.None,
+          reward: [],
+          combat: False,
+          on_load: option.None,
+          on_load_rng: option.None,
+          setpiece: option.None,
+          buttons: [#("down", ride)],
+        ),
+      ),
+    ])
   let m =
     model.Model(
       ..battleship_model(),
       active_event: option.Some(model.ActiveEvent(hub, "start")),
     )
-  let after = run(m, model.ResolveEvent("command", 0.5))
+  let after = run(m, model.ResolveEvent("down", 0.5))
   let assert option.Some(active) = after.active_event
+  active.event.title |> should.equal("hub")
   active.scene |> should.equal("start")
-  // The command-deck button only exists on the antechamber's elevator bank,
-  // distinguishing it from the same-titled intro.
-  let assert Ok(start) = list.key_find(active.event.scenes, "start")
-  let assert Ok(_) = list.key_find(start.buttons, "command")
 }
 
 pub fn the_regenerative_machine_reknits_to_full_test() {

@@ -222,3 +222,36 @@ pub fn the_medical_wing_ends_at_the_flag_test() {
   let #(after, _) = on_load(state.new())
   state.get_game(after, "world.medical") |> should.equal(1)
 }
+
+// --- the command deck -----------------------------------------------------------
+
+pub fn the_immortal_wanderer_cycles_its_tricks_test() {
+  let s = wing("executioner-command", "6")
+  s.notification |> should.equal(Some("the immortal wanderer attacks."))
+  let assert Some(extra) = s.setpiece
+  extra.specials
+  |> should.equal([
+    combat.RotateStatusEvery(7.0, [
+      combat.Shield,
+      combat.Enraged,
+      combat.Meditation,
+    ]),
+  ])
+  let assert Some(foe) = extra.enemy
+  foe.chara |> should.equal("@")
+  foe.health |> should.equal(500)
+  foe.loot |> should.equal([combat.LootEntry("fleet beacon", 1, 1, 1.0)])
+  // It can't die quietly: no leave from the duel.
+  list.key_find(s.buttons, "leave") |> should.equal(Error(Nil))
+}
+
+pub fn there_is_no_turning_back_from_the_figure_test() {
+  let s = wing("executioner-command", "5")
+  s.buttons |> list.map(fn(b) { b.0 }) |> should.equal(["observe"])
+}
+
+pub fn the_chain_ends_in_an_outpost_test() {
+  let s = wing("executioner-command", "7")
+  let assert Some(extra) = s.setpiece
+  extra.world_effect |> should.equal(events.ClearDungeon)
+}

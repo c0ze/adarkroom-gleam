@@ -17,8 +17,7 @@ import adarkroom/events.{
 import adarkroom/state
 import gleam/option.{None, Some}
 
-/// The event for a registry key (`Events.Executioner[...]`). The command deck
-/// arrives in the last increment.
+/// The event for a registry key (`Events.Executioner[...]`).
 pub fn event(key: String) -> Result(Event, Nil) {
   case key {
     "executioner-intro" -> Ok(intro())
@@ -26,8 +25,114 @@ pub fn event(key: String) -> Result(Event, Nil) {
     "executioner-engineering" -> Ok(engineering())
     "executioner-martial" -> Ok(martial())
     "executioner-medical" -> Ok(medical())
+    "executioner-command" -> Ok(command())
     _ -> Error(Nil)
   }
+}
+
+/// The Command Deck: past the officer's lounge waits the immortal wanderer —
+/// not quite flesh, not quite metal, cycling shield, fury and trance behind
+/// the crystal in its chest. Felling it yields the fleet beacon and clears
+/// the battleship into an outpost: the chain's end.
+fn command() -> Event {
+  Event(title: "Command Deck", is_available: fn(_) { True }, scenes: [
+    #(
+      "start",
+      Scene(
+        ..story([
+          "the path to the command bridge is wide, walls adorned with decorative shields.",
+          "fighting hadn't reached here, it seems.",
+        ]),
+        buttons: continue_or_leave("1"),
+      ),
+    ),
+    #("1", guard_post("2")),
+    #(
+      "2",
+      Scene(
+        ..story([
+          "detour through the officer's lounge.",
+          "might be something useful here.",
+        ]),
+        buttons: [
+          #("continue", branch("continue", [#(0.5, "3a"), #(1.0, "3b")])),
+          #("leave", leave("leave")),
+        ],
+      ),
+    ),
+    #(
+      "3a",
+      passage(
+        ["small weapons cache in a cabinet.", "lucky."],
+        [
+          combat.LootEntry("energy cell", 3, 10, 1.0),
+          combat.LootEntry("grenade", 1, 5, 0.8),
+        ],
+        "4",
+      ),
+    ),
+    #(
+      "3b",
+      passage(
+        ["found some medical supplies in a discarded bag."],
+        [combat.LootEntry("hypo", 1, 3, 1.0)],
+        "4",
+      ),
+    ),
+    #(
+      "4",
+      Scene(
+        ..story([
+          "the command deck is empty, save for a squat figure sitting motionless in the centre of the room.",
+          "in a flash, the figure is standing.",
+        ]),
+        buttons: [
+          #("approach", to("approach", "5")),
+          #("leave", leave("leave")),
+        ],
+      ),
+    ),
+    #(
+      "5",
+      Scene(
+        ..story([
+          "wanderer form, but not quite flesh. not quite metal either. a crystal set into its chest pulses with light.",
+          "it says it saw the rebellion coming. said it made arrangements.",
+          "says it can't die.",
+        ]),
+        buttons: [#("observe", to("observe", "6"))],
+      ),
+    ),
+    #(
+      "6",
+      boss_fight(
+        "the immortal wanderer attacks.",
+        enemy("immortal wanderer", "@", 500, 12, 0.8, 2.0, False, [
+          combat.LootEntry("fleet beacon", 1, 1, 1.0),
+        ]),
+        [
+          combat.RotateStatusEvery(7.0, [
+            combat.Shield,
+            combat.Enraged,
+            combat.Meditation,
+          ]),
+        ],
+        [#("continue", to("continue", "7"))],
+      ),
+    ),
+    #(
+      "7",
+      Scene(
+        ..story([
+          "the crystal pulses brightly, then goes dark. the assailant shimmers as its shape becomes less defined.",
+          "then it is gone.",
+          "time to get out of here.",
+        ]),
+        setpiece: extra([], events.ClearDungeon),
+        buttons: [#("leave", leave("leave"))],
+      ),
+    ),
+  ])
 }
 
 /// The Medical Wing: a deck spared the fighting, stalked by broken medical
