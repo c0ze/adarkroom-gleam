@@ -60,9 +60,12 @@ fn init(_flags) -> #(Model, Effect(Msg)) {
     Some(saved) -> model.Model(..model.init(), state: saved)
     None -> model.init()
   }
+  // The room's music starts with the app (sounding once the browser allows).
+  let #(loaded, music) = model.startup_music(loaded)
   #(
     loaded,
     effect.batch([
+      music,
       interval(tick_interval_ms, Tick),
       time_interval(cool_check_ms, CoolCheck),
       interval(temp_interval_ms, AdjustTemp),

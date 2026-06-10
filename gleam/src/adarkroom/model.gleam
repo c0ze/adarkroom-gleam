@@ -3,6 +3,7 @@
 //// that drive updates. `update` returns the new model together with any
 //// effects (e.g. one-shot timers for the builder's timed progression).
 
+import adarkroom/audio
 import adarkroom/browser
 import adarkroom/clock
 import adarkroom/combat
@@ -230,6 +231,9 @@ pub type Model {
     /// Whether the page title is blinking for an event (`blinkTitle`).
     /// Runtime-only.
     blinking: Bool,
+    /// The background track currently looping, so location and fire changes
+    /// only restart the music when it actually changes. Runtime-only.
+    playing: String,
     /// Whether the document key listeners are armed (once per session).
     keys_armed: Bool,
   )
@@ -270,6 +274,7 @@ pub fn init() -> Model {
     loot: [],
     drop_for: None,
     blinking: False,
+    playing: "",
     keys_armed: False,
   )
 }
@@ -339,6 +344,8 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
           )
         _ -> navigated
       }
+      // Arrival picks up the location's music.
+      let #(arrived, music) = tune_music(arrived)
       // Lift-off proper: the ascent begins with its clocks and controls.
       case location {
         Space -> {
@@ -354,6 +361,7 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
           #(
             flying,
             effect.batch([
+              music,
               keys,
               flight_frame_timer(run),
               delayed(1000, ClimbTick(run)),
@@ -362,12 +370,14 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
             ]),
           )
         }
-        _ -> #(arrived, effect.none())
+        _ -> #(arrived, music)
       }
     }
 
-    LightFire -> fire_action(model, room.light_fire(model.state))
-    StokeFire -> fire_action(model, room.stoke_fire(model.state))
+    LightFire ->
+      room_music_after(fire_action(model, room.light_fire(model.state)))
+    StokeFire ->
+      room_music_after(fire_action(model, room.stoke_fire(model.state)))
 
     CoolCheck(at: now) -> {
       let cooled =
@@ -379,7 +389,10 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
       // original runs it on every stores redraw).
       let checked =
         Model(..delivered, state: outside.maybe_start_thieves(delivered.state))
-      #(checked, event_schedule_effect(checked))
+      // A fire that cooled retunes the room (`setMusic`, only while in it).
+      let #(checked, music) =
+        room_music_after(#(checked, event_schedule_effect(checked)))
+      #(checked, music)
     }
     AdjustTemp -> #(
       apply_room(model, room.adjust_temp(model.state)),
@@ -644,10 +657,18 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
         Ok(flight) ->
           case flight.altitude > 60 {
             True -> #(model, effect.none())
-            False -> #(
-              Model(..model, space: Some(space.climb(flight))),
-              delayed(1000, ClimbTick(run)),
-            )
+            False -> {
+              let climbed = space.climb(flight)
+              // The music thins with the air (`lowerVolume`).
+              let volume = 1.0 -. int.to_float(climbed.altitude) /. 60.0
+              #(
+                Model(..model, space: Some(climbed)),
+                effect.batch([
+                  delayed(1000, ClimbTick(run)),
+                  effect.from(fn(_) { audio.set_background_volume(volume, 0.3) }),
+                ]),
+              )
+            }
           }
         Error(_) -> #(model, effect.none())
       }
@@ -780,7 +801,13 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
 fn game_won(model: Model, rolls: List(Float)) -> #(Model, Effect(Msg)) {
   let this_score = scoring.calculate_score(model.state)
   let total = scoring.total_score() + this_score
-  let persist = effect.from(fn(_) { scoring.save(model.state, rolls) })
+  let persist =
+    effect.from(fn(_) {
+      scoring.save(model.state, rolls)
+      // The ending has its own theme, at full volume again.
+      audio.set_background_volume(1.0, 1.0)
+      audio.play_background_music(audio.music_ending)
+    })
   case state.get_store(model.state, "fleet beacon") > 0 {
     True -> #(
       Model(..model, ending: Some(Outro(0, this_score, total))),
@@ -1632,6 +1659,78 @@ fn event_pool(location: Location) -> List(events.Event) {
       ])
     _ -> []
   }
+}
+
+// --- background music ------------------------------------------------------------
+
+/// The track a location plays on arrival: the Room follows its fire, the
+/// Outside its huts; the rest have their own themes.
+fn location_track(model: Model) -> String {
+  case model.location {
+    Room -> fire_track(model.state)
+    Outside -> village_track(model.state)
+    Path -> audio.music_dusty_path
+    World -> audio.music_world
+    Ship | Fabricator -> audio.music_ship
+    Space -> audio.music_space
+  }
+}
+
+/// `Room.setMusic` — the fire's five moods.
+fn fire_track(s: State) -> String {
+  case room.fire(s) {
+    room.Dead -> audio.music_fire_dead
+    room.Smoldering -> audio.music_fire_smoldering
+    room.Flickering -> audio.music_fire_flickering
+    room.Burning -> audio.music_fire_burning
+    room.Roaring -> audio.music_fire_roaring
+  }
+}
+
+/// `Outside.onArrival` — the village grows louder by huts.
+fn village_track(s: State) -> String {
+  case craft.building_count(s, "hut") {
+    0 -> audio.music_silent_forest
+    1 -> audio.music_lonely_hut
+    n if n <= 4 -> audio.music_tiny_village
+    n if n <= 8 -> audio.music_modest_village
+    n if n <= 14 -> audio.music_large_village
+    _ -> audio.music_raucous_village
+  }
+}
+
+/// After a fire transition: retune the room's music, but only while standing
+/// in it (`// only update music if in the room`).
+fn room_music_after(pair: #(Model, Effect(Msg))) -> #(Model, Effect(Msg)) {
+  let #(model, fx) = pair
+  case model.location {
+    Room -> {
+      let #(model, music) = tune_music(model)
+      #(model, effect.batch([fx, music]))
+    }
+    _ -> #(model, fx)
+  }
+}
+
+/// Loop the location's current track — only when it actually changes, so the
+/// one-second tick doesn't endlessly restart the crossfade.
+fn tune_music(model: Model) -> #(Model, Effect(Msg)) {
+  play_track(model, location_track(model))
+}
+
+fn play_track(model: Model, track: String) -> #(Model, Effect(Msg)) {
+  case track == model.playing {
+    True -> #(model, effect.none())
+    False -> #(
+      Model(..model, playing: track),
+      effect.from(fn(_) { audio.play_background_music(track) }),
+    )
+  }
+}
+
+/// The first track of a freshly-loaded game, for the app's init.
+pub fn startup_music(model: Model) -> #(Model, Effect(Msg)) {
+  tune_music(model)
 }
 
 /// Put the location's name back on the page title (`stopTitleBlink`'s
