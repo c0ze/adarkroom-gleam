@@ -121,6 +121,9 @@ pub type Msg {
   DotTick
   /// Apply scavenged surface maps (one reveal roll per map).
   MapsScavenged(rolls: List(Float))
+  /// Timer: the felled enemy detonates — take the blast, then the win or the
+  /// grave.
+  ExplosionResolve
 }
 
 pub type Model {
@@ -474,6 +477,8 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
     DotTick -> dot_tick(model)
 
     MapsScavenged(rolls: rolls) -> #(scavenge_maps(model, rolls), effect.none())
+
+    ExplosionResolve -> resolve_explosion(model)
   }
 }
 
@@ -533,12 +538,46 @@ fn resolve_strike(
         True -> status_expiry(cs.enemy_status)
         False -> effect.none()
       }
-      case cs.won {
-        True -> #(model, effect.batch([roll_loot(cs.enemy), expiry]))
-        False -> #(model, expiry)
+      case cs.won, cs.exploding {
+        // The kill pauses while the dying enemy detonates (`Events.explode`);
+        // the loot waits on surviving the blast.
+        True, Some(_) -> #(
+          model,
+          effect.batch([
+            delayed(combat.explosion_duration_ms, ExplosionResolve),
+            expiry,
+          ]),
+        )
+        True, None -> #(model, effect.batch([roll_loot(cs.enemy), expiry]))
+        False, _ -> #(model, expiry)
       }
     }
     _, _ -> #(model, effect.none())
+  }
+}
+
+/// The felled enemy detonates (`Events.explode`): the blast lands on the
+/// player as one wound; survive it and the win — and the loot — proceed.
+fn resolve_explosion(model: Model) -> #(Model, Effect(Msg)) {
+  case model.combat {
+    Some(cs) ->
+      case cs.won, cs.exploding {
+        True, Some(blast) -> {
+          let hp = int.max(0, cs.player_hp - blast)
+          case hp <= 0 {
+            True -> #(die(model), effect.none())
+            False -> #(
+              Model(
+                ..model,
+                combat: Some(combat.CombatState(..cs, player_hp: hp)),
+              ),
+              roll_loot(cs.enemy),
+            )
+          }
+        }
+        _, _ -> #(model, effect.none())
+      }
+    None -> #(model, effect.none())
   }
 }
 
@@ -551,15 +590,21 @@ fn current_dot(model: Model) -> Int {
 }
 
 /// Resolve the enemy's blow. Should it fell the player, the expedition ends.
+/// A felled enemy throws none (the explosion window keeps the fight on screen
+/// after the win; the JS clears its timers there).
 fn resolve_enemy_turn(model: Model, roll: Float) -> Model {
   case model.combat {
-    Some(cs) -> {
-      let cs = combat.enemy_strike(cs, model.state, roll)
-      case cs.player_hp <= 0 {
-        True -> die(model)
-        False -> Model(..model, combat: Some(cs))
+    Some(cs) ->
+      case cs.won {
+        True -> model
+        False -> {
+          let cs = combat.enemy_strike(cs, model.state, roll)
+          case cs.player_hp <= 0 {
+            True -> die(model)
+            False -> Model(..model, combat: Some(cs))
+          }
+        }
       }
-    }
     None -> model
   }
 }
@@ -673,11 +718,16 @@ fn roll_enemy_turn() -> Effect(Msg) {
 /// Re-armed after each enemy turn, so the timer naturally stops on win or death.
 fn enemy_timer(combat: Option(combat.CombatState)) -> Effect(Msg) {
   case combat {
+    // A felled enemy's timer stays down (the explosion window).
     Some(cs) ->
-      delayed(
-        float.round(combat.effective_attack_delay(cs) *. 1000.0),
-        EnemyTurn,
-      )
+      case cs.won {
+        True -> effect.none()
+        False ->
+          delayed(
+            float.round(combat.effective_attack_delay(cs) *. 1000.0),
+            EnemyTurn,
+          )
+      }
     None -> effect.none()
   }
 }
@@ -783,7 +833,7 @@ fn status_expiry(status: combat.Status) -> Effect(Msg) {
 fn dot_tick(model: Model) -> #(Model, Effect(Msg)) {
   case model.combat {
     Some(cs) ->
-      case cs.player_dot > 0 {
+      case cs.player_dot > 0 && !cs.won {
         True -> {
           let hp = int.max(0, cs.player_hp - cs.player_dot)
           case hp <= 0 {
@@ -1201,13 +1251,15 @@ fn load_scene(
           exp.vitals.health,
           world.max_health(model.state),
         )
-      // A boss scene's specials and atHealth triggers ride on the fight.
+      // A boss scene's specials, atHealth triggers and dying blast ride on
+      // the fight.
       let cs = case scene.setpiece {
         Some(extra) ->
           combat.CombatState(
             ..cs,
             specials: extra.specials,
             at_health: extra.at_health,
+            exploding: extra.explosion,
           )
         None -> cs
       }

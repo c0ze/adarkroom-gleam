@@ -1155,7 +1155,7 @@ pub fn riding_the_elevator_reaches_the_wing_test() {
 }
 
 pub fn an_elevator_to_nowhere_stays_put_test() {
-  // The medical wing isn't ported yet: the JS switchEvent guards a missing
+  // The command deck isn't ported yet: the JS switchEvent guards a missing
   // event with a bare return, so the antechamber stays on screen — still on
   // its elevator-bank scene, not the same-titled intro.
   let assert Ok(hub) = executioner.event("executioner-antechamber")
@@ -1164,7 +1164,7 @@ pub fn an_elevator_to_nowhere_stays_put_test() {
       ..battleship_model(),
       active_event: option.Some(model.ActiveEvent(hub, "start")),
     )
-  let after = run(m, model.ResolveEvent("medical", 0.5))
+  let after = run(m, model.ResolveEvent("command", 0.5))
   let assert option.Some(active) = after.active_event
   active.scene |> should.equal("start")
   // The command-deck button only exists on the antechamber's elevator bank,
@@ -1433,4 +1433,56 @@ pub fn poison_can_finish_the_fight_test() {
   after.combat |> should.equal(option.None)
   after.expedition |> should.equal(option.None)
   after.location |> should.equal(model.Room)
+}
+
+// --- the dying blast (explosion) -------------------------------------------------
+
+/// Mid-fight against a detonating brute: felled (won) with the blast pending.
+fn exploding_fight(player_hp: Int) -> model.Model {
+  let bomb =
+    combat.Enemy(
+      name: "unstable automaton",
+      chara: "A",
+      health: 100,
+      damage: 10,
+      hit: 0.7,
+      attack_delay: 2.0,
+      ranged: False,
+      death_message: "",
+      loot: [combat.LootEntry("glowstone blueprint", 1, 1, 1.0)],
+    )
+  let cs =
+    combat.CombatState(
+      ..combat.begin_combat(bomb, player_hp, 100),
+      enemy_hp: 0,
+      won: True,
+      exploding: option.Some(30),
+    )
+  model.Model(
+    ..model.init(),
+    location: model.World,
+    expedition: option.Some(forest_expedition(3, player_hp)),
+    combat: option.Some(cs),
+  )
+}
+
+pub fn surviving_the_blast_wins_the_fight_test() {
+  let after = run(exploding_fight(50), model.ExplosionResolve)
+  let assert option.Some(cs) = after.combat
+  cs.player_hp |> should.equal(20)
+}
+
+pub fn the_blast_can_be_the_end_test() {
+  let after = run(exploding_fight(30), model.ExplosionResolve)
+  after.combat |> should.equal(option.None)
+  after.expedition |> should.equal(option.None)
+  after.location |> should.equal(model.Room)
+}
+
+pub fn a_felled_enemy_throws_no_blows_test() {
+  // During the explosion window the dead enemy's timer must stay down.
+  let m = exploding_fight(50)
+  let after = run(m, model.ResolveEnemyTurn(0.0))
+  let assert option.Some(cs) = after.combat
+  cs.player_hp |> should.equal(50)
 }

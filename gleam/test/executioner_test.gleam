@@ -185,3 +185,40 @@ pub fn the_martial_wing_ends_at_the_flag_test() {
   let #(after, _) = on_load(state.new())
   state.get_game(after, "world.martial") |> should.equal(1)
 }
+
+// --- the medical wing -----------------------------------------------------------
+
+pub fn the_medic_turns_venomous_at_forty_test() {
+  let s = wing("executioner-medical", "6-1a")
+  s.notification |> should.equal(Some("it had friends."))
+  let assert Some(extra) = s.setpiece
+  extra.at_health |> should.equal([#(40, combat.Venomous)])
+  let assert Some(foe) = extra.enemy
+  foe.name |> should.equal("broken medic")
+  foe.health |> should.equal(80)
+  foe.damage |> should.equal(15)
+}
+
+pub fn the_unstable_automaton_detonates_test() {
+  let s = wing("executioner-medical", "8")
+  let assert Some(extra) = s.setpiece
+  extra.explosion |> should.equal(Some(30))
+  extra.loot |> should.equal([])
+  let assert Some(foe) = extra.enemy
+  foe.loot
+  |> should.equal([combat.LootEntry("glowstone blueprint", 1, 1, 1.0)])
+}
+
+pub fn the_experiment_enrages_on_its_clock_test() {
+  let s = wing("executioner-medical", "16")
+  let assert Some(extra) = s.setpiece
+  extra.specials
+  |> should.equal([combat.SetStatusEvery(16.0, combat.Enraged)])
+}
+
+pub fn the_medical_wing_ends_at_the_flag_test() {
+  let s = wing("executioner-medical", "17")
+  let assert Some(on_load) = s.on_load
+  let #(after, _) = on_load(state.new())
+  state.get_game(after, "world.medical") |> should.equal(1)
+}
