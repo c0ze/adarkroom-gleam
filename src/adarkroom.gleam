@@ -1418,14 +1418,11 @@ fn space_panel(m: Model) -> Element(Msg) {
 }
 
 fn world_panel(exp: Expedition) -> Element(Msg) {
+  // world.css does the sizing (Courier New, 10px lines, 1px letter
+  // spacing) — that's what packs the 61x61 world into the 700px view.
   let map =
     html.div(
-      [
-        attribute.id("map"),
-        attribute.style("white-space", "pre"),
-        attribute.style("font-family", "monospace"),
-        attribute.style("line-height", "1"),
-      ],
+      [attribute.id("map")],
       list.map(seq_61(), fn(y) { html.div([], map_row(exp, y)) }),
     )
   let vitals =
