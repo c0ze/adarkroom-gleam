@@ -2136,6 +2136,14 @@ pub fn the_stoke_button_recovers_for_ten_seconds_test() {
   room.fire(twice.state) |> should.equal(room.fire(once.state))
   state.get_store(twice.state, "wood")
   |> should.equal(state.get_store(once.state, "wood"))
+  // Ten seconds on, the button is ready again and the stoke lands.
+  let recovered =
+    run(
+      model.Model(..twice, now: twice.now + room.stoke_cooldown_ms),
+      model.StokeFire,
+    )
+  state.get_store(recovered.state, "wood")
+  |> should.equal(state.get_store(twice.state, "wood") - 1)
 }
 
 pub fn a_refused_light_arms_no_cooldown_test() {
