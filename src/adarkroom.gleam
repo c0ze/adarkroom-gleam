@@ -908,7 +908,39 @@ fn worker_row(
       html.span([], [element.text(int.to_string(count))]),
       ..buttons
     ]),
+    clear_div(),
+    // The profession's ledger on hover (`makeWorkerRow`'s tooltip): what one
+    // worker consumes and produces per collection.
+    html.div(
+      [attribute.class("tooltip bottom right")],
+      list.map(outside.worker_ledger(name), fn(delta) {
+        html.div([attribute.class("storeRow")], [
+          html.div([attribute.class("row_key")], [element.text(delta.0)]),
+          html.div([attribute.class("row_val")], [
+            element.text(income_msg(delta.1, outside.income_delay_s)),
+          ]),
+        ])
+      }),
+    ),
   ])
+}
+
+/// A rate as the original prints it (`Engine.getIncomeMsg`): signed, whole
+/// numbers plain, per the collection delay.
+fn income_msg(amount: Float, delay: Int) -> String {
+  let sign = case amount >. 0.0 {
+    True -> "+"
+    False -> ""
+  }
+  sign <> number_text(amount) <> " per " <> int.to_string(delay) <> "s"
+}
+
+/// A number as JavaScript prints it: whole values without the decimal.
+fn number_text(value: Float) -> String {
+  case value == int.to_float(float.truncate(value)) {
+    True -> int.to_string(float.truncate(value))
+    False -> float.to_string(value)
+  }
 }
 
 /// A small ±step arrow button (workers and supplies), inert when disabled.
@@ -1060,10 +1092,7 @@ fn outfit_desc(item: String) -> String {
 
 /// A weight as the original prints it: whole numbers plain, fractions as-is.
 fn weight_text(weight: Float) -> String {
-  case weight == int.to_float(float.truncate(weight)) {
-    True -> int.to_string(float.truncate(weight))
-    False -> float.to_string(weight)
-  }
+  number_text(weight)
 }
 
 /// The village: the buildings raised and the current population. Shown as a
@@ -1456,6 +1485,63 @@ fn store_rows(stores: List(#(String, Int))) -> List(Element(Msg)) {
   list.map(stores, fn(entry) { store_row(entry.0, entry.1, []) })
 }
 
+/// The resource rows with their income breakdown on hover
+/// (`updateIncomeView`): each active source's rate for the store, and the
+/// total. Stores nobody touches hover nothing.
+fn income_rows(
+  s: state.State,
+  resources: List(#(String, Int)),
+) -> List(Element(Msg)) {
+  let sources = outside.active_income(s)
+  list.index_map(resources, fn(entry, index) {
+    let #(name, count) = entry
+    let lines =
+      list.filter_map(sources, fn(source) {
+        let #(who, deltas) = source
+        case list.key_find(deltas, name) {
+          Ok(rate) if rate != 0.0 -> Ok(#(who, rate))
+          _ -> Error(Nil)
+        }
+      })
+    let tooltip = case lines {
+      [] -> []
+      _ -> {
+        let position = case index > 10 {
+          True -> "tooltip top right"
+          False -> "tooltip bottom right"
+        }
+        let total = list.fold(lines, 0.0, fn(acc, line) { acc +. line.1 })
+        [
+          html.div(
+            [attribute.class(position)],
+            list.append(
+              list.flat_map(lines, fn(line) {
+                [
+                  html.div([attribute.class("row_key")], [
+                    element.text(line.0),
+                  ]),
+                  html.div([attribute.class("row_val")], [
+                    element.text(income_msg(line.1, outside.income_delay_s)),
+                  ]),
+                ]
+              }),
+              [
+                html.div([attribute.class("total row_key")], [
+                  element.text("total"),
+                ]),
+                html.div([attribute.class("total row_val")], [
+                  element.text(income_msg(total, outside.income_delay_s)),
+                ]),
+              ],
+            ),
+          ),
+        ]
+      }
+    }
+    store_row(name, count, tooltip)
+  })
+}
+
 fn store_row(
   name: String,
   count: Int,
@@ -1519,7 +1605,9 @@ fn stores_view(s: state.State, show_weapons: Bool) -> Element(Msg) {
         list.append(
           case resources {
             [] -> []
-            _ -> [html.div([attribute.id("resources")], store_rows(resources))]
+            _ -> [
+              html.div([attribute.id("resources")], income_rows(s, resources)),
+            ]
           },
           case special {
             [] -> []

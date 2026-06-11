@@ -2,6 +2,7 @@ import adarkroom/craft
 import adarkroom/outside
 import adarkroom/state
 import gleam/dict
+import gleam/list
 import gleeunit/should
 
 pub fn gather_wood_gives_ten_by_hand_test() {
@@ -468,4 +469,41 @@ pub fn return_stolen_gives_everything_back_test() {
   let after = outside.return_stolen(s)
   state.get_store(after, "wood") |> should.equal(31)
   state.get_store(after, "fur") |> should.equal(15)
+}
+
+// --- the ledgers behind the hover tooltips ------------------------------------------
+
+pub fn every_profession_has_a_ledger_test() {
+  outside.worker_ledger("gatherer") |> should.equal([#("wood", 1.0)])
+  outside.worker_ledger("hunter")
+  |> should.equal([#("fur", 0.5), #("meat", 0.5)])
+  outside.worker_ledger("charcutier")
+  |> should.equal([
+    #("meat", -5.0),
+    #("wood", -5.0),
+    #("cured meat", 1.0),
+  ])
+  outside.worker_ledger("armourer")
+  |> should.equal([
+    #("steel", -1.0),
+    #("sulphur", -1.0),
+    #("bullets", 1.0),
+  ])
+}
+
+pub fn active_income_scales_with_the_workforce_test() {
+  // Two hunters on the books: fur and meat flow at double the ledger rate.
+  let s =
+    state.new()
+    |> state.set_game("population", 5)
+    |> state.set_game("worker.hunter", 2)
+  let sources = outside.active_income(s)
+  let assert Ok(#(_, deltas)) =
+    list.find(sources, fn(src) { src.0 == "hunter" })
+  list.key_find(deltas, "fur") |> should.equal(Ok(1.0))
+  list.key_find(deltas, "meat") |> should.equal(Ok(1.0))
+  // The three idle hands gather.
+  let assert Ok(#(_, gather)) =
+    list.find(sources, fn(src) { src.0 == "gatherer" })
+  list.key_find(gather, "wood") |> should.equal(Ok(3.0))
 }
