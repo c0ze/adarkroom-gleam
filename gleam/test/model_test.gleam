@@ -1961,3 +1961,14 @@ pub fn the_kit_needs_its_gear_and_a_live_fight_test() {
   let assert option.Some(cs) = after.combat
   cs.player_status |> should.equal(combat.NoStatus)
 }
+
+pub fn navigating_remembers_where_it_left_from_test() {
+  let m =
+    model.Model(
+      ..model.init(),
+      state: state.set_feature(state.new(), "location.outside", True),
+    )
+  let after = run(m, model.Navigate(to: model.Outside))
+  after.location |> should.equal(model.Outside)
+  after.prev_location |> should.equal(model.Room)
+}

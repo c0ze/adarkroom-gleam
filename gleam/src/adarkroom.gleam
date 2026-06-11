@@ -253,7 +253,7 @@ fn game_view(m: Model) -> Element(Msg) {
           html.div([attribute.id("outerSlider")], [
             html.div([attribute.id("main")], [
               header(m),
-              html.div([attribute.id("locationSlider")], [location_panel(m)]),
+              location_slider(m),
             ]),
           ]),
         ]),
@@ -678,19 +678,77 @@ fn header(m: Model) -> Element(Msg) {
   )
 }
 
-fn location_panel(m: Model) -> Element(Msg) {
+/// The village panels the slider holds, in their unlock order. The world and
+/// the ascent live a layer out (the original's outer slider) and replace the
+/// slider wholesale.
+fn slider_locations(m: Model) -> List(model.Location) {
+  model.unlocked_locations(m)
+  |> list.filter(fn(loc) {
+    case loc {
+      model.Room | model.Outside | model.Path | model.Ship | model.Fabricator ->
+        True
+      model.World | model.Space -> False
+    }
+  })
+}
+
+fn slider_index(locations: List(model.Location), loc: model.Location) -> Int {
+  locations
+  |> list.take_while(fn(l) { l != loc })
+  |> list.length
+}
+
+/// All unlocked village panels side by side, slid to the current one — the
+/// transition runs 300ms per panel crossed (`travelTo`'s `300 * diff`).
+/// Out in the world or aloft, that location's panel takes the stage alone.
+fn location_slider(m: Model) -> Element(Msg) {
   case m.location {
-    model.Room -> room_panel(m)
-    model.Outside -> outside_panel(m)
-    model.Path -> path_panel(m)
-    model.Ship -> ship_panel(m)
-    model.Fabricator -> fabricator_panel(m)
-    model.Space -> space_panel(m)
+    model.Space -> html.div([attribute.id("locationSlider")], [space_panel(m)])
     model.World ->
-      case m.expedition {
-        Some(exp) -> world_panel(exp)
-        None -> html.div([attribute.class("location")], [])
+      html.div([attribute.id("locationSlider")], [
+        case m.expedition {
+          Some(exp) -> world_panel(exp)
+          None -> html.div([attribute.class("location")], [])
+        },
+      ])
+    _ -> {
+      let locations = slider_locations(m)
+      let index = slider_index(locations, m.location)
+      let transition = case
+        list.contains(locations, m.prev_location)
+        && m.prev_location != m.location
+      {
+        True -> {
+          let diff =
+            int.absolute_value(index - slider_index(locations, m.prev_location))
+          "left " <> int.to_string(300 * diff) <> "ms ease-in-out"
+        }
+        // Coming home from the world there's nothing to slide across.
+        False -> "none"
       }
+      html.div(
+        [
+          attribute.id("locationSlider"),
+          attribute.style(
+            "width",
+            int.to_string(list.length(locations) * 700) <> "px",
+          ),
+          attribute.style("left", "-" <> int.to_string(index * 700) <> "px"),
+          attribute.style("transition", transition),
+        ],
+        list.map(locations, fn(loc) {
+          case loc {
+            model.Room -> room_panel(m)
+            model.Outside -> outside_panel(m)
+            model.Path -> path_panel(m)
+            model.Ship -> ship_panel(m)
+            model.Fabricator -> fabricator_panel(m)
+            model.World | model.Space ->
+              html.div([attribute.class("location")], [])
+          }
+        }),
+      )
+    }
   }
 }
 
@@ -820,7 +878,7 @@ fn path_panel(m: Model) -> Element(Msg) {
       [armour, bagspace, ..supplies],
     ),
     embark,
-    stores_view(s, True),
+    html.div([attribute.id("storesContainer")], [stores_view(s, True)]),
   ])
 }
 
@@ -904,7 +962,7 @@ fn room_panel(m: Model) -> Element(Msg) {
     build_section("buildBtns", "build", m.state, builds),
     build_section("craftBtns", "craft", m.state, crafts),
     buy_section(m.state, trade.visible(m.state)),
-    stores_view(m.state, True),
+    html.div([attribute.id("storesContainer")], [stores_view(m.state, True)]),
   ])
 }
 
@@ -1014,7 +1072,7 @@ fn ship_panel(m: Model) -> Element(Msg) {
       cooldown_ms: ship.liftoff_cooldown_ms,
       id: "liftoffButton",
     )),
-    stores_view(m.state, False),
+    html.div([attribute.id("storesContainer")], [stores_view(m.state, False)]),
   ])
 }
 
@@ -1062,7 +1120,10 @@ fn fabricator_panel(m: Model) -> Element(Msg) {
     )
   html.div(
     [attribute.id("fabricatorPanel"), attribute.class("location")],
-    list.append(blueprints, [bench, stores_view(m.state, True)]),
+    list.append(blueprints, [
+      bench,
+      html.div([attribute.id("storesContainer")], [stores_view(m.state, True)]),
+    ]),
   )
 }
 
