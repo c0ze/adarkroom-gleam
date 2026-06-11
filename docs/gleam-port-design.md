@@ -1,6 +1,6 @@
 # A Dark Room — Gleam + Lustre Port — Design
 
-**Status:** Delivered 2026-06-12 — M0–M7 complete; the port is on `master`
+**Status:** Delivered 2026-06-11 — M0–M7 complete; the port is on `master`
 and live at [adarkroom.coze.org](https://adarkroom.coze.org). M8
 (localization, #34/#35) and accessibility (#42) remain as follow-ups.
 *(Approved 2026-06-07.)*
