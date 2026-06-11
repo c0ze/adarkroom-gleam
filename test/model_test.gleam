@@ -2157,3 +2157,49 @@ pub fn a_refused_light_arms_no_cooldown_test() {
   let refused = run(m, model.LightFire)
   model.on_cooldown(refused, "lightButton") |> should.be_false
 }
+
+// --- the pause (a port addition) ----------------------------------------------------
+
+pub fn the_paused_world_holds_its_breath_test() {
+  let s = state.set_store(state.new(), "wood", 20)
+  let #(s, _) = room.light_fire(s)
+  let m = model.Model(..model.init(), state: s, now: 100_000)
+  // Arm the cool deadline, then pause.
+  let armed = run(m, model.CoolCheck(at: 100_000))
+  let paused = run(armed, model.TogglePause)
+  paused.paused |> should.be_true
+  // An hour of heartbeats later, the fire still burns and the clock is still.
+  let later = run(paused, model.CoolCheck(at: 4_000_000))
+  room.fire(later.state) |> should.equal(room.fire(armed.state))
+  later.now |> should.equal(armed.now)
+}
+
+pub fn resume_shifts_every_deadline_by_the_sleep_test() {
+  let s = state.set_store(state.new(), "wood", 20)
+  let #(s, _) = room.light_fire(s)
+  let m = model.Model(..model.init(), state: s, now: 100_000)
+  let armed = run(m, model.CoolCheck(at: 100_000))
+  let cool_before = state.get_game(armed.state, "coolAt")
+  let paused = run(armed, model.TogglePause)
+  // Asleep for an hour; the resume reads the wall clock.
+  let woke = run(paused, model.Resumed(at: 3_700_000))
+  woke.paused |> should.be_false
+  state.get_game(woke.state, "coolAt")
+  |> should.equal(cool_before + 3_600_000)
+  // A cooldown armed before a second pause survives it with its remaining
+  // time intact: armed at 3,700,000 for 10s, asleep another hour, so it now
+  // runs to 7,310,000.
+  let cooling =
+    run(run(woke, model.StokeFire), model.TogglePause)
+    |> run(model.Resumed(at: 7_300_000))
+  model.on_cooldown(model.Model(..cooling, now: 7_309_999), "stokeButton")
+  |> should.be_true
+  model.on_cooldown(model.Model(..cooling, now: 7_310_000), "stokeButton")
+  |> should.be_false
+}
+
+pub fn no_pausing_mid_adventure_test() {
+  let m = special_fight([], combat.NoStatus)
+  model.can_pause(m) |> should.be_false
+  run(m, model.TogglePause).paused |> should.be_false
+}

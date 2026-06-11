@@ -25,6 +25,25 @@
         to { width: 0%; }
       }
 
+      /* The pause sheet (a port addition: the original has no global pause). */
+      #pauseOverlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(255, 255, 255, 0.96);
+        z-index: 100;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        cursor: default;
+        font-size: 20px;
+      }
+      #pauseOverlay .resumeBtn {
+        margin-top: 24px;
+        cursor: pointer;
+        text-decoration: underline;
+      }
+
       /* A fresh notification's fade-in (printMessage's 500ms animate). */
       @keyframes notifyFade {
         from { opacity: 0; }
