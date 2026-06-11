@@ -535,6 +535,8 @@ pub type Expedition {
     seen: Set(#(Int, Int)),
     vitals: Vitals,
     visited: Set(#(Int, Int)),
+    /// Whether the wanderer is out past their armour (`World.danger`).
+    danger: Bool,
     used_outposts: Set(#(Int, Int)),
     /// The mines cleared this trip, by building name (`"iron mine"`, …). The JS
     /// flags these on the world and grants the building on a safe return home;
@@ -580,9 +582,96 @@ pub fn begin(map: Map, s: State) -> Expedition {
       thirst: False,
     ),
     visited: set.new(),
+    danger: False,
     used_outposts: set.new(),
     mines_cleared: set.new(),
   )
+}
+
+/// The crossing of a terrain boundary, narrated (`narrateMove`).
+pub fn narrate_move(old_tile: Tile, new_tile: Tile) -> List(String) {
+  case old_tile, new_tile {
+    Forest, Field -> [
+      "the trees yield to dry grass. the yellowed brush rustles in the wind.",
+    ]
+    Forest, Barrens -> [
+      "the trees are gone. parched earth and blowing dust are poor replacements.",
+    ]
+    Field, Forest -> [
+      "trees loom on the horizon. grasses gradually yield to a forest floor of dry branches and fallen leaves.",
+    ]
+    Field, Barrens -> ["the grasses thin. soon, only dust remains."]
+    Barrens, Field -> [
+      "the barrens break at a sea of dying grass, swaying in the arid breeze.",
+    ]
+    Barrens, Forest -> [
+      "a wall of gnarled trees rises from the dust. their branches twist into a skeletal canopy overhead.",
+    ]
+    _, _ -> []
+  }
+}
+
+/// Watch the wanderer's depth against their armour (`checkDanger`): venturing
+/// past 8 without iron armour (or 18 without steel) raises the warning; it
+/// only lifts back under 8 — the original's second clearing branch compares
+/// the function itself (`World.getDistance < 18`, no parens) and never fires.
+/// Returns the expedition and whether the state flipped.
+pub fn check_danger(exp: Expedition, s: State) -> #(Expedition, Bool) {
+  case exp.danger {
+    False ->
+      case
+        { state.get_store(s, "i armour") == 0 && distance(exp.pos) >= 8 }
+        || { state.get_store(s, "s armour") == 0 && distance(exp.pos) >= 18 }
+      {
+        True -> #(Expedition(..exp, danger: True), True)
+        False -> #(exp, False)
+      }
+    True ->
+      case distance(exp.pos) < 8 {
+        True -> #(Expedition(..exp, danger: False), True)
+        False -> #(exp, False)
+      }
+  }
+}
+
+/// Which way the compass points (`compassDir`): the dominant axis alone past
+/// a 2:1 ratio, the diagonal otherwise.
+pub fn compass_dir(pos: #(Int, Int)) -> String {
+  let dx = pos.0 - radius
+  let dy = pos.1 - radius
+  let horz = case dx < 0 {
+    True -> "west"
+    False -> "east"
+  }
+  let vert = case dy < 0 {
+    True -> "north"
+    False -> "south"
+  }
+  let ax = int.absolute_value(dx)
+  let ay = int.absolute_value(dy)
+  case ax > 2 * ay, ay > 2 * ax {
+    True, _ -> horz
+    _, True -> vert
+    _, _ -> vert <> horz
+  }
+}
+
+/// Where the crashed starship lies on the saved world, for the compass's
+/// tooltip — `Error` until a world exists or if no ship stands.
+pub fn saved_ship_dir(ws: state.WorldSave) -> Result(String, Nil) {
+  list.index_fold(ws.map, Error(Nil), fn(found, row, y) {
+    list.index_fold(row, found, fn(found, letter, x) {
+      case found, string.starts_with(letter, "W") {
+        Error(_), True -> Ok(compass_dir(#(x, y)))
+        _, _ -> found
+      }
+    })
+  })
+}
+
+/// Whether the whole world has been seen (`World.seenAll` via `testMap`).
+pub fn seen_all(ws: state.WorldSave) -> Bool {
+  list.all(ws.mask, fn(row) { list.all(row, fn(lit) { lit }) })
 }
 
 /// The letter back to its tile (`tile_char` reversed).
@@ -923,17 +1012,25 @@ pub fn move(s: State, exp: Expedition, dir: Dir) -> Step {
     True -> {
       let moved =
         Expedition(..exp, pos:, seen: uncover(exp.seen, pos, sight(s)))
+      // Crossing a terrain boundary is narrated first (`narrateMove`).
+      let narration = case
+        tile_at(exp.map, exp.pos.0, exp.pos.1),
+        tile_at(exp.map, pos.0, pos.1)
+      {
+        Ok(old_tile), Ok(new_tile) -> narrate_move(old_tile, new_tile)
+        _, _ -> []
+      }
       // Stepping home to the village costs no supplies and never kills — the JS
       // `doSpace` runs `useSupplies` only off the village, so a safe return is
       // always genuinely safe (and so can't, e.g., wrongly forfeit mine credit).
       case tile_at(exp.map, pos.0, pos.1) {
-        Ok(Village) -> Step(s, moved, [], True)
+        Ok(Village) -> Step(s, moved, narration, True)
         _ -> {
           let supplies = use_supplies(s, exp.vitals)
           Step(
             supplies.state,
             Expedition(..moved, vitals: supplies.vitals),
-            supplies.messages,
+            list.append(narration, supplies.messages),
             supplies.alive,
           )
         }

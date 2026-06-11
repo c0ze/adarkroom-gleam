@@ -263,6 +263,7 @@ fn standing_on(tile: world.Tile) -> world.Expedition {
     seen: set.new(),
     vitals: world.Vitals(10, 10, 0, 0, False, False),
     visited: set.new(),
+    danger: False,
     used_outposts: set.new(),
     mines_cleared: set.new(),
   )
@@ -348,6 +349,7 @@ pub fn clear_dungeon_makes_an_outpost_joined_by_road_test() {
       seen: set.new(),
       vitals: world.Vitals(10, 10, 0, 0, False, False),
       visited: set.new(),
+      danger: False,
       used_outposts: set.new(),
       mines_cleared: set.new(),
     )
@@ -364,6 +366,7 @@ pub fn lay_road_paves_from_the_players_tile_test() {
       seen: set.new(),
       vitals: world.Vitals(10, 10, 0, 0, False, False),
       visited: set.new(),
+      danger: False,
       used_outposts: set.new(),
       mines_cleared: set.new(),
     )
@@ -443,4 +446,70 @@ pub fn the_world_survives_the_save_round_trip_test() {
 pub fn a_malformed_save_is_refused_test() {
   world.resume(state.WorldSave(map: [["?"]], mask: [[]]), state.new())
   |> should.equal(Error(Nil))
+}
+
+// --- the walk's voice ---------------------------------------------------------------
+
+pub fn crossing_a_boundary_is_narrated_test() {
+  world.narrate_move(world.Forest, world.Field)
+  |> should.equal([
+    "the trees yield to dry grass. the yellowed brush rustles in the wind.",
+  ])
+  world.narrate_move(world.Barrens, world.Forest)
+  |> should.equal([
+    "a wall of gnarled trees rises from the dust. their branches twist into a skeletal canopy overhead.",
+  ])
+  // Staying on like ground says nothing; landmarks say nothing.
+  world.narrate_move(world.Field, world.Field) |> should.equal([])
+  world.narrate_move(world.Forest, world.House) |> should.equal([])
+}
+
+pub fn danger_rises_at_depth_and_lifts_only_near_home_test() {
+  let exp = world.begin(world.generate_map(rng.seed(11)), state.new())
+  // Eight out, unarmoured: the warning rises.
+  let out = world.Expedition(..exp, pos: #(world.radius + 8, world.radius))
+  let #(warned, flipped) = world.check_danger(out, state.new())
+  flipped |> should.be_true
+  warned.danger |> should.be_true
+  // Still at twelve with iron armour on: the original's clearing branch
+  // compares the function itself and never fires — danger holds.
+  let armoured = state.set_store(state.new(), "i armour", 1)
+  let twelve =
+    world.Expedition(..warned, pos: #(world.radius + 12, world.radius))
+  let #(held, flipped) = world.check_danger(twelve, armoured)
+  flipped |> should.be_false
+  held.danger |> should.be_true
+  // Back under eight: relief.
+  let near = world.Expedition(..held, pos: #(world.radius + 7, world.radius))
+  let #(relieved, flipped) = world.check_danger(near, state.new())
+  flipped |> should.be_true
+  relieved.danger |> should.be_false
+}
+
+pub fn iron_armour_quiets_the_first_threshold_test() {
+  let exp = world.begin(world.generate_map(rng.seed(11)), state.new())
+  let out = world.Expedition(..exp, pos: #(world.radius + 8, world.radius))
+  let armoured = state.set_store(state.new(), "i armour", 1)
+  let #(calm, flipped) = world.check_danger(out, armoured)
+  flipped |> should.be_false
+  calm.danger |> should.be_false
+}
+
+pub fn the_compass_reads_the_saved_ship_test() {
+  world.compass_dir(#(world.radius + 10, world.radius - 2))
+  |> should.equal("east")
+  world.compass_dir(#(world.radius - 2, world.radius - 10))
+  |> should.equal("north")
+  world.compass_dir(#(world.radius + 6, world.radius - 6))
+  |> should.equal("northeast")
+  let exp = world.begin(world.generate_map(rng.seed(11)), state.new())
+  let assert Ok(dir) = world.saved_ship_dir(world.to_save(exp))
+  ["north", "south", "east", "west"]
+  |> list.any(fn(axis) { string.contains(dir, axis) })
+  |> should.be_true
+}
+
+pub fn the_scouts_map_lifts_fog_from_home_test() {
+  let exp = world.begin(world.generate_map(rng.seed(11)), state.new())
+  world.seen_all(world.to_save(exp)) |> should.be_false
 }

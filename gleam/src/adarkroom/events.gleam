@@ -11,6 +11,7 @@ import adarkroom/combat
 import adarkroom/craft
 import adarkroom/outside
 import adarkroom/state
+import adarkroom/world
 import gleam/float
 import gleam/int
 import gleam/list
@@ -1519,6 +1520,22 @@ fn scout() -> Event {
           setpiece: option.None,
           on_load: option.None,
           buttons: [
+            #(
+              "buyMap",
+              SceneButton(
+                ..choice("buy map", Stay),
+                cost: [#("fur", 200), #("scales", 10)],
+                notification: option.Some("the map uncovers a bit of the world"),
+                // Nothing left to chart once the whole world is seen.
+                available: option.Some(fn(s: state.State) {
+                  case s.world {
+                    option.Some(ws) -> !world.seen_all(ws)
+                    option.None -> True
+                  }
+                }),
+                effect: option.Some(ApplyMap(times: 1)),
+              ),
+            ),
             #(
               "learn",
               learn(

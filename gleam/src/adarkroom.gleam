@@ -1297,16 +1297,52 @@ pub fn store_section(name: String) -> StoreSection {
 }
 
 fn store_rows(stores: List(#(String, Int))) -> List(Element(Msg)) {
-  list.map(stores, fn(entry) {
-    let #(name, count) = entry
-    html.div([attribute.class("storeRow")], [
-      html.div([attribute.class("row_key")], [element.text(name)]),
-      html.div([attribute.class("row_val")], [
-        element.text(int.to_string(count)),
-      ]),
-      clear_div(),
-    ])
-  })
+  list.map(stores, fn(entry) { store_row(entry.0, entry.1, []) })
+}
+
+fn store_row(
+  name: String,
+  count: Int,
+  extra: List(Element(Msg)),
+) -> Element(Msg) {
+  html.div(
+    [attribute.class("storeRow")],
+    list.flatten([
+      [
+        html.div([attribute.class("row_key")], [element.text(name)]),
+        html.div([attribute.class("row_val")], [
+          element.text(int.to_string(count)),
+        ]),
+      ],
+      extra,
+      [clear_div()],
+    ]),
+  )
+}
+
+/// The compass row's whisper (`Room.compassTooltip`): which way the crashed
+/// starship lies on the lasting world, shown on hover.
+fn compass_tooltip(s: state.State, resource_count: Int) -> List(Element(Msg)) {
+  let direction = case s.world {
+    Some(ws) -> world.saved_ship_dir(ws)
+    None -> Error(Nil)
+  }
+  case direction {
+    Ok(dir) -> {
+      let position = case resource_count > 10 {
+        True -> "tooltip top right"
+        False -> "tooltip bottom right"
+      }
+      [
+        html.div([attribute.class(position)], [
+          html.div([attribute.class("row_key")], [
+            element.text("the compass points " <> dir),
+          ]),
+        ]),
+      ]
+    }
+    Error(_) -> []
+  }
 }
 
 /// The stores column: the goods (with the compass in its own section) and,
@@ -1331,7 +1367,18 @@ fn stores_view(s: state.State, show_weapons: Bool) -> Element(Msg) {
           },
           case special {
             [] -> []
-            _ -> [html.div([attribute.id("special")], store_rows(special))]
+            _ -> [
+              html.div(
+                [attribute.id("special")],
+                list.map(special, fn(entry) {
+                  let extra = case entry.0 {
+                    "compass" -> compass_tooltip(s, list.length(resources))
+                    _ -> []
+                  }
+                  store_row(entry.0, entry.1, extra)
+                }),
+              ),
+            ]
           },
         ),
       ),
