@@ -513,3 +513,22 @@ pub fn the_scouts_map_lifts_fog_from_home_test() {
   let exp = world.begin(world.generate_map(rng.seed(11)), state.new())
   world.seen_all(world.to_save(exp)) |> should.be_false
 }
+
+pub fn the_map_labels_its_landmarks_test() {
+  let map = world.generate_map(rng.seed(11))
+  let exp = world.begin(map, state.new())
+  let assert Ok(house) =
+    dict.to_list(map) |> list.find(fn(e) { e.1 == world.House })
+  let #(hx, hy) = house.0
+  // Lit and unvisited: the label shows.
+  let lit = world.Expedition(..exp, seen: set.insert(exp.seen, house.0))
+  world.map_cell(lit, hx, hy)
+  |> should.equal(world.Labelled("H", "An\u{00A0}Old\u{00A0}House"))
+  // Visited, it goes quiet — the original's 'H!' lookup misses.
+  let quiet = world.Expedition(..lit, visited: set.insert(set.new(), house.0))
+  world.map_cell(quiet, hx, hy) |> should.equal(world.Ground("H"))
+  // Unseen is dark; the wanderer is themselves.
+  world.map_cell(exp, 0, 0) |> should.equal(world.Dark)
+  world.map_cell(exp, world.radius, world.radius)
+  |> should.equal(world.Wanderer)
+}

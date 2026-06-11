@@ -835,13 +835,20 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
               let climbed = space.climb(flight)
               // The music thins with the air (`lowerVolume`).
               let volume = 1.0 -. int.to_float(climbed.altitude) /. 60.0
-              #(
-                Model(..model, space: Some(climbed)),
-                effect.batch([
-                  delayed(1000, ClimbTick(run)),
-                  effect.from(fn(_) { audio.set_background_volume(volume, 0.3) }),
-                ]),
-              )
+              {
+                let climbing = Model(..model, space: Some(climbed))
+                #(
+                  climbing,
+                  effect.batch([
+                    delayed(1000, ClimbTick(run)),
+                    effect.from(fn(_) {
+                      audio.set_background_volume(volume, 0.3)
+                    }),
+                    // The air's name thins with it (`setTitle` per climb).
+                    title_if_calm(climbing),
+                  ]),
+                )
+              }
             }
           }
         Error(_) -> #(model, effect.none())
@@ -2071,6 +2078,11 @@ fn doc_title(model: Model) -> String {
       }
     Outside -> outside.title(model.state)
     World -> "A Barren World"
+    Space ->
+      case model.space {
+        Some(flight) -> space.atmosphere(flight.altitude)
+        None -> location_title(Space)
+      }
     location -> location_title(location)
   }
 }
