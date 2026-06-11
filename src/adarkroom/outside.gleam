@@ -177,6 +177,29 @@ fn income_sources(s: State) -> List(#(String, List(#(String, Float)))) {
   list.flatten([builder, gatherers, workers])
 }
 
+/// `_INCOME` per collection, every 10 seconds.
+pub const income_delay_s = 10
+
+/// One worker's ledger for the hover tooltip (`makeWorkerRow`): what a
+/// single member of the profession consumes and produces per collection.
+pub fn worker_ledger(role: String) -> List(#(String, Float)) {
+  case role {
+    "gatherer" -> [#("wood", 1.0)]
+    _ -> role_income(role)
+  }
+}
+
+/// Every active income source with its scaled deltas — the stores rows'
+/// hover breakdown (`updateIncomeView` reading the income state). The
+/// thieves appear while they're skimming.
+pub fn active_income(s: State) -> List(#(String, List(#(String, Float)))) {
+  let sources = income_sources(s)
+  case thieving(s) {
+    True -> list.append(sources, [#("thieves", thieves_drain_deltas())])
+    False -> sources
+  }
+}
+
 /// What one worker of a role yields (and consumes) per collection.
 fn role_income(role: String) -> List(#(String, Float)) {
   case role {
