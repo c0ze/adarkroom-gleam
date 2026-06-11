@@ -406,3 +406,41 @@ pub fn the_prestige_map_holds_one_destroyed_village_test() {
   world.positions_of(plain, world.City)
   |> should.equal(world.positions_of(blessed, world.City))
 }
+
+// --- the lasting world (game.world) ------------------------------------------------
+
+pub fn the_world_survives_the_save_round_trip_test() {
+  let map = world.generate_map(rng.seed(7))
+  let exp = world.begin(map, state.new())
+  // Mark a landmark dealt with and remember some fog.
+  let assert Ok(house) =
+    dict.to_list(map)
+    |> list.find(fn(entry) { entry.1 == world.House })
+  let exp =
+    world.Expedition(..exp, pos: house.0, seen: set.insert(exp.seen, #(0, 0)))
+  let exp = world.mark_visited(exp)
+  let assert Ok(resumed) = world.resume(world.to_save(exp), state.new())
+  // Same tiles, the mark remembered, the fog still lifted.
+  let missing =
+    dict.to_list(map)
+    |> list.filter(fn(e) { dict.get(resumed.map, e.0) != Ok(e.1) })
+  let extra =
+    dict.to_list(resumed.map)
+    |> list.filter(fn(e) { dict.get(map, e.0) != Ok(e.1) })
+  #(
+    list.take(missing, 5),
+    list.take(extra, 5),
+    list.length(missing),
+    list.length(extra),
+  )
+  |> should.equal(#([], [], 0, 0))
+  set.contains(resumed.visited, house.0) |> should.be_true
+  set.contains(resumed.seen, #(0, 0)) |> should.be_true
+  // And the wanderer stands at the village again, vitals fresh.
+  resumed.pos |> should.equal(#(world.radius, world.radius))
+}
+
+pub fn a_malformed_save_is_refused_test() {
+  world.resume(state.WorldSave(map: [["?"]], mask: [[]]), state.new())
+  |> should.equal(Error(Nil))
+}

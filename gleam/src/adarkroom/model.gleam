@@ -554,11 +554,18 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
               state.add_store(s, item.0, -item.1)
             })
             |> state.set_feature("location.world", True)
-          let map = case cache {
-            True -> world.generate_prestige_map(rng.seed(seed))
-            False -> world.generate_map(rng.seed(seed))
+          // The world is made once and lasts (`game.world`): a fresh game
+          // generates and commits it; later trips resume the same map, its
+          // visited marks and its fog. A safe return commits the trip's
+          // changes; death discards them with the expedition.
+          let #(stocked, exp) = case stocked.world {
+            Some(ws) ->
+              case world.resume(ws, stocked) {
+                Ok(exp) -> #(stocked, exp)
+                Error(_) -> make_world(stocked, seed, cache)
+              }
+            None -> make_world(stocked, seed, cache)
           }
-          let exp = world.begin(map, stocked)
           #(
             Model(
               ..model,
@@ -1711,7 +1718,11 @@ fn step(model: Model, dir: world.Dir) -> #(Model, Effect(Msg)) {
           let dead = die(model)
           #(dead, effect.batch([die_fx(dead), steps]))
         }
-        True, True -> #(go_home(model), steps)
+        // The last step's fog rides home with the commit.
+        True, True -> #(
+          go_home(Model(..model, expedition: Some(s.expedition))),
+          steps,
+        )
         True, False -> {
           let model = Model(..model, expedition: Some(s.expedition))
           // A landmark launches its setpiece (the `doSpace` order); open ground
@@ -1754,16 +1765,33 @@ fn setpiece_at(exp: Expedition, s: State) -> Result(events.Event, Nil) {
 
 /// Make it home safe — the carried supplies and loot are unloaded, then the
 /// expedition ends and the player returns to the room.
+/// Generate the lasting world (prestige data places the destroyed village)
+/// and commit it to the state at once, as the original saves `game.world`
+/// the moment it's made.
+fn make_world(s: State, seed: Int, cache: Bool) -> #(State, Expedition) {
+  let map = case cache {
+    True -> world.generate_prestige_map(rng.seed(seed))
+    False -> world.generate_map(rng.seed(seed))
+  }
+  let exp = world.begin(map, s)
+  #(state.State(..s, world: Some(world.to_save(exp))), exp)
+}
+
 fn go_home(model: Model) -> Model {
   // Home safe (`goHome`): cleared mines are credited, the crashed ship and
   // the strange device commission their locations, and carried blueprints
   // are redeemed — all before the outfit is unloaded, so blueprints never
-  // reach the stores.
+  // reach the stores. The trip's world — outposts, roads, visited marks and
+  // fog — is committed back to the save (`$SM.setM('game.world', ...)`).
   let cleared = case model.expedition {
     Some(exp) -> set.to_list(exp.mines_cleared)
     None -> []
   }
-  let s = list.fold(cleared, model.state, grant_mine)
+  let s = case model.expedition {
+    Some(exp) -> state.State(..model.state, world: Some(world.to_save(exp)))
+    None -> model.state
+  }
+  let s = list.fold(cleared, s, grant_mine)
   let #(s, unlock_messages) = unlock_returns(s)
   let #(s, blueprint_messages) = world.redeem_blueprints(s)
   let s = return_outfit(s)

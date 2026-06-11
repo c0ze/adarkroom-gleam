@@ -40,8 +40,26 @@ pub fn encode(state: State) -> String {
       #("play_stats", int_dict(state.play_stats)),
       #("previous", int_dict(state.previous)),
       #("outfit", int_dict(state.outfit)),
+      #("world", world_json(state.world)),
     ]),
   )
+}
+
+fn world_json(world: Option(state.WorldSave)) -> json.Json {
+  case world {
+    None -> json.null()
+    Some(ws) ->
+      json.object([
+        #(
+          "map",
+          json.array(ws.map, of: fn(row) { json.array(row, of: json.string) }),
+        ),
+        #(
+          "mask",
+          json.array(ws.mask, of: fn(row) { json.array(row, of: json.bool) }),
+        ),
+      ])
+  }
 }
 
 // --- decoding ---------------------------------------------------------------
@@ -63,6 +81,12 @@ fn state_decoder() -> Decoder(State) {
   use play_stats <- decode.field("play_stats", ints())
   use previous <- decode.field("previous", ints())
   use outfit <- decode.field("outfit", ints())
+  // Saves from before the world persisted simply haven't made one yet.
+  use world <- decode.optional_field(
+    "world",
+    None,
+    decode.optional(world_decoder()),
+  )
   decode.success(state.State(
     stores:,
     features:,
@@ -73,7 +97,14 @@ fn state_decoder() -> Decoder(State) {
     play_stats:,
     previous:,
     outfit:,
+    world:,
   ))
+}
+
+fn world_decoder() -> Decoder(state.WorldSave) {
+  use map <- decode.field("map", decode.list(decode.list(decode.string)))
+  use mask <- decode.field("mask", decode.list(decode.list(decode.bool)))
+  decode.success(state.WorldSave(map:, mask:))
 }
 
 /// Decode a JSON string into a `State`.

@@ -12,6 +12,7 @@
 
 import gleam/dict.{type Dict}
 import gleam/list
+import gleam/option.{type Option, None}
 import gleam/result
 import gleam/string
 
@@ -38,7 +39,16 @@ pub type State {
     previous: Dict(String, Int),
     /// Items selected to take on the path.
     outfit: Dict(String, Int),
+    /// The lasting overworld (`game.world` in the original): tile letters row
+    /// by row — a visited landmark carries a trailing `!` — and the fog mask.
+    /// `None` until the first expedition makes the world.
+    world: Option(WorldSave),
   )
+}
+
+/// The saved overworld: the map as rows of tile letters, and the fog.
+pub type WorldSave {
+  WorldSave(map: List(List(String)), mask: List(List(Bool)))
 }
 
 /// A fresh, empty state.
@@ -53,6 +63,7 @@ pub fn new() -> State {
     play_stats: dict.new(),
     previous: dict.new(),
     outfit: dict.new(),
+    world: None,
   )
 }
 

@@ -1992,3 +1992,56 @@ pub fn loot_screen_heals_are_instant_and_ungated_test() {
   model.on_cooldown(twice, "eat") |> should.be_false
   { after.player_hp > 1 } |> should.be_true
 }
+
+// --- the lasting world --------------------------------------------------------------
+
+pub fn a_second_embark_resumes_the_same_world_test() {
+  // A world already made and saved: embarking ignores the fresh seed roll
+  // and resumes it, marks and all.
+  let map = world.generate_map(rng.seed(5))
+  let exp = world.begin(map, state.new())
+  let assert Ok(house) =
+    dict.to_list(map) |> list.find(fn(e) { e.1 == world.House })
+  let marked = world.mark_visited(world.Expedition(..exp, pos: house.0))
+  let s =
+    state.State(
+      ..state.set_outfit(state.new(), "cured meat", 5),
+      world: option.Some(world.to_save(marked)),
+    )
+  let m =
+    model.Model(..model.init(), location: model.Path, state: s)
+    |> run(model.Embarked(seed: 999_999, cache: False))
+  let assert option.Some(resumed) = m.expedition
+  // The saved world, not a 999999-seeded one — and the house stays dealt with.
+  world.tile_at(resumed.map, house.0.0, house.0.1)
+  |> should.equal(Ok(world.House))
+  set.contains(resumed.visited, house.0) |> should.be_true
+  let fresh = world.generate_map(rng.seed(999_999))
+  { resumed.map == fresh } |> should.be_false
+}
+
+pub fn coming_home_commits_the_trip_test() {
+  // One step home from beside the village: the trip's marks and fog land in
+  // the save.
+  let mark = #(world.radius + 3, world.radius)
+  let exp =
+    world.Expedition(
+      ..forest_expedition(1, 10),
+      map: dict.from_list([
+        #(#(world.radius, world.radius), world.Village),
+        #(#(world.radius + 1, world.radius), world.Forest),
+      ]),
+      visited: set.insert(set.new(), mark),
+    )
+  let m =
+    model.Model(
+      ..model.init(),
+      location: model.World,
+      expedition: option.Some(exp),
+    )
+  let home = run(m, model.MoveWest)
+  home.location |> should.equal(model.Room)
+  let assert option.Some(ws) = home.state.world
+  let assert Ok(resumed) = world.resume(ws, state.new())
+  set.contains(resumed.visited, mark) |> should.be_true
+}
