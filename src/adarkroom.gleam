@@ -1152,11 +1152,29 @@ fn room_panel(m: Model) -> Element(Msg) {
   let fire_button = case room.fire(m.state) {
     room.Dead ->
       button.button(
-        button.Config(..button.new("light fire", LightFire), id: "lightButton"),
+        button.Config(
+          ..button.new("light fire", LightFire),
+          id: "lightButton",
+          cooldown: model.cooldown_fraction(
+            m,
+            "lightButton",
+            room.stoke_cooldown_ms,
+          ),
+          cooldown_ms: room.stoke_cooldown_ms,
+        ),
       )
     _ ->
       button.button(
-        button.Config(..button.new("stoke fire", StokeFire), id: "stokeButton"),
+        button.Config(
+          ..button.new("stoke fire", StokeFire),
+          id: "stokeButton",
+          cooldown: model.cooldown_fraction(
+            m,
+            "stokeButton",
+            room.stoke_cooldown_ms,
+          ),
+          cooldown_ms: room.stoke_cooldown_ms,
+        ),
       )
   }
   let #(builds, crafts) = craft.visible(m.revealed)

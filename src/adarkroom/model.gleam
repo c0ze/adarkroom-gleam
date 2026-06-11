@@ -387,29 +387,52 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
       }
     }
 
-    LightFire -> {
-      let lit = room.can_light(model.state)
-      let #(model, fx) =
-        room_music_after(fire_action(model, room.light_fire(model.state)))
-      // The room's title brightens with it (`setTitle` on `onFireChange`).
-      #(
-        model,
-        effect.batch([fx, sound_if(lit, audio.light_fire), title_if_calm(model)]),
-      )
-    }
-    StokeFire -> {
-      let stoked = room.can_stoke(model.state)
-      let #(model, fx) =
-        room_music_after(fire_action(model, room.stoke_fire(model.state)))
-      #(
-        model,
-        effect.batch([
-          fx,
-          sound_if(stoked, audio.stoke_fire),
-          title_if_calm(model),
-        ]),
-      )
-    }
+    LightFire ->
+      case on_cooldown(model, "lightButton") {
+        True -> #(model, effect.none())
+        False -> {
+          let lit = room.can_light(model.state)
+          let #(model, fx) =
+            room_music_after(fire_action(model, room.light_fire(model.state)))
+          // Ten seconds before the next try — a refusal clears it at once
+          // (`Button.clearCooldown` on the not-enough-wood path), so only a
+          // fire that caught arms it.
+          let model = case lit {
+            True -> start_cooldown(model, "lightButton", room.stoke_cooldown_ms)
+            False -> model
+          }
+          // The room's title brightens with it (`setTitle` on `onFireChange`).
+          #(
+            model,
+            effect.batch([
+              fx,
+              sound_if(lit, audio.light_fire),
+              title_if_calm(model),
+            ]),
+          )
+        }
+      }
+    StokeFire ->
+      case on_cooldown(model, "stokeButton") {
+        True -> #(model, effect.none())
+        False -> {
+          let stoked = room.can_stoke(model.state)
+          let #(model, fx) =
+            room_music_after(fire_action(model, room.stoke_fire(model.state)))
+          let model = case stoked {
+            True -> start_cooldown(model, "stokeButton", room.stoke_cooldown_ms)
+            False -> model
+          }
+          #(
+            model,
+            effect.batch([
+              fx,
+              sound_if(stoked, audio.stoke_fire),
+              title_if_calm(model),
+            ]),
+          )
+        }
+      }
 
     CoolCheck(at: now) -> {
       // Fire chatter is noQueue in the original (`notify(Room, ..., true)`):

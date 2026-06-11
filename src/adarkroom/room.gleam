@@ -155,6 +155,9 @@ pub fn unlock_forest(s: State) -> #(State, List(String)) {
 const builder_key = "builder"
 
 /// Delay between builder progression steps.
+/// `_STOKE_COOLDOWN` — both fire buttons recover for ten seconds.
+pub const stoke_cooldown_ms = 10_000
+
 pub const builder_state_delay_ms = 30_000
 
 /// `_NEED_WOOD_DELAY` — from the stranger's collapse to the forest opening.
