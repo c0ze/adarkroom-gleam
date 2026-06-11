@@ -1453,7 +1453,10 @@ fn heal_in_combat(model: Model, item: String) -> Model {
   let have = state.get_outfit(model.state, item) > 0
   case model.combat {
     Some(cs) if have ->
-      case on_cooldown(model, cd_id) {
+      // The loot screen rebuilds its heal buttons without cooldowns
+      // (`createEatMeatButton(0)` in winFight), so a won fight's heals are
+      // instant and ungated.
+      case !cs.won && on_cooldown(model, cd_id) {
         True -> model
         False -> {
           let amount = heal_amount(model.state, item)
@@ -1468,7 +1471,10 @@ fn heal_in_combat(model: Model, item: String) -> Model {
               ),
               combat: Some(combat.CombatState(..cs, player_hp: healed)),
             )
-          start_cooldown(model, cd_id, cd_ms)
+          case cs.won {
+            True -> model
+            False -> start_cooldown(model, cd_id, cd_ms)
+          }
         }
       }
     _ -> model
