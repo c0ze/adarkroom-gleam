@@ -255,3 +255,14 @@ pub fn the_chain_ends_in_an_outpost_test() {
   let assert Some(extra) = s.setpiece
   extra.world_effect |> should.equal(events.ClearDungeon)
 }
+
+pub fn the_whole_battleship_hums_the_same_theme_test() {
+  [
+    "executioner-intro", "executioner-antechamber", "executioner-engineering",
+    "executioner-martial", "executioner-medical", "executioner-command",
+  ]
+  |> list.each(fn(key) {
+    let assert Ok(ev) = executioner.event(key)
+    ev.audio |> should.equal(Some("audio/landmark-crashed-ship.flac"))
+  })
+}

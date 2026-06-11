@@ -1217,22 +1217,27 @@ pub fn an_elevator_to_nowhere_stays_put_test() {
       next: events.GotoEvent("no-such-event"),
     )
   let hub =
-    events.Event(title: "hub", is_available: fn(_) { True }, scenes: [
-      #(
-        "start",
-        events.Scene(
-          text: ["a dark stairwell"],
-          notification: option.None,
-          reward: [],
-          combat: False,
-          blink: False,
-          on_load: option.None,
-          on_load_rng: option.None,
-          setpiece: option.None,
-          buttons: [#("down", ride)],
+    events.Event(
+      title: "hub",
+      is_available: fn(_) { True },
+      audio: option.None,
+      scenes: [
+        #(
+          "start",
+          events.Scene(
+            text: ["a dark stairwell"],
+            notification: option.None,
+            reward: [],
+            combat: False,
+            blink: False,
+            on_load: option.None,
+            on_load_rng: option.None,
+            setpiece: option.None,
+            buttons: [#("down", ride)],
+          ),
         ),
-      ),
-    ])
+      ],
+    )
   let m =
     model.Model(
       ..battleship_model(),
@@ -1296,22 +1301,27 @@ pub fn an_elevator_button_switches_events_test() {
       next: events.GotoEvent("executioner-intro"),
     )
   let hub =
-    events.Event(title: "hub", is_available: fn(_) { True }, scenes: [
-      #(
-        "start",
-        events.Scene(
-          text: ["elevator doors"],
-          notification: option.None,
-          reward: [],
-          combat: False,
-          blink: False,
-          on_load: option.None,
-          on_load_rng: option.None,
-          setpiece: option.None,
-          buttons: [#("ride", ride)],
+    events.Event(
+      title: "hub",
+      is_available: fn(_) { True },
+      audio: option.None,
+      scenes: [
+        #(
+          "start",
+          events.Scene(
+            text: ["elevator doors"],
+            notification: option.None,
+            reward: [],
+            combat: False,
+            blink: False,
+            on_load: option.None,
+            on_load_rng: option.None,
+            setpiece: option.None,
+            buttons: [#("ride", ride)],
+          ),
         ),
-      ),
-    ])
+      ],
+    )
   let m =
     model.Model(
       ..model.init(),
@@ -1371,22 +1381,27 @@ pub fn a_world_event_can_cost_vitals_test() {
       next: events.End,
     )
   let fire =
-    events.Event(title: "fire", is_available: fn(_) { True }, scenes: [
-      #(
-        "start",
-        events.Scene(
-          text: ["flames"],
-          notification: option.None,
-          reward: [],
-          combat: False,
-          blink: False,
-          on_load: option.None,
-          on_load_rng: option.None,
-          setpiece: option.None,
-          buttons: [#("water", douse)],
+    events.Event(
+      title: "fire",
+      is_available: fn(_) { True },
+      audio: option.None,
+      scenes: [
+        #(
+          "start",
+          events.Scene(
+            text: ["flames"],
+            notification: option.None,
+            reward: [],
+            combat: False,
+            blink: False,
+            on_load: option.None,
+            on_load_rng: option.None,
+            setpiece: option.None,
+            buttons: [#("water", douse)],
+          ),
         ),
-      ),
-    ])
+      ],
+    )
   let m =
     model.Model(
       ..battleship_model(),
