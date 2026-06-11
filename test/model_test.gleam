@@ -2119,3 +2119,33 @@ pub fn every_boot_announces_the_room_and_the_fire_test() {
   notifications.messages(told.notifications)
   |> should.equal(["the fire is dead.", "the room is freezing."])
 }
+
+pub fn the_stoke_button_recovers_for_ten_seconds_test() {
+  // Two stokes back to back: the second is swallowed by the cooldown
+  // (_STOKE_COOLDOWN — the journal caught a live playthrough doing it).
+  let m =
+    model.Model(
+      ..model.init(),
+      now: 100_000,
+      state: state.set_store(state.new(), "wood", 50),
+    )
+  let lit = run(m, model.LightFire)
+  model.on_cooldown(lit, "lightButton") |> should.be_true
+  let once = run(lit, model.StokeFire)
+  let twice = run(once, model.StokeFire)
+  room.fire(twice.state) |> should.equal(room.fire(once.state))
+  state.get_store(twice.state, "wood")
+  |> should.equal(state.get_store(once.state, "wood"))
+}
+
+pub fn a_refused_light_arms_no_cooldown_test() {
+  // Not enough wood: the original clears the cooldown at once.
+  let m =
+    model.Model(
+      ..model.init(),
+      now: 100_000,
+      state: state.set_store(state.new(), "wood", 3),
+    )
+  let refused = run(m, model.LightFire)
+  model.on_cooldown(refused, "lightButton") |> should.be_false
+}
