@@ -146,23 +146,89 @@ pub fn has_perk(state: State, perk: String) -> Bool {
   get_character(state, "perk." <> perk) > 0
 }
 
+/// `Engine.Perks`, one canonical table: name, hover description, and what
+/// learning it announces.
+fn perks() -> List(#(String, String, String)) {
+  [
+    #(
+      "boxer",
+      "punches do more damage",
+      "learned to throw punches with purpose",
+    ),
+    #(
+      "martial artist",
+      "punches do even more damage.",
+      "learned to fight quite effectively without weapons",
+    ),
+    #(
+      "unarmed master",
+      "punch twice as fast, and with even more force",
+      "learned to strike faster without weapons",
+    ),
+    #(
+      "barbarian",
+      "melee weapons deal more damage",
+      "learned to swing weapons with force",
+    ),
+    #(
+      "slow metabolism",
+      "go twice as far without eating",
+      "learned how to ignore the hunger",
+    ),
+    #(
+      "desert rat",
+      "go twice as far without drinking",
+      "learned to love the dry air",
+    ),
+    #(
+      "evasive",
+      "dodge attacks more effectively",
+      "learned to be where they're not",
+    ),
+    #("precise", "land blows more often", "learned to predict their movement"),
+    #("scout", "see farther", "learned to look ahead"),
+    #(
+      "stealthy",
+      "better avoid conflict in the wild",
+      "learned how not to be seen",
+    ),
+    #(
+      "gastronome",
+      "restore more health when eating",
+      "learned to make the most of food",
+    ),
+  ]
+}
+
+fn perk_entry(perk: String) -> Result(#(String, String, String), Nil) {
+  list.find(perks(), fn(p) { p.0 == perk })
+}
+
+/// Every perk, in the original table's order (`Engine.Perks`).
+pub fn perk_table() -> List(String) {
+  list.map(perks(), fn(p) { p.0 })
+}
+
+/// A perk's hover description (`Engine.Perks[name].desc`).
+pub fn perk_desc(perk: String) -> String {
+  case perk_entry(perk) {
+    Ok(#(_, desc, _)) -> desc
+    Error(_) -> ""
+  }
+}
+
+/// The perks the wanderer has learned, in table order.
+pub fn owned_perks(state: State) -> List(String) {
+  list.filter(perk_table(), fn(perk) { has_perk(state, perk) })
+}
+
 /// Grant a perk.
 /// What learning a perk announces (`Engine.Perks[name].notify` — `addPerk`
 /// always notifies).
 pub fn perk_notify(perk: String) -> String {
-  case perk {
-    "boxer" -> "learned to throw punches with purpose"
-    "martial artist" -> "learned to fight quite effectively without weapons"
-    "unarmed master" -> "learned to strike faster without weapons"
-    "barbarian" -> "learned to swing weapons with force"
-    "slow metabolism" -> "learned how to ignore the hunger"
-    "desert rat" -> "learned to love the dry air"
-    "evasive" -> "learned to be where they're not"
-    "precise" -> "learned to predict their movement"
-    "scout" -> "learned to look ahead"
-    "stealthy" -> "learned how not to be seen"
-    "gastronome" -> "learned to make the most of food"
-    _ -> "learned " <> perk
+  case perk_entry(perk) {
+    Ok(#(_, _, notify)) -> notify
+    Error(_) -> "learned " <> perk
   }
 }
 
