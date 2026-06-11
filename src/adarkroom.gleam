@@ -276,11 +276,46 @@ fn game_view(m: Model) -> Element(Msg) {
         ]),
         notifications_view(m.notifications),
       ],
-      // The event modal or, out in the world, the combat screen floats above
-      // everything when active (at most one at a time).
-      list.append(event_overlay(m), combat_overlay(m)),
+      list.flatten([
+        // The event modal or, out in the world, the combat screen floats
+        // above everything when active (at most one at a time).
+        event_overlay(m),
+        combat_overlay(m),
+        pause_corner(m),
+        pause_overlay(m),
+      ]),
     ),
   )
+}
+
+/// The pause control, in the original menu's corner — an addition over the
+/// original (which has no global pause), offered only when nothing is afoot.
+fn pause_corner(m: Model) -> List(Element(Msg)) {
+  case model.can_pause(m) && !m.paused {
+    True -> [
+      html.div([attribute.class("menu")], [
+        html.span([event.on_click(model.TogglePause)], [element.text("pause.")]),
+      ]),
+    ]
+    False -> []
+  }
+}
+
+/// While paused the world holds its breath behind a quiet sheet; one click
+/// lets it out. The sheet also keeps stray clicks from reaching the game.
+fn pause_overlay(m: Model) -> List(Element(Msg)) {
+  case m.paused {
+    True -> [
+      html.div([attribute.id("pauseOverlay")], [
+        html.div([], [element.text("paused.")]),
+        html.div(
+          [attribute.class("resumeBtn"), event.on_click(model.TogglePause)],
+          [element.text("resume.")],
+        ),
+      ]),
+    ]
+    False -> []
+  }
 }
 
 /// The combat screen, shown while a world fight is underway.

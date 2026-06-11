@@ -164,6 +164,12 @@ pub type Msg {
   /// The ascent is survived: save the score and prestige (the rolls reduce
   /// the carried stores) and begin the ending.
   GameWon(rolls: List(Float))
+  /// Hold the world's breath / let it out (the pause button).
+  TogglePause
+  /// The pause read the wall clock as the breath was caught.
+  Paused(at: Int)
+  /// The resume read the wall clock; deadlines shift by the time asleep.
+  Resumed(at: Int)
   /// Timer: the next outro paragraph fades in.
   OutroStep
   /// The outro's wait button: on to the scores.
@@ -245,6 +251,11 @@ pub type Model {
     playing: String,
     /// Whether the document key listeners are armed (once per session).
     keys_armed: Bool,
+    /// Whether the world is holding its breath (the pause button — an
+    /// addition over the original, which has no global pause). Runtime-only.
+    paused: Bool,
+    /// The wall clock when the pause began, for shifting deadlines on resume.
+    paused_at: Int,
   )
 }
 
@@ -286,6 +297,8 @@ pub fn init() -> Model {
     blinking: False,
     playing: "",
     keys_armed: False,
+    paused: False,
+    paused_at: 0,
   )
 }
 
@@ -319,7 +332,99 @@ fn start_cooldown(model: Model, id: String, duration: Int) -> Model {
 
 /// State transition, paired with any effects to run.
 pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
+  case model.paused {
+    True -> update_paused(model, msg)
+    False -> step_world(model, msg)
+  }
+}
+
+/// While paused, the world holds its breath: the heartbeats are swallowed,
+/// one-shot chain timers knock again in a second so nothing is lost, and
+/// only the resume gets through.
+fn update_paused(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
   case msg {
+    TogglePause -> #(
+      model,
+      effect.from(fn(dispatch) {
+        dispatch(Resumed(at: float.round(clock.now())))
+      }),
+    )
+    Resumed(at: at) -> {
+      let asleep = int.max(0, at - model.paused_at)
+      #(shift_deadlines(model, asleep, at), effect.none())
+    }
+    // The builder's progression, the forest's clock and the newcomers ride
+    // raw timeouts; while paused they retry until the world breathes again.
+    BuilderProgress -> #(model, delayed(1000, msg))
+    UnlockForest -> #(model, delayed(1000, msg))
+    PopulationIncreased(_) -> #(model, delayed(1000, msg))
+    // A double-tap of the pause while already asleep changes nothing.
+    Paused(_) -> #(model, effect.none())
+    // Everything else — heartbeats included — passes the paused world by.
+    _ -> #(model, effect.none())
+  }
+}
+
+/// Let the world breathe again: every wall-clock deadline moves forward by
+/// the time spent asleep, so cooldowns, the fire and the next event resume
+/// exactly where they paused.
+fn shift_deadlines(model: Model, asleep: Int, at: Int) -> Model {
+  let cooldowns = dict.map_values(model.cooldowns, fn(_, t) { t + asleep })
+  let cool_at = state.get_game(model.state, "coolAt")
+  let s = case cool_at > 0 {
+    True -> state.set_game(model.state, "coolAt", cool_at + asleep)
+    False -> model.state
+  }
+  let next_event_at = case model.next_event_at > 0 {
+    True -> model.next_event_at + asleep
+    False -> 0
+  }
+  Model(
+    ..model,
+    state: s,
+    cooldowns: cooldowns,
+    next_event_at: next_event_at,
+    now: at,
+    paused: False,
+    paused_at: 0,
+  )
+}
+
+/// Whether the pause is offered: only at home with nothing afoot — no event
+/// on screen, no fight, no expedition, no ascent.
+pub fn can_pause(model: Model) -> Bool {
+  case model.location {
+    Room | Outside | Path ->
+      model.active_event == None
+      && model.combat == None
+      && model.expedition == None
+      && model.space == None
+    _ -> False
+  }
+}
+
+fn step_world(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
+  case msg {
+    TogglePause ->
+      case can_pause(model) {
+        // The wall clock is read fresh on both ends of the sleep, so the
+        // shift is exact (model.now can be a heartbeat stale).
+        True -> #(
+          model,
+          effect.from(fn(dispatch) {
+            dispatch(Paused(at: float.round(clock.now())))
+          }),
+        )
+        False -> #(model, effect.none())
+      }
+
+    Paused(at: at) -> #(
+      Model(..model, paused: True, paused_at: at),
+      effect.none(),
+    )
+
+    Resumed(..) -> #(model, effect.none())
+
     Tick -> {
       // The game loop also reveals any craftables whose conditions are now met.
       let #(revealed, messages) = craft.reveal(model.state, model.revealed)
