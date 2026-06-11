@@ -291,7 +291,7 @@ pub fn the_grown_builder_keeps_the_fire_alive_test() {
   let s =
     state.new()
     |> state.set_store("wood", 10)
-    |> state.set_game("builder.level", 4)
+    |> state.set_game("builder", 4)
   let #(s, _) = room.light_fire(s)
   let #(s, _) = room.cool_fire(s)
   room.fire(s) |> should.equal(room.Flickering)
@@ -305,7 +305,7 @@ pub fn a_young_builder_lets_it_cool_test() {
   let s =
     state.new()
     |> state.set_store("wood", 10)
-    |> state.set_game("builder.level", 1)
+    |> state.set_game("builder", 1)
   let #(s, _) = room.light_fire(s)
   let #(s, _) = room.cool_fire(s)
   let #(after, _) = room.cool_fire(s)

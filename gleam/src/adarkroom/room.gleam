@@ -249,7 +249,7 @@ pub fn stoke_fire(s: State) -> #(State, List(String)) {
 pub fn cool_fire(s: State) -> #(State, List(String)) {
   let #(s, stoke_messages) = case
     fire_to_int(fire(s)) <= fire_to_int(Flickering)
-    && state.get_game(s, "builder.level") > 3
+    && builder_level(s) > 3
     && state.get_store(s, "wood") > 0
   {
     True -> #(
