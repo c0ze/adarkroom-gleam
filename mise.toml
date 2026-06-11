@@ -2,22 +2,18 @@
 gleam = "1.15.2"
 node = "22.18.0"
 
-[tasks."gleam:build"]
+[tasks."build"]
 description = "Build the Gleam port and Vite bundle"
-dir = "gleam"
 run = "npm run build"
 
-[tasks."gleam:dev"]
-description = "Run the Gleam port development server"
-dir = "gleam"
+[tasks."dev"]
+description = "Run the development server"
 run = "npm run dev"
 
-[tasks."gleam:format"]
-description = "Check Gleam formatting for the port"
-dir = "gleam"
+[tasks."format"]
+description = "Check Gleam formatting"
 run = "gleam format --check src test"
 
-[tasks."gleam:test"]
-description = "Run the Gleam port test suite"
-dir = "gleam"
+[tasks."test"]
+description = "Run the test suite"
 run = "gleam test"

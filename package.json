@@ -1,16 +1,14 @@
 {
-  "name": "adarkroom",
-  "type": "module",
-  "version": "1.0.0",
+  "name": "adarkroom-gleam",
   "private": true,
-  "repository": "git@github.com:doublespeakgames/adarkroom.git",
-  "author": "Michael Townsend <michael@doublespeakgames.com>",
-  "license": "MPL-2.0",
+  "version": "0.0.0",
+  "type": "module",
   "scripts": {
-    "start": "node dev-server.js",
-    "update_pot": "pybabel extract -F lang/babel.cfg -c \"TRANSLATORS\" script -o lang/adarkroom.pot"
+    "dev": "gleam build && vite",
+    "build": "gleam build && vite build",
+    "preview": "vite preview"
   },
-  "dependencies": {
-    "express": "^4.17.1"
+  "devDependencies": {
+    "vite": "^6.3.5"
   }
 }
