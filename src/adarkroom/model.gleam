@@ -12,6 +12,7 @@ import adarkroom/encounters
 import adarkroom/events
 import adarkroom/executioner
 import adarkroom/fabricator
+import adarkroom/journal
 import adarkroom/notifications.{type Notifications}
 import adarkroom/outside
 import adarkroom/path
@@ -1473,19 +1474,23 @@ fn resolve_enemy_turn(model: Model, roll: Float) -> Model {
 fn collect_loot(model: Model, rolls: List(Float)) -> Model {
   case model.combat {
     // The fight stays on screen as a looting phase (`winFight`): the drops
-    // wait in rows, and only the death message is announced.
+    // wait in rows. The death message is loot-screen text only — the
+    // original never notifies it — but the playthrough journal keeps it.
     Some(cs) -> {
       let loot =
         combat.roll_loot(cs.enemy.loot, rolls)
         |> list.filter(fn(l) { l.1 > 0 })
-      let messages = [cs.enemy.death_message] |> list.filter(fn(m) { m != "" })
+      let _ = case cs.enemy.death_message {
+        "" -> Nil
+        message -> journal.record("world", message)
+      }
       // The leave and take-everything buttons start their second of cooling
       // as the screen appears (`Button.cooldown` on creation).
       let model =
         model
         |> start_cooldown("loot_leave", leave_cooldown_ms)
         |> start_cooldown("loot_take_et", leave_cooldown_ms)
-      notify_world(Model(..model, loot: loot, drop_for: None), messages)
+      Model(..model, loot: loot, drop_for: None)
     }
     None -> model
   }
