@@ -280,10 +280,20 @@ pub type Status {
   Venomous
   /// One-hit buff: the next landed blow strikes fourfold.
   Energised
+  /// Player-only (`boost`): halves the attack cooldowns while it lasts.
+  Boost
 }
 
 /// `ENERGISE_MULTIPLIER` — an energised blow strikes fourfold.
 pub const energise_multiplier = 4
+
+/// `BOOST_DAMAGE` — the stim's price in health.
+pub const boost_damage = 10
+
+/// `_SHIELD_COOLDOWN` / `_STIM_COOLDOWN` — both ten seconds.
+pub const shield_cooldown_ms = 10_000
+
+pub const stim_cooldown_ms = 10_000
 
 /// `ENRAGE_DURATION` — how long the half-second fury lasts.
 pub const enrage_duration_ms = 4000
@@ -322,6 +332,8 @@ pub type CombatState {
     meditate_bank: Int,
     /// Poison dripping on the player: damage per tick, `0` when unpoisoned.
     player_dot: Int,
+    /// The player's own status: a raised shield or a stim's boost.
+    player_status: Status,
     /// `atHealth` triggers: crossing a threshold from above takes the status.
     at_health: List(#(Int, Status)),
     /// The enemy's recurring specials; the model runs their timers.
@@ -350,6 +362,7 @@ pub fn begin_combat(
     enemy_status: NoStatus,
     meditate_bank: 0,
     player_dot: 0,
+    player_status: NoStatus,
     at_health: [],
     specials: [],
     last_special: NoStatus,
@@ -434,8 +447,50 @@ pub fn enemy_strike(
   }
 }
 
+/// One blow on the player. A raised shield absorbs it as healing instead —
+/// and breaks (one hit per shield).
 fn hurt_player(cs: CombatState, d: Int) -> CombatState {
-  CombatState(..cs, player_hp: apply_damage(cs.player_hp, cs.player_max, d))
+  case cs.player_status {
+    Shield ->
+      CombatState(
+        ..cs,
+        player_status: NoStatus,
+        player_hp: int.min(cs.player_max, cs.player_hp + d),
+      )
+    _ ->
+      CombatState(..cs, player_hp: apply_damage(cs.player_hp, cs.player_max, d))
+  }
+}
+
+/// Raise the kinetic shield (`useShield`).
+pub fn raise_shield(cs: CombatState) -> CombatState {
+  CombatState(..cs, player_status: Shield)
+}
+
+/// Jam the stim (`useStim`): the boost takes hold at the price of a tithe of
+/// health — which can kill.
+pub fn use_stim(cs: CombatState) -> CombatState {
+  CombatState(
+    ..cs,
+    player_status: Boost,
+    player_hp: int.max(0, cs.player_hp - boost_damage),
+  )
+}
+
+/// Whether this turn's blow will actually land: a banked trance repays itself
+/// as a guaranteed hit; otherwise the roll decides. (The blow's sound only
+/// plays when it does.)
+pub fn enemy_blow_lands(cs: CombatState, s: state.State, roll: Float) -> Bool {
+  case cs.enemy_stunned, cs.enemy_status, cs.meditate_bank {
+    True, _, _ -> False
+    False, Meditation, _ -> False
+    False, _, bank if bank > 0 -> True
+    False, _, _ ->
+      case enemy_attack(cs.enemy.hit, cs.enemy.damage, s, roll) {
+        Damage(_) -> True
+        _ -> False
+      }
+  }
 }
 
 /// An enemy blow that connects: an energised enemy strikes fourfold, a
@@ -448,11 +503,14 @@ fn land_enemy_hit(cs: CombatState, d: Int) -> CombatState {
         CombatState(..cs, enemy_status: NoStatus),
         d * energise_multiplier,
       )
-    Venomous ->
-      hurt_player(
-        CombatState(..cs, enemy_status: NoStatus, player_dot: d / 2),
-        d,
-      )
+    Venomous -> {
+      // A raised shield blocks the venom along with the blow.
+      let dot = case cs.player_status {
+        Shield -> cs.player_dot
+        _ -> d / 2
+      }
+      hurt_player(CombatState(..cs, enemy_status: NoStatus, player_dot: dot), d)
+    }
     _ -> hurt_player(cs, d)
   }
 }

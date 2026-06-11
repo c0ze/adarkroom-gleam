@@ -15,7 +15,7 @@ import adarkroom/model.{
   CheckTraps, ChooseEvent, CollectIncome, CoolCheck, DecreaseSupply,
   DecreaseWorker, Embark, Fabricate, GatherWood, Heal, IncreaseSupply,
   IncreaseWorker, LightFire, MoveEast, MoveNorth, MoveSouth, MoveWest, Navigate,
-  ReinforceHull, StokeFire, StrikeEnemy, Tick, UpgradeEngine,
+  ReinforceHull, StokeFire, StrikeEnemy, Tick, UpgradeEngine, UseShield, UseStim,
 }
 import adarkroom/notifications.{type Notifications}
 import adarkroom/outside
@@ -299,7 +299,7 @@ fn combat_overlay(m: Model) -> List(Element(Msg)) {
               "@",
               cs.player_hp,
               cs.player_max,
-              combat.NoStatus,
+              cs.player_status,
             ),
             fighter_div(
               "enemy",
@@ -472,6 +472,15 @@ fn loot_exit_buttons(m: Model) -> List(Element(Msg)) {
   }
 }
 
+/// Whether healing has any room to work — at full health every button in the
+/// heal row sits disabled, save the shield (`setHeal`).
+fn can_heal(m: Model) -> Bool {
+  case m.combat {
+    option.Some(cs) -> cs.player_hp < cs.player_max
+    option.None -> False
+  }
+}
+
 /// The heal buttons a fight offers — one per healing item carried, each on its
 /// own cooldown after use.
 fn heal_buttons(m: Model) -> List(Element(Msg)) {
@@ -489,7 +498,7 @@ fn heal_buttons(m: Model) -> List(Element(Msg)) {
             text: label,
             on_click: Heal(item),
             cost: [],
-            disabled: False,
+            disabled: !can_heal(m),
             cooldown: model.cooldown_fraction(m, cooldown_id, cooldown_ms),
             cooldown_ms: cooldown_ms,
             id: cooldown_id,
@@ -498,6 +507,45 @@ fn heal_buttons(m: Model) -> List(Element(Msg)) {
       False -> Error(Nil)
     }
   })
+  |> list.append(combat_aid_buttons(m))
+}
+
+/// The stim's boost (an outfit item) and the kinetic shield (owning the
+/// armour suffices) ride at the end of the heal row, as the JS appends them.
+fn combat_aid_buttons(m: Model) -> List(Element(Msg)) {
+  let stim = case state.get_outfit(m.state, "stim") > 0 {
+    True -> [
+      button.button(button.Config(
+        text: "boost",
+        on_click: UseStim,
+        cost: [],
+        disabled: !can_heal(m),
+        cooldown: model.cooldown_fraction(
+          m,
+          "use-stim",
+          combat.stim_cooldown_ms,
+        ),
+        cooldown_ms: combat.stim_cooldown_ms,
+        id: "use-stim",
+      )),
+    ]
+    False -> []
+  }
+  let shield = case state.get_store(m.state, "kinetic armour") > 0 {
+    True -> [
+      button.button(button.Config(
+        text: "shield",
+        on_click: UseShield,
+        cost: [],
+        disabled: False,
+        cooldown: model.cooldown_fraction(m, "shld", combat.shield_cooldown_ms),
+        cooldown_ms: combat.shield_cooldown_ms,
+        id: "shld",
+      )),
+    ]
+    False -> []
+  }
+  list.append(stim, shield)
 }
 
 /// One fighter: a glyph and its HP, as `createFighterDiv` builds.
@@ -517,6 +565,7 @@ fn fighter_div(
     combat.Meditation -> "fighter meditation"
     combat.Venomous -> "fighter venomous"
     combat.Energised -> "fighter energised"
+    combat.Boost -> "fighter boost"
   }
   html.div([attribute.id(id), attribute.class(class)], [
     html.div([attribute.class("label")], [element.text(label)]),
@@ -538,17 +587,15 @@ fn attack_buttons(m: Model, _cs: combat.CombatState) -> List(Element(Msg)) {
 }
 
 fn attack_button(m: Model, name: String, weapon: combat.Weapon) -> Element(Msg) {
+  // A stim's boost halves the recovery, bars included.
+  let cooldown_ms = model.strike_cooldown_ms(m, name)
   button.button(button.Config(
     text: name,
     on_click: StrikeEnemy(name),
     cost: [],
     disabled: !combat.can_attack_with(weapon, m.state),
-    cooldown: model.cooldown_fraction(
-      m,
-      "attack_" <> name,
-      weapon.cooldown * 1000,
-    ),
-    cooldown_ms: weapon.cooldown * 1000,
+    cooldown: model.cooldown_fraction(m, "attack_" <> name, cooldown_ms),
+    cooldown_ms: cooldown_ms,
     id: "attack_" <> name,
   ))
 }

@@ -248,13 +248,26 @@ fn quantity(s: state.State, purse: Purse, name: String) -> Int {
   }
 }
 
+/// A glowstone in the bag stands in for torches: any torch cost is waived
+/// wherever a button's cost is read (the original deletes `cost.torch` at
+/// every site that consults it).
+fn waive_torch(
+  cost: List(#(String, Int)),
+  s: state.State,
+) -> List(#(String, Int)) {
+  case state.get_outfit(s, "glowstone") > 0 {
+    True -> list.filter(cost, fn(c) { c.0 != "torch" })
+    False -> cost
+  }
+}
+
 /// Whether the purse can cover a button's cost.
 pub fn affordable(
   cost: List(#(String, Int)),
   s: state.State,
   purse: Purse,
 ) -> Bool {
-  list.all(cost, fn(c) { quantity(s, purse, c.0) >= c.1 })
+  list.all(waive_torch(cost, s), fn(c) { quantity(s, purse, c.0) >= c.1 })
 }
 
 /// Pay a cost from the purse.
@@ -296,7 +309,7 @@ pub fn click_button(
   case affordable(button.cost, s, purse) {
     False -> Error(Nil)
     True -> {
-      let #(s, purse) = pay(s, purse, button.cost)
+      let #(s, purse) = pay(s, purse, waive_torch(button.cost, s))
       let s = apply_stores(s, button.reward)
       let #(s, click_messages) = case button.on_click {
         option.Some(f) -> f(s)

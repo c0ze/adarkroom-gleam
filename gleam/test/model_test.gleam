@@ -1904,3 +1904,35 @@ pub fn the_shady_builder_keeps_quiet_test() {
     start.blink |> should.be_true
   })
 }
+
+// --- the wanderer's combat kit ----------------------------------------------------
+
+pub fn the_shield_button_raises_it_and_cools_test() {
+  let m = special_fight([], combat.NoStatus)
+  let after = run(m, model.UseShield)
+  let assert option.Some(cs) = after.combat
+  cs.player_status |> should.equal(combat.Shield)
+  model.on_cooldown(after, "shld") |> should.be_true
+}
+
+pub fn a_stim_on_the_last_of_the_health_kills_test() {
+  let m = special_fight([], combat.NoStatus)
+  let assert option.Some(cs) = m.combat
+  let nearly =
+    model.Model(
+      ..m,
+      combat: option.Some(combat.CombatState(..cs, player_hp: 8)),
+    )
+  let after = run(nearly, model.UseStim)
+  // The tithe was everything: the world fades.
+  after.combat |> should.equal(option.None)
+  after.location |> should.equal(model.Room)
+}
+
+pub fn the_boost_halves_the_swing_recovery_test() {
+  let m = special_fight([], combat.NoStatus)
+  model.strike_cooldown_ms(m, "fists") |> should.equal(2000)
+  let assert option.Some(cs) = m.combat
+  let boosted = model.Model(..m, combat: option.Some(combat.use_stim(cs)))
+  model.strike_cooldown_ms(boosted, "fists") |> should.equal(1000)
+}

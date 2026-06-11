@@ -115,6 +115,10 @@ pub type Msg {
   CollectLoot(rolls: List(Float))
   /// Use a healing item (cured meat / medicine / hypo) mid-fight.
   Heal(item: String)
+  /// Raise the kinetic shield: the next blow heals instead, then it breaks.
+  UseShield
+  /// Jam a stim: attack cooldowns halve, at a price in health that can kill.
+  UseStim
   /// Grant a setpiece scene's loot from the supplied rolls (two per drop).
   SetpieceLoot(rolls: List(Float))
   /// Run a scene's random `onLoad` (a disaster's toll) with the supplied roll.
@@ -613,7 +617,11 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
         // Still recovering from the last swing — ignore the click.
         True -> #(model, effect.none())
         False -> #(
-          start_cooldown(model, "attack_" <> weapon, weapon_cooldown_ms(weapon)),
+          start_cooldown(
+            model,
+            "attack_" <> weapon,
+            strike_cooldown_ms(model, weapon),
+          ),
           roll_strike(weapon),
         )
       }
@@ -632,18 +640,18 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
     ResolveEnemyTurn(roll: roll) -> {
       let dot_before = current_dot(model)
       let had_fight = model.combat != None
-      // A blow that's actually swung makes its noise — a stunned or
-      // meditating enemy stays silent.
+      // A blow that actually lands makes its noise — misses, stuns and
+      // trances stay silent (the sound lives in the JS hit branch).
       let strike_snd = case model.combat {
-        Some(cs)
-          if !cs.won
-          && !cs.enemy_stunned
-          && cs.enemy_status != combat.Meditation
-        ->
-          weapon_noise(case cs.enemy.ranged {
-            True -> combat.Ranged
-            False -> combat.Melee
-          })
+        Some(cs) if !cs.won ->
+          case combat.enemy_blow_lands(cs, model.state, roll) {
+            True ->
+              weapon_noise(case cs.enemy.ranged {
+                True -> combat.Ranged
+                False -> combat.Melee
+              })
+            False -> effect.none()
+          }
         _ -> effect.none()
       }
       let model = resolve_enemy_turn(model, roll)
@@ -671,6 +679,41 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
     }
 
     CollectLoot(rolls: rolls) -> #(collect_loot(model, rolls), effect.none())
+
+    UseShield ->
+      case model.combat, on_cooldown(model, "shld") {
+        Some(cs), False -> #(
+          start_cooldown(
+            Model(..model, combat: Some(combat.raise_shield(cs))),
+            "shld",
+            combat.shield_cooldown_ms,
+          ),
+          effect.none(),
+        )
+        _, _ -> #(model, effect.none())
+      }
+
+    UseStim ->
+      case model.combat, on_cooldown(model, "use-stim") {
+        Some(cs), False -> {
+          let stimmed = combat.use_stim(cs)
+          let model =
+            start_cooldown(
+              Model(..model, combat: Some(stimmed)),
+              "use-stim",
+              combat.stim_cooldown_ms,
+            )
+          // The tithe can be the last of the wanderer's health.
+          case stimmed.player_hp <= 0 {
+            True -> {
+              let dead = die(model)
+              #(dead, die_fx(dead))
+            }
+            False -> #(model, effect.none())
+          }
+        }
+        _, _ -> #(model, effect.none())
+      }
 
     Heal(item: item) -> {
       let snd = case item {
@@ -1443,6 +1486,16 @@ fn weapon_cooldown_ms(weapon: String) -> Int {
   case combat.get_weapon(weapon) {
     Ok(w) -> w.cooldown * 1000
     Error(_) -> 0
+  }
+}
+
+/// A swing's cooldown right now: halved while the stim's boost holds
+/// (`Button.cooldown`'s `boosted` check). The view's bars read it too.
+pub fn strike_cooldown_ms(model: Model, weapon: String) -> Int {
+  let ms = weapon_cooldown_ms(weapon)
+  case model.combat {
+    Some(cs) if cs.player_status == combat.Boost -> ms / 2
+    _ -> ms
   }
 }
 
