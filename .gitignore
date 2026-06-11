@@ -17,3 +17,6 @@ adarkroom-js/lang/.DS_Store
 adarkroom-js/img/Thumbs.db
 *.TODO
 *.mo
+
+# local agent config
+.claude/
