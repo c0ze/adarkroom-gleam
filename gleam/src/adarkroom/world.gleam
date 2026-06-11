@@ -585,6 +585,87 @@ pub fn begin(map: Map, s: State) -> Expedition {
   )
 }
 
+/// The letter back to its tile (`tile_char` reversed).
+fn char_tile(c: String) -> Result(Tile, Nil) {
+  case c {
+    "A" -> Ok(Village)
+    "I" -> Ok(IronMine)
+    "C" -> Ok(CoalMine)
+    "S" -> Ok(SulphurMine)
+    ";" -> Ok(Forest)
+    "," -> Ok(Field)
+    "." -> Ok(Barrens)
+    "#" -> Ok(Road)
+    "H" -> Ok(House)
+    "V" -> Ok(Cave)
+    "O" -> Ok(Town)
+    "Y" -> Ok(City)
+    "P" -> Ok(Outpost)
+    "W" -> Ok(Ship)
+    "B" -> Ok(Borehole)
+    "F" -> Ok(Battlefield)
+    "M" -> Ok(Swamp)
+    "U" -> Ok(Cache)
+    "X" -> Ok(Executioner)
+    _ -> Error(Nil)
+  }
+}
+
+/// Pack the trip's map, visited marks and fog for the save — `goHome`
+/// committing `World.state` back to `game.world`. A visited landmark's
+/// letter carries a trailing `!`, the original's `markVisited`.
+pub fn to_save(exp: Expedition) -> state.WorldSave {
+  let side = seq(0, radius * 2 + 1)
+  let rows = fn(cell: fn(Int, Int) -> a) {
+    list.map(side, fn(y) { list.map(side, fn(x) { cell(x, y) }) })
+  }
+  state.WorldSave(
+    map: rows(fn(x, y) {
+      let letter = case dict.get(exp.map, #(x, y)) {
+        Ok(t) -> tile_char(t)
+        Error(_) -> "."
+      }
+      case set.contains(exp.visited, #(x, y)) {
+        True -> letter <> "!"
+        False -> letter
+      }
+    }),
+    mask: rows(fn(x, y) { set.contains(exp.seen, #(x, y)) }),
+  )
+}
+
+/// Resume the lasting world from the save: the map, the landmarks already
+/// dealt with (their `!` marks), and the fog seen so far. A malformed save
+/// is an `Error`, and the caller makes the world anew.
+pub fn resume(ws: state.WorldSave, s: State) -> Result(Expedition, Nil) {
+  use #(map, visited) <- result.try(parse_map(ws.map))
+  let seen =
+    list.index_fold(ws.mask, set.new(), fn(acc, row, y) {
+      list.index_fold(row, acc, fn(acc, lit, x) {
+        case lit {
+          True -> set.insert(acc, #(x, y))
+          False -> acc
+        }
+      })
+    })
+  let fresh = begin(map, s)
+  Ok(Expedition(..fresh, seen: set.union(fresh.seen, seen), visited: visited))
+}
+
+fn parse_map(rows: List(List(String))) -> Result(#(Map, Set(#(Int, Int))), Nil) {
+  list.index_fold(rows, Ok(#(dict.new(), set.new())), fn(acc, row, y) {
+    list.index_fold(row, acc, fn(acc, letter, x) {
+      use #(map, visited) <- result.try(acc)
+      use tile <- result.try(char_tile(string.slice(letter, 0, 1)))
+      let visited = case string.ends_with(letter, "!") {
+        True -> set.insert(visited, #(x, y))
+        False -> visited
+      }
+      Ok(#(dict.insert(map, #(x, y), tile), visited))
+    })
+  })
+}
+
 /// The setpiece registry key for a landmark tile, mirroring `World.LANDMARKS`.
 /// Terrain, roads, the village and the executioner have no setpiece here.
 pub fn setpiece_scene(tile: Tile) -> Result(String, Nil) {

@@ -1,5 +1,7 @@
+import adarkroom/rng
 import adarkroom/save
 import adarkroom/state
+import adarkroom/world
 import gleam/option.{Some}
 import gleeunit/should
 
@@ -40,4 +42,23 @@ pub fn save_then_load_test() {
   let assert Some(loaded) = save.load()
   state.get_store(loaded, "wood") |> should.equal(10)
   state.has_feature(loaded, "fire") |> should.equal(True)
+}
+
+pub fn the_world_rides_the_save_test() {
+  let map = world.generate_map(rng.seed(3))
+  let exp = world.begin(map, state.new())
+  let s = state.State(..state.new(), world: option.Some(world.to_save(exp)))
+  let assert Ok(loaded) = save.decode(save.encode(s))
+  loaded.world |> should.equal(s.world)
+}
+
+pub fn an_elder_save_has_no_world_yet_test() {
+  // Saves written before the world persisted lack the field entirely.
+  let assert Ok(loaded) =
+    save.decode(
+      "{\"stores\":{},\"features\":{},\"character\":{},\"game\":{},"
+      <> "\"income\":{},\"timers\":{},\"play_stats\":{},\"previous\":{},"
+      <> "\"outfit\":{}}",
+    )
+  loaded.world |> should.equal(option.None)
 }
