@@ -1,0 +1,535 @@
+import adarkroom/combat
+import adarkroom/state
+import gleam/list
+import gleeunit/should
+
+// --- weapons table ----------------------------------------------------------
+
+pub fn fists_is_the_unarmed_baseline_test() {
+  let assert Ok(w) = combat.get_weapon("fists")
+  w.verb |> should.equal("punch")
+  w.kind |> should.equal(combat.Unarmed)
+  w.damage |> should.equal(combat.Hit(1))
+  w.cooldown |> should.equal(2)
+  w.cost |> should.equal([])
+}
+
+pub fn rifle_costs_a_bullet_per_shot_test() {
+  let assert Ok(w) = combat.get_weapon("rifle")
+  w.kind |> should.equal(combat.Ranged)
+  w.damage |> should.equal(combat.Hit(5))
+  w.cooldown |> should.equal(1)
+  w.cost |> should.equal([#("bullets", 1)])
+}
+
+pub fn bolas_deals_a_stun_not_damage_test() {
+  let assert Ok(w) = combat.get_weapon("bolas")
+  w.damage |> should.equal(combat.Stun)
+  w.cost |> should.equal([#("bolas", 1)])
+}
+
+pub fn table_has_all_twelve_weapons_test() {
+  combat.weapons() |> list.length |> should.equal(12)
+  combat.get_weapon("steel sword") |> should.be_ok
+  combat.get_weapon("laser rifle") |> should.be_ok
+  combat.get_weapon("energy blade") |> should.be_ok
+  combat.get_weapon("disruptor") |> should.be_ok
+  combat.get_weapon("plasma rifle") |> should.be_ok
+}
+
+pub fn unknown_weapon_is_an_error_test() {
+  combat.get_weapon("railgun") |> should.equal(Error(Nil))
+}
+
+// --- hit chance -------------------------------------------------------------
+
+pub fn base_hit_chance_is_four_in_five_test() {
+  combat.hit_chance(state.new()) |> should.equal(0.8)
+}
+
+pub fn precise_perk_adds_ten_percent_test() {
+  state.new()
+  |> state.add_perk("precise")
+  |> combat.hit_chance
+  |> should.equal(0.9)
+}
+
+// --- player attack ----------------------------------------------------------
+
+fn weapon(name: String) -> combat.Weapon {
+  let assert Ok(w) = combat.get_weapon(name)
+  w
+}
+
+pub fn a_roll_above_hit_chance_misses_test() {
+  // base hit chance 0.8; a 0.81 roll whiffs.
+  combat.player_attack(weapon("fists"), state.new(), 0.81)
+  |> should.equal(combat.Miss)
+}
+
+pub fn a_landed_punch_deals_one_test() {
+  combat.player_attack(weapon("fists"), state.new(), 0.5)
+  |> should.equal(combat.Damage(1))
+}
+
+pub fn boxer_doubles_unarmed_damage_test() {
+  state.new()
+  |> state.add_perk("boxer")
+  |> combat.player_attack(weapon("fists"), _, 0.5)
+  |> should.equal(combat.Damage(2))
+}
+
+pub fn martial_artist_triples_unarmed_damage_test() {
+  state.new()
+  |> state.add_perk("martial artist")
+  |> combat.player_attack(weapon("fists"), _, 0.5)
+  |> should.equal(combat.Damage(3))
+}
+
+pub fn unarmed_perks_stack_multiplicatively_test() {
+  // 1 * 2 (boxer) * 3 (martial artist) * 2 (unarmed master) = 12
+  state.new()
+  |> state.add_perk("boxer")
+  |> state.add_perk("martial artist")
+  |> state.add_perk("unarmed master")
+  |> combat.player_attack(weapon("fists"), _, 0.5)
+  |> should.equal(combat.Damage(12))
+}
+
+pub fn barbarian_adds_half_to_melee_floored_test() {
+  let s = state.new() |> state.add_perk("barbarian")
+  // iron sword 4 -> floor(6.0) = 6
+  combat.player_attack(weapon("iron sword"), s, 0.5)
+  |> should.equal(combat.Damage(6))
+  // bone spear 2 -> floor(3.0) = 3
+  combat.player_attack(weapon("bone spear"), s, 0.5)
+  |> should.equal(combat.Damage(3))
+}
+
+pub fn barbarian_leaves_ranged_alone_test() {
+  state.new()
+  |> state.add_perk("barbarian")
+  |> combat.player_attack(weapon("rifle"), _, 0.5)
+  |> should.equal(combat.Damage(5))
+}
+
+pub fn boxer_leaves_melee_alone_test() {
+  state.new()
+  |> state.add_perk("boxer")
+  |> combat.player_attack(weapon("iron sword"), _, 0.5)
+  |> should.equal(combat.Damage(4))
+}
+
+pub fn a_landed_stun_weapon_stuns_test() {
+  combat.player_attack(weapon("bolas"), state.new(), 0.5)
+  |> should.equal(combat.StunHit)
+}
+
+pub fn a_missed_stun_weapon_does_nothing_test() {
+  combat.player_attack(weapon("bolas"), state.new(), 0.9)
+  |> should.equal(combat.Miss)
+}
+
+// --- enemy attack -----------------------------------------------------------
+
+pub fn enemy_lands_its_scene_damage_test() {
+  combat.enemy_attack(0.8, 3, state.new(), 0.5)
+  |> should.equal(combat.Damage(3))
+}
+
+pub fn enemy_misses_above_its_hit_chance_test() {
+  combat.enemy_attack(0.8, 3, state.new(), 0.85)
+  |> should.equal(combat.Miss)
+}
+
+pub fn evasive_perk_shrinks_enemy_hit_chance_test() {
+  // scene hit 0.8 -> 0.64 with evasive; a 0.7 roll now whiffs.
+  let s = state.new() |> state.add_perk("evasive")
+  combat.enemy_attack(0.8, 3, s, 0.7) |> should.equal(combat.Miss)
+  // without the perk, 0.7 would have connected.
+  combat.enemy_attack(0.8, 3, state.new(), 0.7)
+  |> should.equal(combat.Damage(3))
+}
+
+// --- applying damage to a fighter's HP --------------------------------------
+
+pub fn damage_subtracts_from_hp_test() {
+  combat.apply_damage(5, 5, 2) |> should.equal(3)
+}
+
+pub fn damage_never_drops_below_zero_test() {
+  combat.apply_damage(2, 5, 8) |> should.equal(0)
+}
+
+// --- loot --------------------------------------------------------------------
+
+pub fn loot_is_skipped_when_the_chance_roll_fails_test() {
+  // chance 0.8; a 0.9 roll fails (JS `<`), so no drop and no quantity roll.
+  combat.roll_loot([combat.LootEntry("fur", 1, 3, 0.8)], [0.9])
+  |> should.equal([])
+}
+
+pub fn loot_quantity_uses_the_floor_formula_test() {
+  // floor(0.5 * (3 - 1)) + 1 = 2
+  combat.roll_loot([combat.LootEntry("fur", 1, 3, 1.0)], [0.0, 0.5])
+  |> should.equal([#("fur", 2)])
+}
+
+pub fn loot_max_is_exclusive_like_the_original_test() {
+  // floor(0.999 * 2) + 1 = 2 — a max of 3 never actually drops 3.
+  combat.roll_loot([combat.LootEntry("fur", 1, 3, 1.0)], [0.0, 0.999])
+  |> should.equal([#("fur", 2)])
+}
+
+pub fn loot_with_equal_min_and_max_is_fixed_test() {
+  combat.roll_loot([combat.LootEntry("teeth", 2, 2, 1.0)], [0.0, 0.99])
+  |> should.equal([#("teeth", 2)])
+}
+
+pub fn loot_only_spends_a_quantity_roll_on_a_hit_test() {
+  // First entry's chance fails (no qty roll consumed); second succeeds.
+  combat.roll_loot(
+    [combat.LootEntry("a", 1, 3, 0.8), combat.LootEntry("b", 1, 3, 1.0)],
+    [0.9, 0.0, 0.5],
+  )
+  |> should.equal([#("b", 2)])
+}
+
+// --- fight trigger (while walking the world) --------------------------------
+
+pub fn no_fight_within_the_delay_window_test() {
+  // FIGHT_DELAY is 3: the counter must exceed 3 before a fight can start.
+  // move 1 — far too early even with a guaranteed roll.
+  combat.check_fight(state.new(), 0, 0.0) |> should.equal(#(False, 1))
+}
+
+pub fn the_delay_boundary_blocks_the_fourth_step_test() {
+  // counter 2 -> 3, still not > 3, so no fight despite a 0.0 roll.
+  combat.check_fight(state.new(), 2, 0.0) |> should.equal(#(False, 3))
+}
+
+pub fn a_fight_starts_past_the_delay_on_a_low_roll_test() {
+  // counter 3 -> 4 (> 3); 0.1 < 0.2 chance, so a fight starts and resets.
+  combat.check_fight(state.new(), 3, 0.1) |> should.equal(#(True, 0))
+}
+
+pub fn a_high_roll_past_the_delay_keeps_walking_test() {
+  combat.check_fight(state.new(), 3, 0.5) |> should.equal(#(False, 4))
+}
+
+pub fn stealthy_perk_halves_the_fight_chance_test() {
+  let s = state.new() |> state.add_perk("stealthy")
+  // 0.15 would trigger at the normal 0.2 chance, but stealthy drops it to 0.1.
+  combat.check_fight(s, 3, 0.15) |> should.equal(#(False, 4))
+  combat.check_fight(state.new(), 3, 0.15) |> should.equal(#(True, 0))
+}
+
+// --- which weapons a fight offers -------------------------------------------
+
+pub fn a_melee_weapon_is_always_usable_test() {
+  combat.can_attack_with(weapon("iron sword"), state.new())
+  |> should.equal(True)
+}
+
+pub fn a_gun_needs_ammo_to_be_usable_test() {
+  combat.can_attack_with(weapon("rifle"), state.new()) |> should.equal(False)
+  state.new()
+  |> state.set_outfit("bullets", 1)
+  |> combat.can_attack_with(weapon("rifle"), _)
+  |> should.equal(True)
+}
+
+pub fn a_stun_weapon_is_not_a_usable_damage_dealer_test() {
+  combat.can_attack_with(weapon("bolas"), state.new()) |> should.equal(False)
+}
+
+pub fn bare_handed_when_carrying_nothing_test() {
+  combat.attack_options(state.new()) |> should.equal(["fists"])
+}
+
+pub fn a_carried_weapon_is_offered_test() {
+  state.new()
+  |> state.set_outfit("iron sword", 1)
+  |> combat.attack_options
+  |> should.equal(["iron sword"])
+}
+
+pub fn fists_fall_back_when_the_carried_gun_has_no_ammo_test() {
+  // Owns a rifle but no bullets: the rifle still shows, plus fists to fight on.
+  state.new()
+  |> state.set_outfit("rifle", 1)
+  |> combat.attack_options
+  |> should.equal(["fists", "rifle"])
+}
+
+pub fn offered_weapons_keep_table_order_test() {
+  state.new()
+  |> state.set_outfit("bayonet", 1)
+  |> state.set_outfit("iron sword", 1)
+  |> combat.attack_options
+  |> should.equal(["iron sword", "bayonet"])
+}
+
+// --- a fight in progress ----------------------------------------------------
+
+fn beast() -> combat.Enemy {
+  combat.Enemy(
+    name: "snarling beast",
+    chara: "R",
+    health: 5,
+    damage: 1,
+    hit: 0.8,
+    attack_delay: 1.0,
+    ranged: False,
+    death_message: "the snarling beast is dead",
+    loot: [combat.LootEntry("fur", 1, 3, 1.0)],
+  )
+}
+
+fn weapon_named(name: String) -> combat.Weapon {
+  let assert Ok(w) = combat.get_weapon(name)
+  w
+}
+
+pub fn a_fight_starts_with_both_fighters_at_their_health_test() {
+  let cs = combat.begin_combat(beast(), 10, 10)
+  cs.enemy_hp |> should.equal(5)
+  cs.player_hp |> should.equal(10)
+  cs.won |> should.equal(False)
+  cs.enemy_stunned |> should.equal(False)
+}
+
+pub fn a_landed_strike_wounds_the_enemy_test() {
+  let cs = combat.begin_combat(beast(), 10, 10)
+  // iron sword 4; a 0.5 roll lands (<= 0.8): 5 - 4 = 1.
+  let after =
+    combat.player_strike(cs, weapon_named("iron sword"), state.new(), 0.5)
+  after.enemy_hp |> should.equal(1)
+  after.won |> should.equal(False)
+}
+
+pub fn a_missed_strike_leaves_the_enemy_unhurt_test() {
+  let cs = combat.begin_combat(beast(), 10, 10)
+  let after = combat.player_strike(cs, weapon_named("fists"), state.new(), 0.9)
+  after.enemy_hp |> should.equal(5)
+}
+
+pub fn killing_the_enemy_wins_the_fight_test() {
+  let cs = combat.begin_combat(beast(), 10, 10)
+  // steel sword 6 > 5 health.
+  let after =
+    combat.player_strike(cs, weapon_named("steel sword"), state.new(), 0.5)
+  after.enemy_hp |> should.equal(0)
+  after.won |> should.equal(True)
+}
+
+pub fn a_stun_weapon_makes_the_enemy_skip_its_next_attack_test() {
+  let cs = combat.begin_combat(beast(), 10, 10)
+  let stunned =
+    combat.player_strike(cs, weapon_named("bolas"), state.new(), 0.5)
+  stunned.enemy_stunned |> should.equal(True)
+  stunned.enemy_hp |> should.equal(5)
+  // The stunned enemy can't connect, and the stun is spent.
+  let after = combat.enemy_strike(stunned, state.new(), 0.0)
+  after.player_hp |> should.equal(10)
+  after.enemy_stunned |> should.equal(False)
+}
+
+pub fn an_enemy_strike_wounds_the_player_test() {
+  let cs = combat.begin_combat(beast(), 10, 10)
+  // enemy damage 1, hit 0.8; a 0.5 roll lands: 10 - 1 = 9.
+  let after = combat.enemy_strike(cs, state.new(), 0.5)
+  after.player_hp |> should.equal(9)
+}
+
+pub fn an_enemy_miss_spares_the_player_test() {
+  let cs = combat.begin_combat(beast(), 10, 10)
+  let after = combat.enemy_strike(cs, state.new(), 0.9)
+  after.player_hp |> should.equal(10)
+}
+
+// --- statuses (setStatus) -------------------------------------------------------
+
+/// A 60-hp brute at 50 hp with the given status.
+fn statused(status: combat.Status) -> combat.CombatState {
+  let brute = combat.Enemy(..beast(), name: "brute", health: 60, damage: 10)
+  combat.CombatState(
+    ..combat.begin_combat(brute, 10, 10),
+    enemy_hp: 50,
+    enemy_status: status,
+  )
+}
+
+pub fn a_shield_absorbs_one_hit_as_healing_and_breaks_test() {
+  // An iron sword blow (4) heals the shielded enemy, capped at full health,
+  // and pops the shield.
+  let cs = statused(combat.Shield)
+  let after =
+    combat.player_strike(cs, weapon_named("iron sword"), state.new(), 0.5)
+  after.enemy_hp |> should.equal(54)
+  after.enemy_status |> should.equal(combat.NoStatus)
+  // The next blow lands normally.
+  let then =
+    combat.player_strike(after, weapon_named("iron sword"), state.new(), 0.5)
+  then.enemy_hp |> should.equal(50)
+}
+
+pub fn a_miss_leaves_the_shield_intact_test() {
+  let cs = statused(combat.Shield)
+  let after =
+    combat.player_strike(cs, weapon_named("iron sword"), state.new(), 0.9)
+  after.enemy_status |> should.equal(combat.Shield)
+  after.enemy_hp |> should.equal(50)
+}
+
+pub fn a_stun_leaves_the_shield_intact_test() {
+  // Bolas stun without numeric damage; the shield only breaks on a hit.
+  let cs = statused(combat.Shield)
+  let after = combat.player_strike(cs, weapon_named("bolas"), state.new(), 0.5)
+  after.enemy_stunned |> should.equal(True)
+  after.enemy_status |> should.equal(combat.Shield)
+}
+
+pub fn a_meditating_enemy_banks_the_damage_test() {
+  let cs = statused(combat.Meditation)
+  let after =
+    combat.player_strike(cs, weapon_named("iron sword"), state.new(), 0.5)
+  after.enemy_hp |> should.equal(50)
+  after.meditate_bank |> should.equal(4)
+  after.won |> should.equal(False)
+  // And sits its own turn out.
+  let still = combat.enemy_strike(after, state.new(), 0.0)
+  still.player_hp |> should.equal(10)
+}
+
+pub fn the_trance_pays_the_bank_back_as_one_guaranteed_blow_test() {
+  // Meditation over (status cleared), 7 banked: the blow lands with no hit
+  // roll — even a 1.0 roll cannot miss.
+  let cs = combat.CombatState(..statused(combat.NoStatus), meditate_bank: 7)
+  let after = combat.enemy_strike(cs, state.new(), 1.0)
+  after.player_hp |> should.equal(3)
+  after.meditate_bank |> should.equal(0)
+}
+
+pub fn a_stunned_enemy_cannot_pay_the_bank_test() {
+  let cs =
+    combat.CombatState(
+      ..statused(combat.NoStatus),
+      meditate_bank: 7,
+      enemy_stunned: True,
+    )
+  let after = combat.enemy_strike(cs, state.new(), 0.0)
+  after.player_hp |> should.equal(10)
+  // The bank keeps until a turn it can act.
+  after.meditate_bank |> should.equal(7)
+}
+
+pub fn an_energised_enemy_strikes_fourfold_once_test() {
+  // damage 10 — wait, the brute would kill; use the bank-free base damage 10 ×4
+  // capped by apply_damage's floor at zero.
+  let cs = statused(combat.Energised)
+  let after = combat.enemy_strike(cs, state.new(), 0.5)
+  after.player_hp |> should.equal(0)
+  after.enemy_status |> should.equal(combat.NoStatus)
+}
+
+pub fn a_venomous_hit_leaves_poison_dripping_test() {
+  // A landed venomous blow (10) arms a 5-per-tick drip and spends the buff.
+  let cs = statused(combat.Venomous)
+  let after = combat.enemy_strike(cs, state.new(), 0.5)
+  after.player_hp |> should.equal(0)
+  after.player_dot |> should.equal(5)
+  after.enemy_status |> should.equal(combat.NoStatus)
+}
+
+pub fn a_venomous_miss_spends_nothing_test() {
+  let cs = statused(combat.Venomous)
+  let after = combat.enemy_strike(cs, state.new(), 0.9)
+  after.player_dot |> should.equal(0)
+  after.enemy_status |> should.equal(combat.Venomous)
+}
+
+pub fn crossing_an_at_health_threshold_takes_a_status_test() {
+  // The broken medic turns venomous at 40 hp: 42 - 4 = 38 crosses it.
+  let cs =
+    combat.CombatState(..statused(combat.NoStatus), enemy_hp: 42, at_health: [
+      #(40, combat.Venomous),
+    ])
+  let after =
+    combat.player_strike(cs, weapon_named("iron sword"), state.new(), 0.5)
+  after.enemy_hp |> should.equal(38)
+  after.enemy_status |> should.equal(combat.Venomous)
+  // Already below: a further blow doesn't re-trigger.
+  let deeper =
+    combat.player_strike(after, weapon_named("iron sword"), state.new(), 0.5)
+  deeper.enemy_status |> should.equal(combat.Venomous)
+}
+
+pub fn an_enraged_enemy_swings_every_half_second_test() {
+  let cs = statused(combat.Enraged)
+  combat.effective_attack_delay(cs) |> should.equal(0.5)
+  combat.effective_attack_delay(statused(combat.NoStatus))
+  |> should.equal(1.0)
+}
+
+// --- the wanderer's own kit (shield and stim) -------------------------------------
+
+pub fn a_raised_shield_absorbs_the_blow_as_healing_and_breaks_test() {
+  let brute = combat.Enemy(..beast(), name: "brute", health: 60, damage: 4)
+  let cs =
+    combat.CombatState(..combat.begin_combat(brute, 5, 10), enemy_hp: 50)
+    |> combat.raise_shield
+  let after = combat.enemy_strike(cs, state.new(), 0.5)
+  // The blow heals instead of hurting, and the shield is spent.
+  after.player_hp |> should.equal(9)
+  after.player_status |> should.equal(combat.NoStatus)
+  // The next blow lands normally.
+  let then = combat.enemy_strike(after, state.new(), 0.5)
+  then.player_hp |> should.equal(5)
+}
+
+pub fn a_shield_blocks_the_venom_with_the_blow_test() {
+  let viper = combat.Enemy(..beast(), name: "viper", health: 60, damage: 6)
+  let cs =
+    combat.CombatState(
+      ..combat.begin_combat(viper, 5, 10),
+      enemy_status: combat.Venomous,
+    )
+    |> combat.raise_shield
+  let after = combat.enemy_strike(cs, state.new(), 0.5)
+  // No poison takes hold behind the shield.
+  after.player_dot |> should.equal(0)
+}
+
+pub fn a_stim_boosts_at_a_price_in_health_test() {
+  let cs = combat.begin_combat(beast(), 30, 30) |> combat.use_stim
+  cs.player_status |> should.equal(combat.Boost)
+  cs.player_hp |> should.equal(20)
+}
+
+pub fn the_blow_only_sounds_when_it_lands_test() {
+  let cs = combat.begin_combat(beast(), 10, 10)
+  // The beast hits on 0.8: a low roll lands, a high one whiffs.
+  combat.enemy_blow_lands(cs, state.new(), 0.5) |> should.be_true
+  combat.enemy_blow_lands(cs, state.new(), 0.9) |> should.be_false
+  // Stunned and entranced enemies don't swing at all.
+  combat.enemy_blow_lands(
+    combat.CombatState(..cs, enemy_stunned: True),
+    state.new(),
+    0.5,
+  )
+  |> should.be_false
+  combat.enemy_blow_lands(
+    combat.CombatState(..cs, enemy_status: combat.Meditation),
+    state.new(),
+    0.5,
+  )
+  |> should.be_false
+  // A banked trance repays itself as a guaranteed blow.
+  combat.enemy_blow_lands(
+    combat.CombatState(..cs, meditate_bank: 7),
+    state.new(),
+    0.9,
+  )
+  |> should.be_true
+}

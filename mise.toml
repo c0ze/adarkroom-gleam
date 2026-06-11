@@ -1,0 +1,19 @@
+[tools]
+gleam = "1.15.2"
+node = "22.18.0"
+
+[tasks."build"]
+description = "Build the Gleam port and Vite bundle"
+run = "npm run build"
+
+[tasks."dev"]
+description = "Run the development server"
+run = "npm run dev"
+
+[tasks."format"]
+description = "Check Gleam formatting"
+run = "gleam format --check src test"
+
+[tasks."test"]
+description = "Run the test suite"
+run = "gleam test"

@@ -1,20 +1,40 @@
-A Dark Room
-===========
+# A Dark Room — Gleam + Lustre port
 
-A Minimalist Text Adventure Game
+> "awake. head throbbing. vision blurry. come light the fire."
 
-[Click to play](http://adarkroom.doublespeakgames.com/)
+A faithful 1:1 port of [A Dark Room](https://github.com/doublespeakgames/adarkroom)
+to **Gleam** + **[Lustre](https://lustre.build)** (Elm-style MVU), compiled to
+JavaScript and bundled with Vite. Installable as a PWA, playable offline.
 
-Available | Languages
---------- | ---------
-[Chinese](http://adarkroom.doublespeakgames.com/?lang=zh_cn) | [English](http://adarkroom.doublespeakgames.com/?lang=en)
-[French](http://adarkroom.doublespeakgames.com/?lang=fr) | [German](http://adarkroom.doublespeakgames.com/?lang=de)
-[Italian](http://adarkroom.doublespeakgames.com/?lang=it) | [Japanese](http://adarkroom.doublespeakgames.com/?lang=ja)
-[Korean](http://adarkroom.doublespeakgames.com/?lang=ko) | [Norwegian](http://adarkroom.doublespeakgames.com/?lang=nb)
-[Polish](http://adarkroom.doublespeakgames.com/?lang=pl) | [Portuguese](http://adarkroom.doublespeakgames.com/?lang=pt)
-[Russian](http://adarkroom.doublespeakgames.com/?lang=ru) | [Spanish](http://adarkroom.doublespeakgames.com/?lang=es)
-[Swedish](http://adarkroom.doublespeakgames.com/?lang=sv) | [Turkish](http://adarkroom.doublespeakgames.com/?lang=tr)
-[Ukrainian](http://adarkroom.doublespeakgames.com/?lang=uk) | [Vietnamese] (http://adarkroom.doublespeakgames.com/?lang=vi)
+**[Play it at adarkroom.coze.org](https://adarkroom.coze.org)**
 
+The original JavaScript game lives unchanged in
+[`adarkroom-js/`](adarkroom-js/) — it is the port's reference, run side by
+side during parity testing, and the home of the shared art, audio and
+stylesheets. See [`docs/gleam-port-design.md`](docs/gleam-port-design.md) for
+the architecture and milestone plan, and
+[`docs/gleam-README.md`](docs/gleam-README.md) for the longer development
+notes.
 
-[Play on GitHub](http://continuities.github.io/adarkroom)
+## Develop
+
+```sh
+mise trust         # once: allow the pinned toolchain (mise users)
+npm install        # once: install Vite
+npm run dev        # gleam build + Vite dev server (http://localhost:5173)
+gleam test         # the test suite
+gleam format src test
+```
+
+## Release
+
+Every push runs the test suite (CI). Pushing a `v*` tag builds the bundle,
+publishes a GitHub release, and deploys to GitHub Pages:
+
+```sh
+git tag v1.0.0 && git push origin v1.0.0
+```
+
+## License
+
+[MPL-2.0](LICENSE.md), as the original.

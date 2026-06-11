@@ -1,0 +1,14 @@
+{
+  "name": "adarkroom-gleam",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "gleam build && vite",
+    "build": "gleam build && vite build",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "vite": "^6.3.5"
+  }
+}
