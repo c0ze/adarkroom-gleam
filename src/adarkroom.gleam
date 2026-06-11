@@ -964,9 +964,19 @@ fn path_panel(m: Model) -> Element(Msg) {
       ),
     ])
   let armour =
-    html.div([attribute.class("outfitRow")], [
+    html.div([attribute.id("armourRow"), attribute.class("outfitRow")], [
       html.div([attribute.class("row_key")], [element.text("armour")]),
       html.div([attribute.class("row_val")], [element.text(path.armour(s))]),
+      clear_div(),
+    ])
+  // The water row rides under the armour (`updateOutfitting`'s #waterRow).
+  let water =
+    html.div([attribute.id("waterRow"), attribute.class("outfitRow")], [
+      html.div([attribute.class("row_key")], [element.text("water")]),
+      html.div([attribute.class("row_val")], [
+        element.text(int.to_string(world.max_water(s))),
+      ]),
+      clear_div(),
     ])
   let supplies =
     list.map(path.carryable(s), fn(entry) { outfit_row(s, entry.0) })
@@ -990,7 +1000,7 @@ fn path_panel(m: Model) -> Element(Msg) {
             attribute.id("outfitting"),
             attribute.attribute("data-legend", "supplies:"),
           ],
-          [armour, bagspace, ..supplies],
+          [armour, water, bagspace, ..supplies],
         ),
         embark,
         html.div([attribute.id("storesContainer")], [stores_view(s, True)]),
@@ -1036,6 +1046,10 @@ fn outfit_row(s: state.State, item: String) -> Element(Msg) {
       arrow_btn("upManyBtn", IncreaseSupply(item, 10), full),
       arrow_btn("dnManyBtn", DecreaseSupply(item, 10), packed <= 0),
     ]),
+    // The float-clearer gives the row its height (`createOutfittingRow`
+    // appends one per row) — without it every row collapses and the arrows
+    // pile into one clickable spot.
+    clear_div(),
     outfit_tooltip(s, item),
   ])
 }
