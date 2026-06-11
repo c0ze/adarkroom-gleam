@@ -1,4 +1,5 @@
 import adarkroom/state
+import gleam/list
 import gleeunit/should
 
 pub fn new_state_is_empty_test() {
@@ -71,4 +72,20 @@ pub fn every_perk_announces_its_lesson_test() {
   |> should.equal("learned to make the most of food")
   state.perk_notify("barbarian")
   |> should.equal("learned to swing weapons with force")
+}
+
+pub fn the_perk_table_speaks_for_each_test() {
+  state.perk_table()
+  |> list.each(fn(perk) { { state.perk_desc(perk) != "" } |> should.be_true })
+  state.perk_desc("scout") |> should.equal("see farther")
+  state.perk_desc("martial artist")
+  |> should.equal("punches do even more damage.")
+}
+
+pub fn owned_perks_keep_the_table_order_test() {
+  let s =
+    state.new()
+    |> state.add_perk("gastronome")
+    |> state.add_perk("boxer")
+  state.owned_perks(s) |> should.equal(["boxer", "gastronome"])
 }

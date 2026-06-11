@@ -146,6 +146,37 @@ pub fn has_perk(state: State, perk: String) -> Bool {
   get_character(state, "perk." <> perk) > 0
 }
 
+/// Every perk, in the original table's order (`Engine.Perks`).
+pub fn perk_table() -> List(String) {
+  [
+    "boxer", "martial artist", "unarmed master", "barbarian", "slow metabolism",
+    "desert rat", "evasive", "precise", "scout", "stealthy", "gastronome",
+  ]
+}
+
+/// A perk's hover description (`Engine.Perks[name].desc`).
+pub fn perk_desc(perk: String) -> String {
+  case perk {
+    "boxer" -> "punches do more damage"
+    "martial artist" -> "punches do even more damage."
+    "unarmed master" -> "punch twice as fast, and with even more force"
+    "barbarian" -> "melee weapons deal more damage"
+    "slow metabolism" -> "go twice as far without eating"
+    "desert rat" -> "go twice as far without drinking"
+    "evasive" -> "dodge attacks more effectively"
+    "precise" -> "land blows more often"
+    "scout" -> "see farther"
+    "stealthy" -> "better avoid conflict in the wild"
+    "gastronome" -> "restore more health when eating"
+    _ -> ""
+  }
+}
+
+/// The perks the wanderer has learned, in table order.
+pub fn owned_perks(state: State) -> List(String) {
+  list.filter(perk_table(), fn(perk) { has_perk(state, perk) })
+}
+
 /// Grant a perk.
 /// What learning a perk announces (`Engine.Perks[name].notify` — `addPerk`
 /// always notifies).

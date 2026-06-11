@@ -932,20 +932,48 @@ fn path_panel(m: Model) -> Element(Msg) {
       cooldown_ms: 0,
       id: "embarkButton",
     ))
-  html.div([attribute.class("location"), attribute.id("pathPanel")], [
-    html.div(
+  html.div(
+    [attribute.class("location"), attribute.id("pathPanel")],
+    list.flatten([
+      perks_view(s),
       [
-        attribute.id("outfitting"),
-        attribute.attribute("data-legend", "supplies"),
+        html.div(
+          [
+            attribute.id("outfitting"),
+            attribute.attribute("data-legend", "supplies:"),
+          ],
+          [armour, bagspace, ..supplies],
+        ),
+        embark,
+        html.div([attribute.id("storesContainer")], [stores_view(s, True)]),
       ],
-      [armour, bagspace, ..supplies],
-    ),
-    embark,
-    html.div([attribute.id("storesContainer")], [stores_view(s, True)]),
-  ])
+    ]),
+  )
 }
 
-/// One supply row: how many are packed, with buttons to pack/unpack ±1/±10.
+/// What the wanderer has learned, atop the path (`updatePerks`): a row per
+/// perk, its meaning on hover.
+fn perks_view(s: state.State) -> List(Element(Msg)) {
+  case state.owned_perks(s) {
+    [] -> []
+    perks -> [
+      html.div(
+        [attribute.id("perks"), attribute.attribute("data-legend", "perks")],
+        list.map(perks, fn(perk) {
+          html.div([attribute.class("perkRow")], [
+            html.div([attribute.class("row_key")], [element.text(perk)]),
+            html.div([attribute.class("tooltip bottom right")], [
+              element.text(state.perk_desc(perk)),
+            ]),
+          ])
+        }),
+      ),
+    ]
+  }
+}
+
+/// One supply row: how many are packed, with buttons to pack/unpack ±1/±10 —
+/// and the item's story on hover (`createOutfittingRow`'s tooltip).
 fn outfit_row(s: state.State, item: String) -> Element(Msg) {
   let packed = state.get_outfit(s, item)
   let full =
@@ -960,7 +988,66 @@ fn outfit_row(s: state.State, item: String) -> Element(Msg) {
       arrow_btn("upManyBtn", IncreaseSupply(item, 10), full),
       arrow_btn("dnManyBtn", DecreaseSupply(item, 10), packed <= 0),
     ]),
+    outfit_tooltip(s, item),
   ])
+}
+
+/// What hovers over a supply row: a weapon's damage or a tool's note, then
+/// the weight and how many wait in the stores.
+fn outfit_tooltip(s: state.State, item: String) -> Element(Msg) {
+  let lead = case combat.get_weapon(item) {
+    Ok(weapon) -> [
+      html.div([attribute.class("row_key")], [element.text("damage")]),
+      html.div([attribute.class("row_val")], [
+        element.text(case weapon.damage {
+          combat.Hit(n) -> int.to_string(n)
+          combat.Stun -> "stun"
+        }),
+      ]),
+    ]
+    Error(_) ->
+      case outfit_desc(item) {
+        "" -> []
+        desc -> [html.div([attribute.class("row_key")], [element.text(desc)])]
+      }
+  }
+  html.div(
+    [attribute.class("tooltip bottom right")],
+    list.flatten([
+      lead,
+      [
+        html.div([attribute.class("row_key")], [element.text("weight")]),
+        html.div([attribute.class("row_val")], [
+          element.text(weight_text(path.weight(item))),
+        ]),
+        html.div([attribute.class("row_key")], [element.text("available")]),
+        html.div([attribute.class("row_val numAvailable")], [
+          element.text(int.to_string(state.get_store(s, item))),
+        ]),
+      ],
+    ]),
+  )
+}
+
+/// A tool's tooltip note (the carryable table's `desc`); most have none.
+fn outfit_desc(item: String) -> String {
+  case item {
+    // `'restores' + ' ' + World.MEAT_HEAL + ' ' + 'hp'` — the static base
+    // amounts, not the perk-adjusted ones.
+    "cured meat" -> "restores 8 hp"
+    "medicine" -> "restores 20 hp"
+    "bullets" -> "use with rifle"
+    "energy cell" -> "emits a soft red glow"
+    _ -> ""
+  }
+}
+
+/// A weight as the original prints it: whole numbers plain, fractions as-is.
+fn weight_text(weight: Float) -> String {
+  case weight == int.to_float(float.truncate(weight)) {
+    True -> int.to_string(float.truncate(weight))
+    False -> float.to_string(weight)
+  }
 }
 
 /// The village: the buildings raised and the current population. Shown as a
