@@ -511,8 +511,17 @@ fn heal_buttons(m: Model) -> List(Element(Msg)) {
 }
 
 /// The stim's boost (an outfit item) and the kinetic shield (owning the
-/// armour suffices) ride at the end of the heal row, as the JS appends them.
+/// armour suffices) ride at the end of the heal row, as the JS appends them —
+/// only while the fight is live: `winFight` rebuilds the heal row with just
+/// the healing items, so neither survives onto the loot screen.
 fn combat_aid_buttons(m: Model) -> List(Element(Msg)) {
+  case m.combat {
+    Some(cs) if !cs.won -> live_aid_buttons(m)
+    _ -> []
+  }
+}
+
+fn live_aid_buttons(m: Model) -> List(Element(Msg)) {
   let stim = case state.get_outfit(m.state, "stim") > 0 {
     True -> [
       button.button(button.Config(

@@ -1909,6 +1909,8 @@ pub fn the_shady_builder_keeps_quiet_test() {
 
 pub fn the_shield_button_raises_it_and_cools_test() {
   let m = special_fight([], combat.NoStatus)
+  // Owning the kinetic armour is what offers the shield at all.
+  let m = model.Model(..m, state: state.set_store(m.state, "kinetic armour", 1))
   let after = run(m, model.UseShield)
   let assert option.Some(cs) = after.combat
   cs.player_status |> should.equal(combat.Shield)
@@ -1921,6 +1923,7 @@ pub fn a_stim_on_the_last_of_the_health_kills_test() {
   let nearly =
     model.Model(
       ..m,
+      state: state.set_outfit(m.state, "stim", 1),
       combat: option.Some(combat.CombatState(..cs, player_hp: 8)),
     )
   let after = run(nearly, model.UseStim)
@@ -1935,4 +1938,26 @@ pub fn the_boost_halves_the_swing_recovery_test() {
   let assert option.Some(cs) = m.combat
   let boosted = model.Model(..m, combat: option.Some(combat.use_stim(cs)))
   model.strike_cooldown_ms(boosted, "fists") |> should.equal(1000)
+}
+
+pub fn the_kit_needs_its_gear_and_a_live_fight_test() {
+  // No kinetic armour, no shield; no stim, no boost.
+  let m = special_fight([], combat.NoStatus)
+  let assert option.Some(before) = m.combat
+  let after = run(m, model.UseShield)
+  let assert option.Some(cs) = after.combat
+  cs.player_status |> should.equal(combat.NoStatus)
+  let after = run(m, model.UseStim)
+  let assert option.Some(cs) = after.combat
+  cs.player_hp |> should.equal(before.player_hp)
+  // And a won fight offers neither, gear or not.
+  let stocked =
+    model.Model(
+      ..m,
+      state: state.set_outfit(m.state, "stim", 1),
+      combat: option.Some(combat.CombatState(..before, won: True)),
+    )
+  let after = run(stocked, model.UseStim)
+  let assert option.Some(cs) = after.combat
+  cs.player_status |> should.equal(combat.NoStatus)
 }

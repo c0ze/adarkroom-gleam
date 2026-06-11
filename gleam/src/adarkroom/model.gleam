@@ -681,8 +681,12 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
     CollectLoot(rolls: rolls) -> #(collect_loot(model, rolls), effect.none())
 
     UseShield ->
-      case model.combat, on_cooldown(model, "shld") {
-        Some(cs), False -> #(
+      case
+        model.combat,
+        on_cooldown(model, "shld")
+        || state.get_store(model.state, "kinetic armour") <= 0
+      {
+        Some(cs), False if !cs.won -> #(
           start_cooldown(
             Model(..model, combat: Some(combat.raise_shield(cs))),
             "shld",
@@ -694,8 +698,12 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
       }
 
     UseStim ->
-      case model.combat, on_cooldown(model, "use-stim") {
-        Some(cs), False -> {
+      case
+        model.combat,
+        on_cooldown(model, "use-stim")
+        || state.get_outfit(model.state, "stim") <= 0
+      {
+        Some(cs), False if !cs.won -> {
           let stimmed = combat.use_stim(cs)
           let model =
             start_cooldown(
