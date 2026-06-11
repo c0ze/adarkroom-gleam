@@ -192,6 +192,9 @@ pub type Model {
   Model(
     state: State,
     location: Location,
+    /// Where the last navigation left from — the slider's transition scales
+    /// with the distance travelled (`travelTo`'s `300 * diff`). Runtime-only.
+    prev_location: Location,
     ticks: Int,
     notifications: Notifications,
     /// Craftables whose buttons have been revealed. Runtime-only (not saved):
@@ -260,6 +263,7 @@ pub fn init() -> Model {
   Model(
     state: state.new(),
     location: Room,
+    prev_location: Room,
     ticks: 0,
     notifications: notifications.new(),
     revealed: set.new(),
@@ -326,6 +330,7 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
         Model(
           ..model,
           location:,
+          prev_location: model.location,
           // Arriving at a location flushes its queued notifications.
           notifications: notifications.flush(
             model.notifications,
