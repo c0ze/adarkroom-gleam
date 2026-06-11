@@ -1743,10 +1743,21 @@ fn step(model: Model, dir: world.Dir) -> #(Model, Effect(Msg)) {
           steps,
         )
         True, False -> {
-          let model = Model(..model, expedition: Some(s.expedition))
+          // Past the armour's depth, the warning; back under it, the relief
+          // (`checkDanger` after the step).
+          let #(watched, flipped) = world.check_danger(s.expedition, s.state)
+          let model = Model(..model, expedition: Some(watched))
+          let model = case flipped, watched.danger {
+            True, True ->
+              notify_world(model, [
+                "dangerous to be this far from the village without proper protection",
+              ])
+            True, False -> notify_world(model, ["safer here"])
+            False, _ -> model
+          }
           // A landmark launches its setpiece (the `doSpace` order); open ground
           // may instead spring an encounter.
-          let #(model, fx) = case setpiece_at(s.expedition, s.state) {
+          let #(model, fx) = case setpiece_at(watched, s.state) {
             Ok(event) -> start_event(model, event)
             Error(_) -> #(model, roll_fight())
           }
@@ -2216,7 +2227,7 @@ fn apply_button_effect(
       ),
       effect.none(),
     )
-    Some(events.ApplyMap(times: times)), Some(_) -> #(
+    Some(events.ApplyMap(times: times)), _ -> #(
       model,
       effect.from(fn(dispatch) {
         let rolls = list.map(list.repeat(Nil, times), fn(_) { rng.random() })
@@ -2242,7 +2253,26 @@ fn scavenge_maps(model: Model, rolls: List(Float)) -> Model {
           list.fold(rolls, exp, fn(e, roll) { world.apply_map(e, roll) }),
         ),
       )
-    None -> model
+    // At home — the scout's map: the lasting world's own fog lifts.
+    None ->
+      case model.state.world {
+        Some(ws) ->
+          case world.resume(ws, model.state) {
+            Ok(exp) -> {
+              let lifted =
+                list.fold(rolls, exp, fn(e, roll) { world.apply_map(e, roll) })
+              Model(
+                ..model,
+                state: state.State(
+                  ..model.state,
+                  world: Some(world.to_save(lifted)),
+                ),
+              )
+            }
+            Error(_) -> model
+          }
+        None -> model
+      }
   }
 }
 

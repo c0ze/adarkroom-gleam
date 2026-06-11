@@ -575,6 +575,7 @@ fn forest_expedition(dist: Int, health: Int) -> world.Expedition {
       thirst: False,
     ),
     visited: set.new(),
+    danger: False,
     used_outposts: set.new(),
     mines_cleared: set.new(),
   )
@@ -762,6 +763,7 @@ fn at_landmark(tile: world.Tile) -> model.Model {
       seen: set.new(),
       vitals: world.Vitals(10, 10, 0, 0, False, False),
       visited: set.new(),
+      danger: False,
       used_outposts: set.new(),
       mines_cleared: set.new(),
     )
@@ -974,6 +976,7 @@ pub fn a_safe_return_grants_a_cleared_mine_building_test() {
       seen: set.new(),
       vitals: world.Vitals(10, 10, 0, 0, False, False),
       visited: set.new(),
+      danger: False,
       used_outposts: set.new(),
       mines_cleared: set.from_list(["coal mine"]),
     )
@@ -1051,6 +1054,7 @@ pub fn a_parched_step_onto_the_village_is_a_safe_return_not_a_death_test() {
       seen: set.new(),
       vitals: world.Vitals(0, 1, 0, 0, False, True),
       visited: set.new(),
+      danger: False,
       used_outposts: set.new(),
       mines_cleared: set.from_list(["iron mine"]),
     )
@@ -1152,6 +1156,7 @@ fn battleship_expedition() -> world.Expedition {
       thirst: False,
     ),
     visited: set.new(),
+    danger: False,
     used_outposts: set.new(),
     mines_cleared: set.new(),
   )
@@ -1590,6 +1595,7 @@ fn homebound(s: state.State) -> model.Model {
       seen: set.new(),
       vitals: world.Vitals(10, 10, 0, 0, False, False),
       visited: set.new(),
+      danger: False,
       used_outposts: set.new(),
       mines_cleared: set.new(),
     )
@@ -2081,4 +2087,26 @@ pub fn no_tabs_for_the_world_or_the_stars_test() {
   list.contains(tabs, model.World) |> should.be_false
   list.contains(tabs, model.Space) |> should.be_false
   list.contains(tabs, model.Outside) |> should.be_true
+}
+
+pub fn the_scouts_map_uncovers_the_lasting_world_test() {
+  // At home, the scout's map lifts fog straight off the saved world.
+  let exp = world.begin(world.generate_map(rng.seed(11)), state.new())
+  let ws = world.to_save(exp)
+  let before =
+    list.fold(ws.mask, 0, fn(acc, row) {
+      acc + list.count(row, fn(lit) { lit })
+    })
+  let m =
+    model.Model(
+      ..model.init(),
+      state: state.State(..state.new(), world: option.Some(ws)),
+    )
+  let after = run(m, model.MapsScavenged([0.5]))
+  let assert option.Some(lifted) = after.state.world
+  let now =
+    list.fold(lifted.mask, 0, fn(acc, row) {
+      acc + list.count(row, fn(lit) { lit })
+    })
+  { now > before } |> should.be_true
 }
