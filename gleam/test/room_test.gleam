@@ -264,3 +264,22 @@ pub fn failed_stoke_keeps_cool_test() {
   let #(s2, _) = room.stoke_fire(s)
   state.get_game(s2, "coolAt") |> should.equal(9999)
 }
+
+// The sound gates mirror the actions' own refusals.
+pub fn can_light_mirrors_the_wood_gate_test() {
+  let fresh = state.new()
+  room.can_light(fresh) |> should.be_true
+  let broke = state.set_store(fresh, "wood", 4)
+  room.can_light(broke) |> should.be_false
+  let stocked = state.set_store(fresh, "wood", 5)
+  room.can_light(stocked) |> should.be_true
+}
+
+pub fn can_stoke_mirrors_the_wood_gate_test() {
+  let fresh = state.new()
+  room.can_stoke(fresh) |> should.be_true
+  let out = state.set_store(fresh, "wood", 0)
+  room.can_stoke(out) |> should.be_false
+  let stocked = state.set_store(fresh, "wood", 1)
+  room.can_stoke(stocked) |> should.be_true
+}

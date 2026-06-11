@@ -109,6 +109,17 @@ fn fire_message(f: Fire) -> String {
 
 /// Light the fire (to Burning). Costs `light_cost` wood once wood exists; the
 /// very first light (before any wood store) is free.
+/// Whether the light will catch: the very first fire is free, later ones
+/// need the wood (the original's early return — and the sound's gate).
+pub fn can_light(s: State) -> Bool {
+  !state.has_store(s, "wood") || state.get_store(s, "wood") >= light_cost
+}
+
+/// Whether there's wood to feed the fire (the first stoke is free).
+pub fn can_stoke(s: State) -> Bool {
+  !state.has_store(s, "wood") || state.get_store(s, "wood") > 0
+}
+
 pub fn light_fire(s: State) -> #(State, List(String)) {
   case state.has_store(s, "wood") {
     False -> #(reset_cool(set_fire(s, Burning)), [fire_message(Burning)])
