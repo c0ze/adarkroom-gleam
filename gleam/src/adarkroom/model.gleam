@@ -363,6 +363,7 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
             effect.batch([
               music,
               keys,
+              sound(audio.lift_off),
               flight_frame_timer(run),
               delayed(1000, ClimbTick(run)),
               delayed(space.wave_delay_ms(0), WaveTick(run)),
@@ -374,10 +375,18 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
       }
     }
 
-    LightFire ->
-      room_music_after(fire_action(model, room.light_fire(model.state)))
-    StokeFire ->
-      room_music_after(fire_action(model, room.stoke_fire(model.state)))
+    LightFire -> {
+      let lit = room.can_light(model.state)
+      let #(model, fx) =
+        room_music_after(fire_action(model, room.light_fire(model.state)))
+      #(model, effect.batch([fx, sound_if(lit, audio.light_fire)]))
+    }
+    StokeFire -> {
+      let stoked = room.can_stoke(model.state)
+      let #(model, fx) =
+        room_music_after(fire_action(model, room.stoke_fire(model.state)))
+      #(model, effect.batch([fx, sound_if(stoked, audio.stoke_fire)]))
+    }
 
     CoolCheck(at: now) -> {
       let cooled =
@@ -416,7 +425,24 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
         True -> schedule_population()
         False -> effect.none()
       }
-      #(built, eff)
+      // Hammering for a structure, the workbench for an item — when one was
+      // actually made.
+      let snd = case craft.get(name) {
+        Ok(c) ->
+          case
+            craft.count(built.state, c, name)
+            > craft.count(model.state, c, name)
+          {
+            True ->
+              case c.kind {
+                craft.Building -> sound(audio.build)
+                _ -> sound(audio.craft)
+              }
+            False -> effect.none()
+          }
+        Error(_) -> effect.none()
+      }
+      #(built, effect.batch([eff, snd]))
     }
 
     Buy(name: name) -> {
@@ -432,7 +458,11 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
           )
         False -> bought
       }
-      #(unlocked, effect.none())
+      // The clink of a sale that went through.
+      let got =
+        state.get_store(unlocked.state, name)
+        > state.get_store(model.state, name)
+      #(unlocked, sound_if(got, audio.buy))
     }
 
     GatherWood ->
@@ -442,7 +472,7 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
           let gathered = apply_outside(model, outside.gather_wood(model.state))
           #(
             start_cooldown(gathered, "gather", outside.gather_cooldown_ms),
-            effect.none(),
+            sound(audio.gather_wood),
           )
         }
       }
@@ -452,7 +482,10 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
         True -> #(model, effect.none())
         False -> #(
           start_cooldown(model, "traps", outside.traps_cooldown_ms),
-          roll_traps(outside.num_drops(model.state)),
+          effect.batch([
+            roll_traps(outside.num_drops(model.state)),
+            sound(audio.check_traps),
+          ]),
         )
       }
 
@@ -526,7 +559,7 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
               fight_move: 0,
               combat: None,
             ),
-            effect.none(),
+            sound(audio.embark),
           )
         }
         _, _ -> #(model, effect.none())
@@ -585,14 +618,34 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
         )
       }
 
-    ResolveStrike(weapon: weapon, roll: roll) ->
-      resolve_strike(model, weapon, roll)
+    ResolveStrike(weapon: weapon, roll: roll) -> {
+      let #(struck, fx) = resolve_strike(model, weapon, roll)
+      let snd = case model.combat, combat.get_weapon(weapon) {
+        Some(cs), Ok(w) if !cs.won -> weapon_noise(w.kind)
+        _, _ -> effect.none()
+      }
+      #(struck, effect.batch([fx, snd]))
+    }
 
     EnemyTurn -> #(model, roll_enemy_turn())
 
     ResolveEnemyTurn(roll: roll) -> {
       let dot_before = current_dot(model)
       let had_fight = model.combat != None
+      // A blow that's actually swung makes its noise — a stunned or
+      // meditating enemy stays silent.
+      let strike_snd = case model.combat {
+        Some(cs)
+          if !cs.won
+          && !cs.enemy_stunned
+          && cs.enemy_status != combat.Meditation
+        ->
+          weapon_noise(case cs.enemy.ranged {
+            True -> combat.Ranged
+            False -> combat.Melee
+          })
+        _ -> effect.none()
+      }
       let model = resolve_enemy_turn(model, roll)
       // A killing blow fades whatever battle or event music was up.
       let death_fx = case had_fight && model.combat == None {
@@ -606,12 +659,28 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
         False -> effect.none()
       }
       // The enemy keeps attacking on its delay until the fight ends.
-      #(model, effect.batch([enemy_timer(model.combat), dot_armed, death_fx]))
+      #(
+        model,
+        effect.batch([
+          enemy_timer(model.combat),
+          dot_armed,
+          death_fx,
+          strike_snd,
+        ]),
+      )
     }
 
     CollectLoot(rolls: rolls) -> #(collect_loot(model, rolls), effect.none())
 
-    Heal(item: item) -> #(heal_in_combat(model, item), effect.none())
+    Heal(item: item) -> {
+      let snd = case item {
+        "cured meat" -> sound(audio.eat_meat)
+        // The hypo borrows the meds' sound, as in the original.
+        "medicine" | "hypo" -> sound(audio.use_meds)
+        _ -> effect.none()
+      }
+      #(heal_in_combat(model, item), snd)
+    }
 
     SetpieceLoot(rolls: rolls) -> #(
       grant_setpiece_loot(model, rolls),
@@ -633,15 +702,21 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
 
     ExplosionResolve -> resolve_explosion(model)
 
-    ReinforceHull -> #(
-      apply_at(model, "ship", ship.reinforce_hull(model.state)),
-      effect.none(),
-    )
+    ReinforceHull -> {
+      let applied = apply_at(model, "ship", ship.reinforce_hull(model.state))
+      let paid =
+        state.get_store(applied.state, "alien alloy")
+        < state.get_store(model.state, "alien alloy")
+      #(applied, sound_if(paid, audio.reinforce_hull))
+    }
 
-    UpgradeEngine -> #(
-      apply_at(model, "ship", ship.upgrade_engine(model.state)),
-      effect.none(),
-    )
+    UpgradeEngine -> {
+      let applied = apply_at(model, "ship", ship.upgrade_engine(model.state))
+      let paid =
+        state.get_store(applied.state, "alien alloy")
+        < state.get_store(model.state, "alien alloy")
+      #(applied, sound_if(paid, audio.upgrade_engine))
+    }
 
     CheckLiftoff -> {
       // The button arms its cooldown either way; lingering refunds it.
@@ -652,10 +727,14 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
       }
     }
 
-    Fabricate(name: name) -> #(
-      apply_at(model, "fabricator", fabricator.fabricate(model.state, name)),
-      effect.none(),
-    )
+    Fabricate(name: name) -> {
+      let applied =
+        apply_at(model, "fabricator", fabricator.fabricate(model.state, name))
+      let paid =
+        state.get_store(applied.state, "alien alloy")
+        < state.get_store(model.state, "alien alloy")
+      #(applied, sound_if(paid, audio.craft))
+    }
 
     FlightFrame(run: run, at: now) ->
       case run == model.flight_run {
@@ -864,16 +943,23 @@ fn flight_frame(model: Model, now: Int) -> #(Model, Effect(Msg)) {
         flight
         |> space.move(model.state, dt)
         |> space.collide(now)
+      // Each rock that connected rings its altitude's clang.
+      let clangs =
+        effect.batch(list.repeat(
+          asteroid_noise(flown.altitude),
+          flight.hull - flown.hull,
+        ))
       case flown.hull <= 0 {
         True -> {
           let crashed =
             Model(..model, space: None, flight_last_move: 0)
             |> start_cooldown("liftoff", ship.liftoff_cooldown_ms)
-          update(crashed, Navigate(to: Ship))
+          let #(landed, fx) = update(crashed, Navigate(to: Ship))
+          #(landed, effect.batch([fx, clangs, sound(audio.crash)]))
         }
         False -> #(
           Model(..model, space: Some(flown), flight_last_move: now),
-          flight_frame_timer(model.flight_run),
+          effect.batch([flight_frame_timer(model.flight_run), clangs]),
         )
       }
     }
@@ -943,6 +1029,53 @@ fn arm_keys(model: Model) -> #(Model, Effect(Msg)) {
 
 /// The encounter's battle music by depth (`Events.triggerFight`):
 /// tier 3 past 20, tier 2 past 10, tier 1 nearer home.
+/// A one-shot action sound.
+fn sound(src: String) -> Effect(Msg) {
+  effect.from(fn(_) { audio.play_sound(src) })
+}
+
+/// The sound of an action that may have been refused.
+fn sound_if(play: Bool, src: String) -> Effect(Msg) {
+  case play {
+    True -> sound(src)
+    False -> effect.none()
+  }
+}
+
+/// A random footstep. The original rolls `floor(random * 5) + 1`, so the
+/// sixth recording exists on disk but never plays.
+fn footstep() -> Effect(Msg) {
+  effect.from(fn(_) {
+    audio.play_sound(audio.footsteps(float.truncate(rng.random() *. 5.0) + 1))
+  })
+}
+
+/// A swing's noise: one of two variations for the weapon's type.
+fn weapon_noise(kind: combat.WeaponType) -> Effect(Msg) {
+  effect.from(fn(_) {
+    let variant = float.truncate(rng.random() *. 2.0) + 1
+    let kind = case kind {
+      combat.Unarmed -> "unarmed"
+      combat.Melee -> "melee"
+      combat.Ranged -> "ranged"
+    }
+    audio.play_sound(audio.weapon_sound(kind, variant))
+  })
+}
+
+/// An asteroid strike's clang, pitched by the altitude band.
+fn asteroid_noise(altitude: Int) -> Effect(Msg) {
+  effect.from(fn(_) {
+    let roll = float.truncate(rng.random() *. 2.0)
+    let base = case altitude {
+      a if a > 40 -> 6
+      a if a > 20 -> 4
+      _ -> 1
+    }
+    audio.play_sound(audio.asteroid_hit(roll + base))
+  })
+}
+
 fn encounter_music(distance: Int) -> Effect(Msg) {
   let track = case distance {
     d if d > 20 -> audio.encounter_tier_3
@@ -1492,6 +1625,8 @@ fn step(model: Model, dir: world.Dir) -> #(Model, Effect(Msg)) {
     _, _, Some(exp) -> {
       let s = world.move(model.state, exp, dir)
       let model = notify_world(Model(..model, state: s.state), s.messages)
+      // Every step crunches — even the one that ends at home or in the grave.
+      let steps = footstep()
       let on_village =
         world.tile_at(s.expedition.map, s.expedition.pos.0, s.expedition.pos.1)
         == Ok(world.Village)
@@ -1501,17 +1636,18 @@ fn step(model: Model, dir: world.Dir) -> #(Model, Effect(Msg)) {
         // cleared mines credited.
         False, _ -> {
           let dead = die(model)
-          #(dead, die_fx(dead))
+          #(dead, effect.batch([die_fx(dead), steps]))
         }
-        True, True -> #(go_home(model), effect.none())
+        True, True -> #(go_home(model), steps)
         True, False -> {
           let model = Model(..model, expedition: Some(s.expedition))
           // A landmark launches its setpiece (the `doSpace` order); open ground
           // may instead spring an encounter.
-          case setpiece_at(s.expedition, s.state) {
+          let #(model, fx) = case setpiece_at(s.expedition, s.state) {
             Ok(event) -> start_event(model, event)
             Error(_) -> #(model, roll_fight())
           }
+          #(model, effect.batch([fx, steps]))
         }
       }
     }
@@ -1646,9 +1782,9 @@ fn leave_at_home(item: String) -> Bool {
 }
 
 /// Die in the wilds: the supplies are lost and the player wakes in the room.
-/// Death's audio: whatever event or battle music was up fades out.
+/// Death's audio: the knell, and whatever event or battle music was up fades.
 fn die_fx(model: Model) -> Effect(Msg) {
-  event_closed_fx(model)
+  effect.batch([event_closed_fx(model), sound(audio.death)])
 }
 
 fn die(model: Model) -> Model {
