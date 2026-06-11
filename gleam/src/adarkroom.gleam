@@ -61,6 +61,9 @@ fn init(_flags) -> #(Model, Effect(Msg)) {
     Some(saved) -> model.Model(..model.init(), state: saved)
     None -> model.init()
   }
+  // Every boot announces the room and the fire (`Room.init`'s two notify
+  // lines), newest atop.
+  let loaded = model.boot_announcements(loaded)
   // The room's music starts with the app (sounding once the browser allows).
   let #(loaded, music) = model.startup_music(loaded)
   #(
@@ -107,12 +110,25 @@ fn time_interval(ms: Int, to_msg: fn(Int) -> Msg) -> Effect(Msg) {
   })
 }
 
-/// Resume the builder's timer if a loaded game left it mid-progression.
+/// Resume the builder's timer if a loaded game left it mid-progression — and
+/// the forest's fifteen-second clock if the reload swallowed it. (The
+/// original's own resume check reads `stores.wood < 0` and never fires, a
+/// softlock for anyone reloading in the window; we keep its evident intent.)
 fn resume_builder(m: Model) -> Effect(Msg) {
-  case room.builder_arrived(m.state) && room.builder_up(m.state) == False {
+  let chain = case
+    room.builder_arrived(m.state) && room.builder_up(m.state) == False
+  {
     True -> delayed(room.builder_state_delay_ms, BuilderProgress)
     False -> effect.none()
   }
+  let forest = case
+    room.builder_level(m.state) >= 1
+    && !state.has_feature(m.state, "location.outside")
+  {
+    True -> delayed(room.need_wood_delay_ms, model.UnlockForest)
+    False -> effect.none()
+  }
+  effect.batch([chain, forest])
 }
 
 fn update(m: Model, msg: Msg) -> #(Model, Effect(Msg)) {

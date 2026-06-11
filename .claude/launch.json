@@ -7,6 +7,13 @@
       "runtimeArgs": ["-c", "cd gleam && npm run dev"],
       "port": 5173,
       "autoPort": true
+    },
+    {
+      "name": "original",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["-m", "http.server", "8088"],
+      "port": 8088,
+      "autoPort": true
     }
   ]
 }

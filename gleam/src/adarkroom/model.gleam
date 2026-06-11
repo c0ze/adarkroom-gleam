@@ -61,6 +61,8 @@ pub type Msg {
   AdjustTemp
   /// Timer: advance the builder's arrival/progression.
   BuilderProgress
+  /// Timer: the cold drives the point home — the forest opens for wood.
+  UnlockForest
   /// Build or craft the named structure/item.
   Build(name: String)
   /// Buy the named trade good at the trading post.
@@ -437,13 +439,25 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
     )
 
     BuilderProgress -> {
+      let arriving = room.builder_level(model.state) == 0
       let progressed = apply_room(model, room.progress_builder(model.state))
       let next = case room.builder_up(progressed.state) {
         True -> effect.none()
         False -> delayed(room.builder_state_delay_ms, BuilderProgress)
       }
-      #(progressed, next)
+      // The stranger's collapse starts the fifteen-second clock to the
+      // forest (`_NEED_WOOD_DELAY`).
+      let forest = case arriving {
+        True -> delayed(room.need_wood_delay_ms, UnlockForest)
+        False -> effect.none()
+      }
+      #(progressed, effect.batch([next, forest]))
     }
+
+    UnlockForest -> #(
+      apply_room(model, room.unlock_forest(model.state)),
+      effect.none(),
+    )
 
     Build(name: name) -> {
       let had_huts = craft.building_count(model.state, "hut") > 0
@@ -2052,6 +2066,15 @@ pub fn startup_music(model: Model) -> #(Model, Effect(Msg)) {
 
 /// Put the location's name back on the page title (`stopTitleBlink`'s
 /// restore).
+/// What every boot announces (`Room.init`): the room's temperature, then the
+/// fire — so the fire reads first in the newest-first log.
+pub fn boot_announcements(model: Model) -> Model {
+  notify_room(model, [
+    "the room is " <> room.temp_text(room.temperature(model.state)),
+    "the fire is " <> room.fire_text(room.fire(model.state)),
+  ])
+}
+
 /// Refresh the document title — unless it's mid-blink for an event, when the
 /// blink owns it until the event closes.
 fn title_if_calm(model: Model) -> Effect(Msg) {
