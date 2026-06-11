@@ -1068,6 +1068,65 @@ pub fn tile_char(t: Tile) -> String {
 
 /// Render the expedition's map as 61 rows of text: the wanderer marked `@`, seen
 /// tiles shown by their glyph, and unseen ground left blank.
+/// A landmark's hover label (`World.LANDMARKS[..].label`), non-breaking
+/// spaces and all. Terrain and roads have none.
+pub fn landmark_label(t: Tile) -> Result(String, Nil) {
+  case t {
+    Village -> Ok("The\u{00A0}Village")
+    Outpost -> Ok("An\u{00A0}Outpost")
+    IronMine -> Ok("Iron\u{00A0}Mine")
+    CoalMine -> Ok("Coal\u{00A0}Mine")
+    SulphurMine -> Ok("Sulphur\u{00A0}Mine")
+    House -> Ok("An\u{00A0}Old\u{00A0}House")
+    Cave -> Ok("A\u{00A0}Damp\u{00A0}Cave")
+    Town -> Ok("An\u{00A0}Abandoned\u{00A0}Town")
+    City -> Ok("A\u{00A0}Ruined\u{00A0}City")
+    Ship -> Ok("A\u{00A0}Crashed\u{00A0}Starship")
+    Borehole -> Ok("A\u{00A0}Borehole")
+    Battlefield -> Ok("A\u{00A0}Battlefield")
+    Swamp -> Ok("A\u{00A0}Murky\u{00A0}Swamp")
+    Cache -> Ok("A\u{00A0}Destroyed\u{00A0}Village")
+    Executioner -> Ok("A\u{00A0}Ravaged\u{00A0}Battleship")
+    Forest | Field | Barrens | Road -> Error(Nil)
+  }
+}
+
+/// One spot on the drawn map (`drawMap`'s cases): the wanderer, a labelled
+/// landmark, plain ground, or the unseen dark.
+pub type MapCell {
+  /// The `@`, with its 'Wanderer' tooltip.
+  Wanderer
+  /// A lit landmark with its hover label — visited ones (and used outposts)
+  /// fall back to plain ground, as the original's `H!` lookup misses.
+  Labelled(char: String, label: String)
+  /// Lit ground (or a delabelled landmark): just its letter.
+  Ground(char: String)
+  /// Not yet seen.
+  Dark
+}
+
+/// Classify the spot at `(x, y)` for the structured map renderer.
+pub fn map_cell(exp: Expedition, x: Int, y: Int) -> MapCell {
+  case #(x, y) == exp.pos {
+    True -> Wanderer
+    False ->
+      case set.contains(exp.seen, #(x, y)), dict.get(exp.map, #(x, y)) {
+        True, Ok(t) -> {
+          let delabelled =
+            set.contains(exp.visited, #(x, y))
+            || t == Outpost
+            && set.contains(exp.used_outposts, #(x, y))
+          case delabelled, landmark_label(t) {
+            False, Ok(label) -> Labelled(char: tile_char(t), label: label)
+            _, _ -> Ground(tile_char(t))
+          }
+        }
+        True, Error(_) -> Ground(" ")
+        False, _ -> Dark
+      }
+  }
+}
+
 pub fn render(exp: Expedition) -> List(String) {
   list.map(seq(0, radius * 2 + 1), fn(y) {
     seq(0, radius * 2 + 1)

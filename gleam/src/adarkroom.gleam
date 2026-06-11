@@ -567,6 +567,59 @@ fn live_aid_buttons(m: Model) -> List(Element(Msg)) {
   list.append(stim, shield)
 }
 
+fn seq_61() -> List(Int) {
+  list.index_map(list.repeat(Nil, world.radius * 2 + 1), fn(_, i) { i })
+}
+
+/// One drawn map row (`drawMap`): landmarks wear their hover labels, the
+/// wanderer wears 'Wanderer', runs of plain ground collapse into one text
+/// node, and the unseen dark is blank.
+fn map_row(exp: Expedition, y: Int) -> List(Element(Msg)) {
+  let #(elements, run) =
+    list.fold(seq_61(), #([], ""), fn(acc, x) {
+      let #(done, run) = acc
+      case world.map_cell(exp, x, y) {
+        world.Wanderer -> #(
+          [labelled_span("@", "Wanderer", x, y), ..flush(done, run)],
+          "",
+        )
+        world.Labelled(char: char, label: label) -> #(
+          [labelled_span(char, label, x, y), ..flush(done, run)],
+          "",
+        )
+        world.Ground(char) -> #(done, run <> char)
+        world.Dark -> #(done, run <> "\u{00A0}")
+      }
+    })
+  list.reverse(flush(elements, run))
+}
+
+fn flush(done: List(Element(Msg)), run: String) -> List(Element(Msg)) {
+  case run {
+    "" -> done
+    text -> [element.text(text), ..done]
+  }
+}
+
+/// A landmark glyph and its tooltip, leaning away from the map's edges as
+/// the original's `ttClass` does.
+fn labelled_span(char: String, label: String, x: Int, y: Int) -> Element(Msg) {
+  let horizontal = case x > world.radius {
+    True -> " left"
+    False -> " right"
+  }
+  let vertical = case y > world.radius {
+    True -> " top"
+    False -> " bottom"
+  }
+  html.span([attribute.class("landmark")], [
+    element.text(char),
+    html.div([attribute.class("tooltip" <> horizontal <> vertical)], [
+      element.text(label),
+    ]),
+  ])
+}
+
 /// One fighter: a glyph and its HP, as `createFighterDiv` builds.
 fn fighter_div(
   id: String,
@@ -1209,7 +1262,7 @@ fn world_panel(exp: Expedition) -> Element(Msg) {
         attribute.style("font-family", "monospace"),
         attribute.style("line-height", "1"),
       ],
-      list.map(world.render(exp), fn(row) { html.div([], [element.text(row)]) }),
+      list.map(seq_61(), fn(y) { html.div([], map_row(exp, y)) }),
     )
   let vitals =
     html.div([attribute.id("worldVitals")], [

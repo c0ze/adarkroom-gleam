@@ -117,3 +117,12 @@ pub fn a_wave_spawns_from_its_rolls_test() {
   second.duration |> should.equal(525)
   first.spawned_at |> should.equal(5000)
 }
+
+pub fn the_air_thins_by_name_test() {
+  space.atmosphere(0) |> should.equal("Troposphere")
+  space.atmosphere(10) |> should.equal("Stratosphere")
+  space.atmosphere(29) |> should.equal("Mesosphere")
+  space.atmosphere(44) |> should.equal("Thermosphere")
+  space.atmosphere(59) |> should.equal("Exosphere")
+  space.atmosphere(60) |> should.equal("Space")
+}

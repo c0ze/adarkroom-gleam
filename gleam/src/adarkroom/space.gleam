@@ -208,6 +208,19 @@ fn glyph(roll: Float) -> String {
 
 /// A second of climb; the clock tops out past 60km (the win is the fade
 /// completing, not the altitude).
+/// The air's name at this altitude (`Space.setTitle`), shown as the
+/// document title through the ascent.
+pub fn atmosphere(altitude: Int) -> String {
+  case altitude {
+    a if a < 10 -> "Troposphere"
+    a if a < 20 -> "Stratosphere"
+    a if a < 30 -> "Mesosphere"
+    a if a < 45 -> "Thermosphere"
+    a if a < 60 -> "Exosphere"
+    _ -> "Space"
+  }
+}
+
 pub fn climb(flight: Flight) -> Flight {
   Flight(..flight, altitude: flight.altitude + 1)
 }
