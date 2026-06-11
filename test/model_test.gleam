@@ -2203,3 +2203,24 @@ pub fn no_pausing_mid_adventure_test() {
   model.can_pause(m) |> should.be_false
   run(m, model.TogglePause).paused |> should.be_false
 }
+
+pub fn the_arrows_walk_the_world_test() {
+  let exp = world.begin(world.generate_map(rng.seed(5)), state.new())
+  let m =
+    model.Model(
+      ..model.init(),
+      location: model.World,
+      state: state.set_outfit(state.new(), "cured meat", 5),
+      expedition: option.Some(exp),
+    )
+  let stepped = run(m, model.KeyDown("ArrowEast" <> ""))
+  let assert option.Some(unmoved) = stepped.expedition
+  unmoved.pos |> should.equal(exp.pos)
+  let walked = run(m, model.KeyDown("d"))
+  let assert option.Some(moved) = walked.expedition
+  moved.pos |> should.equal(#(world.radius + 1, world.radius))
+  // At home the same key does nothing to the world.
+  let home = run(model.Model(..m, location: model.Room), model.KeyDown("d"))
+  let assert option.Some(still) = home.expedition
+  still.pos |> should.equal(exp.pos)
+}

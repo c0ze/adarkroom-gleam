@@ -727,18 +727,20 @@ fn step_world(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
               }
             None -> make_world(stocked, seed, cache)
           }
-          #(
-            Model(
-              ..model,
-              state: stocked,
-              location: World,
-              prev_location: model.location,
-              expedition: Some(exp),
-              fight_move: 0,
-              combat: None,
-            ),
-            sound(audio.embark),
-          )
+          // The walking keys listen from the first step out.
+          let #(embarked, keys) =
+            arm_keys(
+              Model(
+                ..model,
+                state: stocked,
+                location: World,
+                prev_location: model.location,
+                expedition: Some(exp),
+                fight_move: 0,
+                combat: None,
+              ),
+            )
+          #(embarked, effect.batch([sound(audio.embark), keys]))
         }
         _, _ -> #(model, effect.none())
       }
@@ -1045,7 +1047,17 @@ fn step_world(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
         Error(_) -> #(model, effect.none())
       }
 
-    KeyDown(key: key) -> #(hold_key(model, key, True), effect.none())
+    KeyDown(key: key) ->
+      case model.location {
+        // Out in the world, the arrows (and WASD) walk — the original's
+        // primary input (`World.keyDown`); the buttons stay for touch.
+        World ->
+          case world_step_key(key) {
+            Ok(step_msg) -> update(hold_key(model, key, True), step_msg)
+            Error(_) -> #(hold_key(model, key, True), effect.none())
+          }
+        _ -> #(hold_key(model, key, True), effect.none())
+      }
 
     KeyUp(key: key) -> #(hold_key(model, key, False), effect.none())
 
@@ -1243,6 +1255,17 @@ fn dir_for_key(key: String) -> Result(space.Dir, Nil) {
 }
 
 /// Arm the document key listeners, once.
+/// The walking keys (`World.keyDown`): arrows and WASD.
+fn world_step_key(key: String) -> Result(Msg, Nil) {
+  case key {
+    "ArrowUp" | "w" | "W" -> Ok(MoveNorth)
+    "ArrowDown" | "s" | "S" -> Ok(MoveSouth)
+    "ArrowLeft" | "a" | "A" -> Ok(MoveWest)
+    "ArrowRight" | "d" | "D" -> Ok(MoveEast)
+    _ -> Error(Nil)
+  }
+}
+
 fn arm_keys(model: Model) -> #(Model, Effect(Msg)) {
   case model.keys_armed {
     True -> #(model, effect.none())
