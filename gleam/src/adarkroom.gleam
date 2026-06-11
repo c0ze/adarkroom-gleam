@@ -38,6 +38,7 @@ import lustre/attribute
 import lustre/effect.{type Effect}
 import lustre/element.{type Element}
 import lustre/element/html
+import lustre/element/keyed
 import lustre/event
 
 const tick_interval_ms = 1000
@@ -482,8 +483,13 @@ fn can_heal(m: Model) -> Bool {
 }
 
 /// The heal buttons a fight offers — one per healing item carried, each on its
-/// own cooldown after use.
+/// own cooldown after use. The loot screen's rebuilt buttons carry none
+/// (`createEatMeatButton(0)`).
 fn heal_buttons(m: Model) -> List(Element(Msg)) {
+  let looting = case m.combat {
+    Some(cs) -> cs.won
+    None -> False
+  }
   [
     #("cured meat", "eat meat", "eat", 5000),
     #("medicine", "use meds", "meds", 7000),
@@ -491,6 +497,10 @@ fn heal_buttons(m: Model) -> List(Element(Msg)) {
   ]
   |> list.filter_map(fn(t) {
     let #(item, label, cooldown_id, cooldown_ms) = t
+    let cooldown_ms = case looting {
+      True -> 0
+      False -> cooldown_ms
+    }
     case state.get_outfit(m.state, item) > 0 {
       True ->
         Ok(
@@ -1331,12 +1341,22 @@ fn stores_view(s: state.State, show_weapons: Bool) -> Element(Msg) {
   element.fragment(list.append(sections, armory))
 }
 
-/// The running message log, newest first.
+/// The running message log, newest first, fading toward the bottom under the
+/// gradient. Keyed by each message's sequence number so only a freshly-printed
+/// one runs the fade-in (`printMessage`'s 500ms opacity animate).
 fn notifications_view(n: Notifications) -> Element(Msg) {
-  html.div(
+  let messages = notifications.messages(n)
+  let total = list.length(messages)
+  keyed.div(
     [attribute.id("notifications")],
-    list.map(notifications.messages(n), fn(msg) {
-      html.div([attribute.class("notification")], [element.text(msg)])
-    }),
+    list.append(
+      [#("gradient", html.div([attribute.id("notifyGradient")], []))],
+      list.index_map(messages, fn(msg, index) {
+        #(
+          int.to_string(total - index),
+          html.div([attribute.class("notification")], [element.text(msg)]),
+        )
+      }),
+    ),
   )
 }

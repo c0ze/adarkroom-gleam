@@ -19,6 +19,15 @@
         to { width: 0%; }
       }
 
+      /* A fresh notification's fade-in (printMessage's 500ms animate). */
+      @keyframes notifyFade {
+        from { opacity: 0; }
+        to { opacity: 1; }
+      }
+      #notifications div.notification {
+        animation: notifyFade 500ms linear;
+      }
+
       /* The Outside right-hand column: the village box flows above the
          stores (Engine.moveStoresView's measured village.height() + 26px,
          by normal flow instead). */

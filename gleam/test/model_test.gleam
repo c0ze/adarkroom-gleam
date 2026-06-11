@@ -1972,3 +1972,23 @@ pub fn navigating_remembers_where_it_left_from_test() {
   after.location |> should.equal(model.Outside)
   after.prev_location |> should.equal(model.Room)
 }
+
+pub fn loot_screen_heals_are_instant_and_ungated_test() {
+  // The victory screen rebuilds the heal buttons without cooldowns
+  // (createEatMeatButton(0)), so eating is spammable there.
+  let m = special_fight([], combat.NoStatus)
+  let assert option.Some(cs) = m.combat
+  let won =
+    model.Model(
+      ..m,
+      state: state.set_outfit(m.state, "cured meat", 3),
+      combat: option.Some(combat.CombatState(..cs, won: True, player_hp: 1)),
+    )
+  let once = run(won, model.Heal("cured meat"))
+  let twice = run(once, model.Heal("cured meat"))
+  let assert option.Some(after) = twice.combat
+  // Two meals back to back, no cooldown armed between them.
+  state.get_outfit(twice.state, "cured meat") |> should.equal(1)
+  model.on_cooldown(twice, "eat") |> should.be_false
+  { after.player_hp > 1 } |> should.be_true
+}
