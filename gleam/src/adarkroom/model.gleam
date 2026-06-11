@@ -564,6 +564,7 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
               ..model,
               state: stocked,
               location: World,
+              prev_location: model.location,
               expedition: Some(exp),
               fight_move: 0,
               combat: None,
@@ -1765,6 +1766,7 @@ fn go_home(model: Model) -> Model {
       ..notify_world(model, ["a haze falls over the village"]),
       state: s,
       location: Room,
+      prev_location: model.location,
       expedition: None,
       combat: None,
     )
@@ -1859,6 +1861,7 @@ fn die(model: Model) -> Model {
     ..model,
     state: state.State(..model.state, outfit: dict.new()),
     location: Room,
+    prev_location: model.location,
     expedition: None,
     combat: None,
     // A setpiece modal closes with the death — there's no scene to return to.
