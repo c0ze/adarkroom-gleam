@@ -9,10 +9,10 @@
 | Decision | Choice |
 | --- | --- |
 | Language / framework | Gleam compiled to JS, **Lustre** (Elm-style MVU) |
-| Location | `gleam/` subdirectory of this repo; the current JS is kept as the **reference implementation** |
+| Location | the repo root (`c0ze/adarkroom-gleam`); the original JS is kept in `adarkroom-js/` as the **reference implementation** |
 | Localization | **English-first**; the 18-language gettext/`.po` pipeline is deferred to M8 |
 | Fidelity | **Faithful 1:1** (behavior, balance, RNG) before any improvements |
-| Tracking | GitHub milestones + issues on `c0ze/adarkroom` |
+| Tracking | GitHub milestones + issues on `c0ze/adarkroom-gleam` |
 
 ## Architecture
 
@@ -54,7 +54,7 @@ and RNG outcomes (seeded). The systematic parity checklist lives in M7.
 ## Milestones & issues
 
 **M0 · Scaffolding & infrastructure**
-- Set up Gleam + Lustre project & build pipeline (`gleam/` subdir, Vite, static build, layout shell)
+- Set up Gleam + Lustre project & build pipeline (Vite, static build, layout shell)
 - Browser FFI shims (localStorage, timers, seeded RNG, now)
 - CI — format check, build, test
 
