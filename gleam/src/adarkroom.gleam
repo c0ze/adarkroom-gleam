@@ -729,7 +729,7 @@ fn outside_panel(m: Model) -> Element(Msg) {
     // Engine.moveStoresView measures into place.
     html.div([attribute.id("storesColumn")], [
       village_view(m.state),
-      stores_view(m.state),
+      stores_view(m.state, False),
     ]),
   ])
 }
@@ -820,7 +820,7 @@ fn path_panel(m: Model) -> Element(Msg) {
       [armour, bagspace, ..supplies],
     ),
     embark,
-    stores_view(s),
+    stores_view(s, True),
   ])
 }
 
@@ -904,7 +904,7 @@ fn room_panel(m: Model) -> Element(Msg) {
     build_section("buildBtns", "build", m.state, builds),
     build_section("craftBtns", "craft", m.state, crafts),
     buy_section(m.state, trade.visible(m.state)),
-    stores_view(m.state),
+    stores_view(m.state, True),
   ])
 }
 
@@ -1014,6 +1014,7 @@ fn ship_panel(m: Model) -> Element(Msg) {
       cooldown_ms: ship.liftoff_cooldown_ms,
       id: "liftoffButton",
     )),
+    stores_view(m.state, False),
   ])
 }
 
@@ -1061,7 +1062,7 @@ fn fabricator_panel(m: Model) -> Element(Msg) {
     )
   html.div(
     [attribute.id("fabricatorPanel"), attribute.class("location")],
-    list.append(blueprints, [bench]),
+    list.append(blueprints, [bench, stores_view(m.state, True)]),
   )
 }
 
@@ -1167,29 +1168,106 @@ fn dir_button(label: String, msg: Msg) -> Element(Msg) {
 }
 
 /// The stores panel — resources and their counts. Hidden until non-empty.
-fn stores_view(s: state.State) -> Element(Msg) {
-  case state.stores_list(s) {
-    [] -> element.none()
-    stores ->
+/// Where a store row lives in the column (`updateStoresView`'s type switch).
+pub type StoreSection {
+  /// The plain goods, in the stores box.
+  Resources
+  /// The compass, in its own little section under the resources.
+  SpecialItems
+  /// The armory, in a box of its own — faded out away from home's workbenches.
+  WeaponItems
+  /// Upgrades, and anything ending in "blueprint", never show.
+  HiddenItems
+}
+
+/// Classify a store by the original's lookup chain (Room.Craftables →
+/// TradeGoods → MiscItems → Fabricator.Craftables); the tables' `type`
+/// fields are mirrored here since the port's own tables don't carry them.
+pub fn store_section(name: String) -> StoreSection {
+  case string.contains(name, "blueprint") {
+    True -> HiddenItems
+    False ->
+      case name {
+        "bone spear"
+        | "iron sword"
+        | "steel sword"
+        | "rifle"
+        | "bolas"
+        | "grenade"
+        | "bayonet"
+        | "laser rifle"
+        | "energy blade"
+        | "disruptor"
+        | "plasma rifle" -> WeaponItems
+        "waterskin"
+        | "cask"
+        | "water tank"
+        | "rucksack"
+        | "wagon"
+        | "convoy"
+        | "l armour"
+        | "i armour"
+        | "s armour"
+        | "fluid recycler"
+        | "cargo drone"
+        | "kinetic armour" -> HiddenItems
+        "compass" -> SpecialItems
+        _ -> Resources
+      }
+  }
+}
+
+fn store_rows(stores: List(#(String, Int))) -> List(Element(Msg)) {
+  list.map(stores, fn(entry) {
+    let #(name, count) = entry
+    html.div([attribute.class("storeRow")], [
+      html.div([attribute.class("row_key")], [element.text(name)]),
+      html.div([attribute.class("row_val")], [
+        element.text(int.to_string(count)),
+      ]),
+      clear_div(),
+    ])
+  })
+}
+
+/// The stores column: the goods (with the compass in its own section) and,
+/// at home's workbenches, the armory below them. Upgrades never show.
+fn stores_view(s: state.State, show_weapons: Bool) -> Element(Msg) {
+  let visible = state.stores_list(s)
+  let resources =
+    list.filter(visible, fn(e) { store_section(e.0) == Resources })
+  let special =
+    list.filter(visible, fn(e) { store_section(e.0) == SpecialItems })
+  let weapons =
+    list.filter(visible, fn(e) { store_section(e.0) == WeaponItems })
+  let sections = case resources, special {
+    [], [] -> []
+    _, _ -> [
       html.div(
         [attribute.id("stores"), attribute.attribute("data-legend", "stores")],
-        [
-          html.div(
-            [attribute.id("resources")],
-            list.map(stores, fn(entry) {
-              let #(name, count) = entry
-              html.div([attribute.class("storeRow")], [
-                html.div([attribute.class("row_key")], [element.text(name)]),
-                html.div([attribute.class("row_val")], [
-                  element.text(int.to_string(count)),
-                ]),
-                clear_div(),
-              ])
-            }),
-          ),
-        ],
-      )
+        list.append(
+          case resources {
+            [] -> []
+            _ -> [html.div([attribute.id("resources")], store_rows(resources))]
+          },
+          case special {
+            [] -> []
+            _ -> [html.div([attribute.id("special")], store_rows(special))]
+          },
+        ),
+      ),
+    ]
   }
+  let armory = case show_weapons, weapons {
+    True, [_, ..] -> [
+      html.div(
+        [attribute.id("weapons"), attribute.attribute("data-legend", "weapons")],
+        store_rows(weapons),
+      ),
+    ]
+    _, _ -> []
+  }
+  element.fragment(list.append(sections, armory))
 }
 
 /// The running message log, newest first.
