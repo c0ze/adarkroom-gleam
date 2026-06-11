@@ -1,6 +1,9 @@
 # A Dark Room — Gleam + Lustre Port — Design
 
-**Status:** Approved 2026-06-07
+**Status:** Delivered 2026-06-11 — M0–M7 complete; the port is on `master`
+and live at [adarkroom.coze.org](https://adarkroom.coze.org). M8
+(localization, #34/#35) and accessibility (#42) remain as follow-ups.
+*(Approved 2026-06-07.)*
 **Target:** Faithful 1:1 port of the current upstream JS game
 (`doublespeakgames/adarkroom` @ `1fada46`, 2025-05-23) to **Gleam + Lustre**.
 
@@ -96,16 +99,40 @@ and RNG outcomes (seeded). The systematic parity checklist lives in M7.
 - Fabricator (alien crafting)
 - Death, prestige & scoring
 
-**M7 · Feel, audio & parity**
+**M7 · Feel, audio & parity** ✅
 - Match the feel (animation & timing)
 - Audio system
-- Parity pass & bug bash
+- Parity pass & bug bash (string audit + side-by-side lockstep + live
+  playthroughs via the journal; ongoing finds become individual PRs)
 
-**M8 · Localization** *(deferred)*
+**M8 · Localization** *(deferred — the remaining milestone, #34/#35)*
 - String catalog + gettext/`.po` pipeline
-- Load 18 languages + language switcher
+- Load 18 languages + language switcher (lives in the bottom menu, which
+  ships alongside)
 
 ---
 
 *Dependency spine:* M0 → M1 → M2 → M3/M4 → M5 → M6 → M7; M8 last.
 M2 is the proof-of-architecture checkpoint.
+
+---
+
+## Beyond the original (deliberate additions)
+
+Kept small and clearly marked in code; everything else is bug-for-bug:
+
+- **PWA**: manifest, icons, offline service worker; `viewport width=720`.
+- **Pause button** (the original has no global pause).
+- **Playthrough journal**: every notification timestamped into a
+  localStorage ring buffer — `adrLog()` / `adrLogClear()` in the console.
+- **Touch direction buttons** under the world map (the original used swipe).
+
+## Known divergences (documented)
+
+- Mid-trip world changes live in the running page only; a reload returns
+  the wanderer home with the outfit intact (matches the original).
+- Button cooldowns don't persist across reloads (the original saves some).
+- The forest-unlock reload window resumes instead of softlocking (the
+  original's resume check is dead code).
+- During the location slide, each panel carries its own stores column
+  (the original counter-animates a single riding container).
