@@ -157,6 +157,9 @@ const builder_key = "builder"
 /// Delay between builder progression steps.
 pub const builder_state_delay_ms = 30_000
 
+/// `_NEED_WOOD_DELAY` — from the stranger's collapse to the forest opening.
+pub const need_wood_delay_ms = 15_000
+
 /// The builder's progression: `-1` not arrived, `0` summoned, `1` stumbled in,
 /// `2` mumbling, `3` up (able to build).
 pub fn builder_level(s: State) -> Int {
@@ -211,13 +214,11 @@ pub fn on_fire_change(s: State) -> #(State, List(String)) {
 pub fn progress_builder(s: State) -> #(State, List(String)) {
   let warm = temp_to_int(temperature(s)) >= temp_to_int(Warm)
   case builder_level(s), warm {
-    0, _ -> {
-      let #(revealed, forest) = unlock_forest(set_builder(s, 1))
-      #(revealed, [
-        "a ragged stranger stumbles through the door and collapses in the corner",
-        ..forest
-      ])
-    }
+    // The forest opens on its own clock, fifteen seconds after the stranger
+    // (`_NEED_WOOD_DELAY`) — the model arms it.
+    0, _ -> #(set_builder(s, 1), [
+      "a ragged stranger stumbles through the door and collapses in the corner",
+    ])
     1, True -> #(set_builder(s, 2), [
       "the stranger shivers, and mumbles quietly. her words are unintelligible.",
     ])

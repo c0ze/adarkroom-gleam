@@ -119,14 +119,17 @@ pub fn light_fire_summons_builder_without_revealing_forest_test() {
   state.has_feature(m.state, "location.outside") |> should.equal(False)
 }
 
-pub fn builder_progress_stumbles_in_and_reveals_forest_test() {
+pub fn builder_progress_stumbles_in_then_the_forest_opens_test() {
   let m =
     model.init()
     |> run(model.LightFire)
     |> run(model.BuilderProgress)
   room.builder_level(m.state) |> should.equal(1)
+  // The forest waits its fifteen seconds (_NEED_WOOD_DELAY)...
+  state.has_feature(m.state, "location.outside") |> should.equal(False)
+  // ...and opens when the clock fires.
+  let m = run(m, model.UnlockForest)
   state.get_store(m.state, "wood") |> should.equal(4)
-  state.has_feature(m.state, "location.outside") |> should.equal(True)
   model.unlocked_locations(m) |> should.equal([model.Room, model.Outside])
   // Newest first: the forest reveal follows the stumble-in, after lighting.
   notifications.messages(m.notifications)
@@ -2109,4 +2112,10 @@ pub fn the_scouts_map_uncovers_the_lasting_world_test() {
       acc + list.count(row, fn(lit) { lit })
     })
   { now > before } |> should.be_true
+}
+
+pub fn every_boot_announces_the_room_and_the_fire_test() {
+  let told = model.boot_announcements(model.init())
+  notifications.messages(told.notifications)
+  |> should.equal(["the fire is dead.", "the room is freezing."])
 }

@@ -141,18 +141,27 @@ pub fn on_fire_change_noop_when_builder_already_arrived_test() {
   msgs |> should.equal([])
 }
 
-pub fn progress_builder_stumbles_and_reveals_forest_test() {
+pub fn progress_builder_stumbles_in_test() {
+  // The forest now opens on its own fifteen-second clock (_NEED_WOOD_DELAY);
+  // the stumble-in only sets it ticking.
   let #(s2, msgs) =
     room.progress_builder(state.new() |> state.set_game("builder", 0))
   room.builder_level(s2) |> should.equal(1)
-  state.get_store(s2, "wood") |> should.equal(4)
-  state.has_feature(s2, "location.outside") |> should.equal(True)
+  state.has_feature(s2, "location.outside") |> should.equal(False)
   msgs
   |> should.equal([
     "a ragged stranger stumbles through the door and collapses in the corner",
-    "the wind howls outside",
-    "the wood is running out",
   ])
+}
+
+pub fn unlock_forest_opens_once_test() {
+  let #(s, msgs) = room.unlock_forest(state.new())
+  state.get_store(s, "wood") |> should.equal(4)
+  state.has_feature(s, "location.outside") |> should.equal(True)
+  msgs |> should.equal(["the wind howls outside", "the wood is running out"])
+  // And only once.
+  let #(_, again) = room.unlock_forest(s)
+  again |> should.equal([])
 }
 
 pub fn progress_builder_waits_for_warmth_test() {
