@@ -611,18 +611,11 @@ fn char_tile(c: String) -> Result(Tile, Nil) {
   }
 }
 
-fn int_range(from: Int, to: Int) -> List(Int) {
-  case from > to {
-    True -> []
-    False -> [from, ..int_range(from + 1, to)]
-  }
-}
-
 /// Pack the trip's map, visited marks and fog for the save — `goHome`
 /// committing `World.state` back to `game.world`. A visited landmark's
 /// letter carries a trailing `!`, the original's `markVisited`.
 pub fn to_save(exp: Expedition) -> state.WorldSave {
-  let side = int_range(0, radius * 2)
+  let side = seq(0, radius * 2 + 1)
   let rows = fn(cell: fn(Int, Int) -> a) {
     list.map(side, fn(y) { list.map(side, fn(x) { cell(x, y) }) })
   }
