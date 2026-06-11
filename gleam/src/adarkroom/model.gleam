@@ -353,8 +353,9 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
           )
         _ -> navigated
       }
-      // Arrival picks up the location's music.
+      // Arrival picks up the location's music — and the document title.
       let #(arrived, music) = tune_music(arrived)
+      let music = effect.batch([music, restore_title(arrived)])
       // Lift-off proper: the ascent begins with its clocks and controls.
       case location {
         Space -> {
@@ -388,18 +389,35 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
       let lit = room.can_light(model.state)
       let #(model, fx) =
         room_music_after(fire_action(model, room.light_fire(model.state)))
-      #(model, effect.batch([fx, sound_if(lit, audio.light_fire)]))
+      // The room's title brightens with it (`setTitle` on `onFireChange`).
+      #(
+        model,
+        effect.batch([fx, sound_if(lit, audio.light_fire), title_if_calm(model)]),
+      )
     }
     StokeFire -> {
       let stoked = room.can_stoke(model.state)
       let #(model, fx) =
         room_music_after(fire_action(model, room.stoke_fire(model.state)))
-      #(model, effect.batch([fx, sound_if(stoked, audio.stoke_fire)]))
+      #(
+        model,
+        effect.batch([
+          fx,
+          sound_if(stoked, audio.stoke_fire),
+          title_if_calm(model),
+        ]),
+      )
     }
 
     CoolCheck(at: now) -> {
-      let cooled =
-        apply_room(Model(..model, now:), room.tick_cool(model.state, now))
+      // Fire chatter is noQueue in the original (`notify(Room, ..., true)`):
+      // heard in the room, dropped anywhere else.
+      let #(tended, fire_messages) = room.tick_cool(model.state, now)
+      let heard = case model.location {
+        Room -> fire_messages
+        _ -> []
+      }
+      let cooled = apply_room(Model(..model, now:), #(tended, heard))
       // Pending delayed returns (the wanderers' carts) count down on the same
       // heartbeat, announcing in the room when they arrive.
       let delivered = apply_room(cooled, events.tick_delays(cooled.state))
@@ -407,10 +425,11 @@ pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
       // original runs it on every stores redraw).
       let checked =
         Model(..delivered, state: outside.maybe_start_thieves(delivered.state))
-      // A fire that cooled retunes the room (`setMusic`, only while in it).
+      // A fire that cooled retunes the room (`setMusic`, only while in it) —
+      // and may darken the title.
       let #(checked, music) =
         room_music_after(#(checked, event_schedule_effect(checked)))
-      #(checked, music)
+      #(checked, effect.batch([music, title_if_calm(checked)]))
     }
     AdjustTemp -> #(
       apply_room(model, room.adjust_temp(model.state)),
@@ -2015,9 +2034,34 @@ pub fn startup_music(model: Model) -> #(Model, Effect(Msg)) {
 
 /// Put the location's name back on the page title (`stopTitleBlink`'s
 /// restore).
+/// Refresh the document title — unless it's mid-blink for an event, when the
+/// blink owns it until the event closes.
+fn title_if_calm(model: Model) -> Effect(Msg) {
+  case model.blinking {
+    True -> effect.none()
+    False -> restore_title(model)
+  }
+}
+
 fn restore_title(model: Model) -> Effect(Msg) {
-  let title = location_title(model.location)
+  let title = doc_title(model)
   effect.from(fn(_) { browser.set_title(title) })
+}
+
+/// The document title for where the player stands: the room is dark or
+/// firelit (`Room.setTitle`), the forest grows with the huts
+/// (`Outside.setTitle`), and the world is barren.
+fn doc_title(model: Model) -> String {
+  case model.location {
+    Room ->
+      case room.fire_to_int(room.fire(model.state)) >= 2 {
+        True -> "A Firelit Room"
+        False -> "A Dark Room"
+      }
+    Outside -> outside.title(model.state)
+    World -> "A Barren World"
+    location -> location_title(location)
+  }
 }
 
 /// Everything an event's close lets go of: the blinking title and the music
@@ -2628,12 +2672,12 @@ fn notify_room(model: Model, messages: List(String)) -> Model {
 /// Locations the player has unlocked. The Room is always available; the others
 /// appear once their `location.*` feature flag is set.
 pub fn unlocked_locations(model: Model) -> List(Location) {
+  // The world and the stars have no header tab in the original — they are
+  // reached by embarking and lifting off, not by clicking.
   let optional = [
     #(Outside, "location.outside"),
-    #(World, "location.world"),
     #(Path, "location.path"),
     #(Ship, "location.ship"),
-    #(Space, "location.space"),
     #(Fabricator, "location.fabricator"),
   ]
   let extra =

@@ -6,6 +6,7 @@
 //// established (which is distinct from a wood count of zero).
 
 import adarkroom/state.{type State}
+import gleam/list
 
 pub type Fire {
   Dead
@@ -243,12 +244,31 @@ pub fn stoke_fire(s: State) -> #(State, List(String)) {
 }
 
 /// Cool the fire by one level (driven by a timer). A no-op once Dead.
+/// A grown builder (level > 3) feeds it a log first when it has burned low,
+/// so the cool never quite kills it (`coolFire`'s stoke-then-cool).
 pub fn cool_fire(s: State) -> #(State, List(String)) {
+  let #(s, stoke_messages) = case
+    fire_to_int(fire(s)) <= fire_to_int(Flickering)
+    && builder_level(s) > 3
+    && state.get_store(s, "wood") > 0
+  {
+    True -> #(
+      set_fire(
+        state.add_store(s, "wood", -1),
+        fire_from_int(fire_to_int(fire(s)) + 1),
+      ),
+      ["builder stokes the fire"],
+    )
+    False -> #(s, [])
+  }
   case fire(s) {
-    Dead -> #(s, [])
+    Dead -> #(s, stoke_messages)
     current -> {
       let cooled = fire_from_int(fire_to_int(current) - 1)
-      #(set_fire(s, cooled), [fire_message(cooled)])
+      #(
+        set_fire(s, cooled),
+        list.append(stoke_messages, [fire_message(cooled)]),
+      )
     }
   }
 }

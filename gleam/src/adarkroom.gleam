@@ -926,17 +926,25 @@ fn village_view(s: state.State) -> Element(Msg) {
         True -> "village"
         False -> "forest"
       }
+      let village_row = fn(name, count) {
+        html.div([attribute.class("storeRow")], [
+          html.div([attribute.class("row_key")], [element.text(name)]),
+          html.div([attribute.class("row_val")], [
+            element.text(int.to_string(count)),
+          ]),
+          clear_div(),
+        ])
+      }
       let rows =
-        list.map(buildings, fn(entry) {
-          let #(name, count) = entry
-          html.div([attribute.class("storeRow")], [
-            html.div([attribute.class("row_key")], [element.text(name)]),
-            html.div([attribute.class("row_val")], [
-              element.text(int.to_string(count)),
-            ]),
-            clear_div(),
-          ])
-        })
+        list.map(buildings, fn(entry) { village_row(entry.0, entry.1) })
+      // Bait in the stores arms that many traps (`updateVillage`'s
+      // 'baited trap' row, capped at the traps standing).
+      let baited =
+        int.min(state.get_store(s, "bait"), craft.building_count(s, "trap"))
+      let rows = case baited > 0 {
+        True -> list.append(rows, [village_row("baited trap", baited)])
+        False -> rows
+      }
       let population =
         html.div([attribute.id("population")], [
           element.text(
@@ -969,8 +977,8 @@ fn room_panel(m: Model) -> Element(Msg) {
   let #(builds, crafts) = craft.visible(m.revealed)
   html.div([attribute.class("location")], [
     html.div([attribute.id("fireButtons")], [fire_button]),
-    build_section("buildBtns", "build", m.state, builds),
-    build_section("craftBtns", "craft", m.state, crafts),
+    build_section("buildBtns", "build:", m.state, builds),
+    build_section("craftBtns", "craft:", m.state, crafts),
     buy_section(m.state, trade.visible(m.state)),
     html.div([attribute.id("storesContainer")], [stores_view(m.state, True)]),
   ])
@@ -1015,7 +1023,7 @@ fn buy_section(s: state.State, goods: List(#(String, Good))) -> Element(Msg) {
     [] -> element.none()
     _ ->
       html.div(
-        [attribute.id("buyBtns"), attribute.attribute("data-legend", "buy")],
+        [attribute.id("buyBtns"), attribute.attribute("data-legend", "buy:")],
         list.map(goods, fn(entry) {
           let #(name, g) = entry
           buy_button(s, name, g)
