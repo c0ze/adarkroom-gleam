@@ -471,3 +471,65 @@ pub fn an_enraged_enemy_swings_every_half_second_test() {
   combat.effective_attack_delay(statused(combat.NoStatus))
   |> should.equal(1.0)
 }
+
+// --- the wanderer's own kit (shield and stim) -------------------------------------
+
+pub fn a_raised_shield_absorbs_the_blow_as_healing_and_breaks_test() {
+  let brute = combat.Enemy(..beast(), name: "brute", health: 60, damage: 4)
+  let cs =
+    combat.CombatState(..combat.begin_combat(brute, 5, 10), enemy_hp: 50)
+    |> combat.raise_shield
+  let after = combat.enemy_strike(cs, state.new(), 0.5)
+  // The blow heals instead of hurting, and the shield is spent.
+  after.player_hp |> should.equal(9)
+  after.player_status |> should.equal(combat.NoStatus)
+  // The next blow lands normally.
+  let then = combat.enemy_strike(after, state.new(), 0.5)
+  then.player_hp |> should.equal(5)
+}
+
+pub fn a_shield_blocks_the_venom_with_the_blow_test() {
+  let viper = combat.Enemy(..beast(), name: "viper", health: 60, damage: 6)
+  let cs =
+    combat.CombatState(
+      ..combat.begin_combat(viper, 5, 10),
+      enemy_status: combat.Venomous,
+    )
+    |> combat.raise_shield
+  let after = combat.enemy_strike(cs, state.new(), 0.5)
+  // No poison takes hold behind the shield.
+  after.player_dot |> should.equal(0)
+}
+
+pub fn a_stim_boosts_at_a_price_in_health_test() {
+  let cs = combat.begin_combat(beast(), 30, 30) |> combat.use_stim
+  cs.player_status |> should.equal(combat.Boost)
+  cs.player_hp |> should.equal(20)
+}
+
+pub fn the_blow_only_sounds_when_it_lands_test() {
+  let cs = combat.begin_combat(beast(), 10, 10)
+  // The beast hits on 0.8: a low roll lands, a high one whiffs.
+  combat.enemy_blow_lands(cs, state.new(), 0.5) |> should.be_true
+  combat.enemy_blow_lands(cs, state.new(), 0.9) |> should.be_false
+  // Stunned and entranced enemies don't swing at all.
+  combat.enemy_blow_lands(
+    combat.CombatState(..cs, enemy_stunned: True),
+    state.new(),
+    0.5,
+  )
+  |> should.be_false
+  combat.enemy_blow_lands(
+    combat.CombatState(..cs, enemy_status: combat.Meditation),
+    state.new(),
+    0.5,
+  )
+  |> should.be_false
+  // A banked trance repays itself as a guaranteed blow.
+  combat.enemy_blow_lands(
+    combat.CombatState(..cs, meditate_bank: 7),
+    state.new(),
+    0.9,
+  )
+  |> should.be_true
+}

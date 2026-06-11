@@ -773,3 +773,30 @@ pub fn every_pool_event_carries_its_track_test() {
     list.find(events.outside_events(), fn(e) { e.title == "A Military Raid" })
   raid.audio |> should.equal(Some("audio/event-soldier-attack.flac"))
 }
+
+// --- the glowstone's torch waiver -------------------------------------------------
+
+pub fn a_glowstone_waives_a_torch_cost_test() {
+  let btn =
+    events.SceneButton(
+      text: "go inside",
+      cost: [#("torch", 1)],
+      reward: [],
+      notification: option.None,
+      available: option.None,
+      on_click: option.None,
+      link: option.None,
+      effect: option.None,
+      next: events.End,
+    )
+  // No torch, no glowstone: refused.
+  let bare = state.new()
+  events.click_button(btn, bare, 0.5, events.Carried(water: 1, hp: 1))
+  |> should.equal(Error(Nil))
+  // A glowstone in the bag stands in for the torch — and isn't spent.
+  let lit = state.set_outfit(bare, "glowstone", 1)
+  let assert Ok(#(s, _, _, _)) =
+    events.click_button(btn, lit, 0.5, events.Carried(water: 1, hp: 1))
+  state.get_outfit(s, "glowstone") |> should.equal(1)
+  state.get_outfit(s, "torch") |> should.equal(0)
+}
