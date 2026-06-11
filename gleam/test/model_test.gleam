@@ -18,6 +18,7 @@ import gleam/dict
 import gleam/list
 import gleam/option
 import gleam/set
+import gleam/string
 import gleeunit/should
 
 /// Apply an update and discard the effect.
@@ -2044,4 +2045,40 @@ pub fn coming_home_commits_the_trip_test() {
   let assert option.Some(ws) = home.state.world
   let assert Ok(resumed) = world.resume(ws, state.new())
   set.contains(resumed.visited, mark) |> should.be_true
+}
+
+pub fn fire_chatter_is_heard_only_in_the_room_test() {
+  // The original's fire notifications are noQueue: cooling while outside
+  // says nothing, now or later.
+  let s =
+    state.new()
+    |> state.set_store("wood", 10)
+    |> state.set_feature("location.outside", True)
+  let #(s, _) = room.light_fire(s)
+  let m =
+    model.Model(..model.init(), state: s, location: model.Outside, now: 50_000)
+  // Arm the cool deadline, then sail past it.
+  let armed = run(m, model.CoolCheck(at: 50_000))
+  let cooled = run(armed, model.CoolCheck(at: 2_000_000))
+  // The fire cooled, silently — nothing queued for the room either.
+  notifications.messages(cooled.notifications)
+  |> list.any(fn(msg) { msg == "the fire is burning." })
+  |> should.be_false
+  let home = run(cooled, model.Navigate(to: model.Room))
+  notifications.messages(home.notifications)
+  |> list.any(fn(msg) { string.contains(msg, "the fire is") })
+  |> should.be_false
+}
+
+pub fn no_tabs_for_the_world_or_the_stars_test() {
+  let s =
+    state.new()
+    |> state.set_feature("location.world", True)
+    |> state.set_feature("location.space", True)
+    |> state.set_feature("location.outside", True)
+  let m = model.Model(..model.init(), state: s)
+  let tabs = model.unlocked_locations(m)
+  list.contains(tabs, model.World) |> should.be_false
+  list.contains(tabs, model.Space) |> should.be_false
+  list.contains(tabs, model.Outside) |> should.be_true
 }

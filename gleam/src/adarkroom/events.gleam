@@ -739,7 +739,15 @@ fn hut_fire() -> Event {
             ],
             "a fire has started",
             fn(s, roll) { #(outside.destroy_huts(s, 1, [roll]), []) },
-            [#("mourn", choice("mourn", End))],
+            [
+              #(
+                "mourn",
+                SceneButton(
+                  ..choice("mourn", End),
+                  notification: option.Some("some villagers have died"),
+                ),
+              ),
+            ],
           ),
           blink: True,
         ),

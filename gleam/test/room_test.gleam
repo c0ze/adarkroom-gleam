@@ -1,5 +1,6 @@
 import adarkroom/room
 import adarkroom/state
+import gleam/list
 import gleeunit/should
 
 pub fn fire_from_int_clamps_test() {
@@ -282,4 +283,31 @@ pub fn can_stoke_mirrors_the_wood_gate_test() {
   room.can_stoke(out) |> should.be_false
   let stocked = state.set_store(fresh, "wood", 1)
   room.can_stoke(stocked) |> should.be_true
+}
+
+pub fn the_grown_builder_keeps_the_fire_alive_test() {
+  // Once the fire has burned down to flickering, a grown builder feeds it a
+  // log before each cool, so it holds — at one wood per hold.
+  let s =
+    state.new()
+    |> state.set_store("wood", 10)
+    |> state.set_game("builder.level", 4)
+  let #(s, _) = room.light_fire(s)
+  let #(s, _) = room.cool_fire(s)
+  room.fire(s) |> should.equal(room.Flickering)
+  let #(after, messages) = room.cool_fire(s)
+  room.fire(after) |> should.equal(room.Flickering)
+  state.get_store(after, "wood") |> should.equal(4)
+  list.contains(messages, "builder stokes the fire") |> should.be_true
+}
+
+pub fn a_young_builder_lets_it_cool_test() {
+  let s =
+    state.new()
+    |> state.set_store("wood", 10)
+    |> state.set_game("builder.level", 1)
+  let #(s, _) = room.light_fire(s)
+  let #(s, _) = room.cool_fire(s)
+  let #(after, _) = room.cool_fire(s)
+  room.fire(after) |> should.equal(room.Smoldering)
 }
