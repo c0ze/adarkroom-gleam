@@ -4,6 +4,7 @@
 //// currently viewing is queued, then flushed (oldest-first) when they arrive.
 //// Messages are stored newest-first for display and gain a trailing period.
 
+import adarkroom/journal
 import gleam/dict.{type Dict}
 import gleam/list
 import gleam/result
@@ -43,7 +44,9 @@ pub fn notify_global(
   notifications: Notifications,
   text: String,
 ) -> Notifications {
-  show(notifications, normalize(text))
+  let text = normalize(text)
+  journal.record("global", text)
+  show(notifications, text)
 }
 
 /// Notify with a target location. If the player is at `current` the message
@@ -55,6 +58,9 @@ pub fn notify(
   text text: String,
 ) -> Notifications {
   let text = normalize(text)
+  // Every message lands in the playthrough journal as it is born, whether
+  // shown now or queued for later.
+  journal.record(target, text)
   case current == target {
     True -> show(notifications, text)
     False -> {

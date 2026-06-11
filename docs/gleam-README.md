@@ -4,7 +4,7 @@ A faithful 1:1 port of [A Dark Room](https://github.com/doublespeakgames/adarkro
 to **Gleam** + **[Lustre](https://lustre.build)** (Elm-style MVU), compiled to
 JavaScript and bundled with Vite.
 
-See [`../docs/gleam-port-design.md`](../docs/gleam-port-design.md) for the
+See [`gleam-port-design.md`](gleam-port-design.md) for the
 architecture and the M0–M8 milestone plan.
 
 ## Prerequisites
@@ -41,4 +41,4 @@ gleam test
 - `src/adarkroom.gleam` — app entry (Model / update / view)
 - `main.js` — browser entry; imports the compiled Gleam and starts Lustre
 - `index.html` — Vite entry; mounts into `#app`, links the existing stylesheet
-- `public/css`, `public/img` — symlinks to the repo-root assets (single source of truth)
+- `public/css`, `public/img`, `public/audio` — symlinks into `adarkroom-js/` (the original keeps the assets; single source of truth)
