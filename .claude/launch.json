@@ -3,15 +3,15 @@
   "configurations": [
     {
       "name": "gleam-dev",
-      "runtimeExecutable": "bash",
-      "runtimeArgs": ["-c", "cd gleam && npm run dev"],
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
       "port": 5173,
       "autoPort": true
     },
     {
       "name": "original",
       "runtimeExecutable": "python3",
-      "runtimeArgs": ["-m", "http.server", "8088"],
+      "runtimeArgs": ["-m", "http.server", "8088", "--directory", "adarkroom-js"],
       "port": 8088,
       "autoPort": true
     }

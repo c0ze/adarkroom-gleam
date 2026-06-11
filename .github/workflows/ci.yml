@@ -1,8 +1,7 @@
-name: gleam CI
+name: CI
 
 on:
   push:
-    branches: [master]
   pull_request:
 
 permissions:
@@ -11,9 +10,6 @@ permissions:
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: gleam
     steps:
       - uses: actions/checkout@v4
       - uses: erlef/setup-beam@v1

@@ -1,47 +1,40 @@
-A Dark Room
-===========
+# A Dark Room — Gleam + Lustre port
+
 > "awake. head throbbing. vision blurry. come light the fire."
 
-a minimalist text adventure game for your browser
+A faithful 1:1 port of [A Dark Room](https://github.com/doublespeakgames/adarkroom)
+to **Gleam** + **[Lustre](https://lustre.build)** (Elm-style MVU), compiled to
+JavaScript and bundled with Vite. Installable as a PWA, playable offline.
 
-[Click to play](http://adarkroom.doublespeakgames.com)
+**[Play it at adarkroom.coze.org](https://adarkroom.coze.org)**
 
-<table>
-<tr><th colspan=4>Available Languages</tr>
-<tr>
-	<td><a href="http://adarkroom.doublespeakgames.com/?lang=zh_cn">Chinese (Simplified)</a></td>
-	<td><a href="http://adarkroom.doublespeakgames.com/?lang=zh_tw">Chinese (Traditional)</a></td>
-	<td><a href="http://adarkroom.doublespeakgames.com/?lang=en">English</a></td>
-	<td><a href="http://adarkroom.doublespeakgames.com/?lang=fr">French</a></td>
-</tr><tr>
-	<td><a href="http://adarkroom.doublespeakgames.com/?lang=de">German</a></td>
-	<td><a href="http://adarkroom.doublespeakgames.com/?lang=el">Greek</a></td>
-	<td><a href="http://adarkroom.doublespeakgames.com/?lang=id">Indonesian</a></td>
-	<td><a href="http://adarkroom.doublespeakgames.com/?lang=it">Italian</a></td>
-</tr><tr>
-	<td><a href="http://adarkroom.doublespeakgames.com/?lang=ja">Japanese</a></td>
-	<td><a href="http://adarkroom.doublespeakgames.com/?lang=ko">Korean</a></td>
-	<td><a href="http://adarkroom.doublespeakgames.com/?lang=nb">Norwegian</a></td>
-	<td><a href="http://adarkroom.doublespeakgames.com/?lang=pl">Polish</a></td>
-</tr><tr>
-	<td><a href="http://adarkroom.doublespeakgames.com/?lang=pt">Portuguese</a></td>
-	<td><a href="http://adarkroom.doublespeakgames.com/?lang=pt_br">Portuguese (Brazil)</a></td>
-	<td><a href="http://adarkroom.doublespeakgames.com/?lang=ru">Russian</a></td>
-	<td><a href="http://adarkroom.doublespeakgames.com/?lang=es">Spanish</a></td>
-</tr><tr>
-	<td><a href="http://adarkroom.doublespeakgames.com/?lang=sv">Swedish</a></td>
-	<td><a href="http://adarkroom.doublespeakgames.com/?lang=th">Thai</a></td>
-	<td><a href="http://adarkroom.doublespeakgames.com/?lang=tr">Turkish</a></td>
-	<td><a href="http://adarkroom.doublespeakgames.com/?lang=uk">Ukrainian</a></td>
-</tr><tr>
-	<td><a href="http://adarkroom.doublespeakgames.com/?lang=vi">Vietnamese</a></td>
-	<td><a href="http://adarkroom.doublespeakgames.com/?lang=lt_LT">Lithuanian</a></td>
-	<td><a href="http://adarkroom.doublespeakgames.com/?lang=gl">Galician</a></td>
-</tr>
-</table>
+The original JavaScript game lives unchanged in
+[`adarkroom-js/`](adarkroom-js/) — it is the port's reference, run side by
+side during parity testing, and the home of the shared art, audio and
+stylesheets. See [`docs/gleam-port-design.md`](docs/gleam-port-design.md) for
+the architecture and milestone plan, and
+[`docs/gleam-README.md`](docs/gleam-README.md) for the longer development
+notes.
 
-or play the latest on [GitHub](http://doublespeakgames.github.io/adarkroom)
+## Develop
 
-<a href="https://itunes.apple.com/us/app/a-dark-room/id736683061"><img src="http://i.imgur.com/DMdnDYq.png" height="50"></a>
-<a href="https://play.google.com/store/apps/details?id=com.yourcompany.adarkroom"><img src="http://i.imgur.com/bLWWj4r.png" height="50"></a>
-<a href="https://store.steampowered.com/app/2460660/A_Dark_Room/"><img src="https://i.imgur.com/yz6cnU0.png" height="50"></a>
+```sh
+mise trust         # once: allow the pinned toolchain (mise users)
+npm install        # once: install Vite
+npm run dev        # gleam build + Vite dev server (http://localhost:5173)
+gleam test         # the test suite
+gleam format src test
+```
+
+## Release
+
+Every push runs the test suite (CI). Pushing a `v*` tag builds the bundle,
+publishes a GitHub release, and deploys to GitHub Pages:
+
+```sh
+git tag v1.0.0 && git push origin v1.0.0
+```
+
+## License
+
+[MPL-2.0](LICENSE.md), as the original.

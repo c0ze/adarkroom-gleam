@@ -1,9 +1,19 @@
-/.settings
+.DS_Store
+.idea
+*.swp
+
+# gleam
+*.beam
+*.ez
+/build
+erl_crash.dump
+
+# node / vite
+node_modules/
+dist/
+
+# upstream leftovers
+adarkroom-js/lang/.DS_Store
+adarkroom-js/img/Thumbs.db
 *.TODO
 *.mo
-*.swp
-.idea
-lang/.DS_Store
-.DS_Store
-node_modules
-img/Thumbs.db
