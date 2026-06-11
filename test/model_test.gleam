@@ -2164,9 +2164,9 @@ pub fn the_paused_world_holds_its_breath_test() {
   let s = state.set_store(state.new(), "wood", 20)
   let #(s, _) = room.light_fire(s)
   let m = model.Model(..model.init(), state: s, now: 100_000)
-  // Arm the cool deadline, then pause.
+  // Arm the cool deadline, then pause (the clock effect reports the time).
   let armed = run(m, model.CoolCheck(at: 100_000))
-  let paused = run(armed, model.TogglePause)
+  let paused = run(armed, model.Paused(at: 100_000))
   paused.paused |> should.be_true
   // An hour of heartbeats later, the fire still burns and the clock is still.
   let later = run(paused, model.CoolCheck(at: 4_000_000))
@@ -2180,7 +2180,7 @@ pub fn resume_shifts_every_deadline_by_the_sleep_test() {
   let m = model.Model(..model.init(), state: s, now: 100_000)
   let armed = run(m, model.CoolCheck(at: 100_000))
   let cool_before = state.get_game(armed.state, "coolAt")
-  let paused = run(armed, model.TogglePause)
+  let paused = run(armed, model.Paused(at: 100_000))
   // Asleep for an hour; the resume reads the wall clock.
   let woke = run(paused, model.Resumed(at: 3_700_000))
   woke.paused |> should.be_false
@@ -2190,7 +2190,7 @@ pub fn resume_shifts_every_deadline_by_the_sleep_test() {
   // time intact: armed at 3,700,000 for 10s, asleep another hour, so it now
   // runs to 7,310,000.
   let cooling =
-    run(run(woke, model.StokeFire), model.TogglePause)
+    run(run(woke, model.StokeFire), model.Paused(at: 3_700_000))
     |> run(model.Resumed(at: 7_300_000))
   model.on_cooldown(model.Model(..cooling, now: 7_309_999), "stokeButton")
   |> should.be_true

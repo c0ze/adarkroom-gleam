@@ -166,6 +166,8 @@ pub type Msg {
   GameWon(rolls: List(Float))
   /// Hold the world's breath / let it out (the pause button).
   TogglePause
+  /// The pause read the wall clock as the breath was caught.
+  Paused(at: Int)
   /// The resume read the wall clock; deadlines shift by the time asleep.
   Resumed(at: Int)
   /// Timer: the next outro paragraph fades in.
@@ -356,6 +358,8 @@ fn update_paused(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
     BuilderProgress -> #(model, delayed(1000, msg))
     UnlockForest -> #(model, delayed(1000, msg))
     PopulationIncreased(_) -> #(model, delayed(1000, msg))
+    // A double-tap of the pause while already asleep changes nothing.
+    Paused(_) -> #(model, effect.none())
     // Everything else — heartbeats included — passes the paused world by.
     _ -> #(model, effect.none())
   }
@@ -403,12 +407,21 @@ fn step_world(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
   case msg {
     TogglePause ->
       case can_pause(model) {
+        // The wall clock is read fresh on both ends of the sleep, so the
+        // shift is exact (model.now can be a heartbeat stale).
         True -> #(
-          Model(..model, paused: True, paused_at: model.now),
-          effect.none(),
+          model,
+          effect.from(fn(dispatch) {
+            dispatch(Paused(at: float.round(clock.now())))
+          }),
         )
         False -> #(model, effect.none())
       }
+
+    Paused(at: at) -> #(
+      Model(..model, paused: True, paused_at: at),
+      effect.none(),
+    )
 
     Resumed(..) -> #(model, effect.none())
 
