@@ -75,11 +75,22 @@ pub fn every_perk_announces_its_lesson_test() {
 }
 
 pub fn the_perk_table_speaks_for_each_test() {
+  // The full Engine.Perks copy, verbatim.
   state.perk_table()
-  |> list.each(fn(perk) { { state.perk_desc(perk) != "" } |> should.be_true })
-  state.perk_desc("scout") |> should.equal("see farther")
-  state.perk_desc("martial artist")
-  |> should.equal("punches do even more damage.")
+  |> list.map(state.perk_desc)
+  |> should.equal([
+    "punches do more damage",
+    "punches do even more damage.",
+    "punch twice as fast, and with even more force",
+    "melee weapons deal more damage",
+    "go twice as far without eating",
+    "go twice as far without drinking",
+    "dodge attacks more effectively",
+    "land blows more often",
+    "see farther",
+    "better avoid conflict in the wild",
+    "restore more health when eating",
+  ])
 }
 
 pub fn owned_perks_keep_the_table_order_test() {
