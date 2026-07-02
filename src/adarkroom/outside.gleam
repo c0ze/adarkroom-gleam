@@ -3,6 +3,7 @@
 //// village (population) and worker assignment are layered on by later issues.
 
 import adarkroom/craft
+import adarkroom/i18n
 import adarkroom/room
 import adarkroom/state.{type State}
 import gleam/dict
@@ -473,7 +474,11 @@ pub fn check_traps(s: State, rolls: List(Float)) -> #(State, List(String)) {
     messages -> {
       let gained = dict.fold(counts, s, state.add_store)
       let after = state.add_store(gained, "bait", -bait_used)
-      #(after, ["the traps contain " <> join_drops(messages)])
+      // The original translates the pieces (`_('the traps contain ')`, each
+      // drop's message, `_(' and ')`) and joins them by hand.
+      #(after, [
+        i18n.t("the traps contain ") <> join_drops(list.map(messages, i18n.t)),
+      ])
     }
   }
 }
@@ -498,7 +503,7 @@ fn join_drops(messages: List(String)) -> String {
     [last, ..rest_rev] ->
       case list.reverse(rest_rev) {
         [] -> last
-        init -> string.join(init, ", ") <> " and " <> last
+        init -> string.join(init, ", ") <> i18n.t(" and ") <> last
       }
   }
 }

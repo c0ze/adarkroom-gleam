@@ -5,6 +5,7 @@
 //// stoke is free — wood has not yet been introduced — until a wood store is
 //// established (which is distinct from a wood count of zero).
 
+import adarkroom/i18n
 import adarkroom/state.{type State}
 import gleam/list
 
@@ -105,7 +106,8 @@ fn set_fire(s: State, f: Fire) -> State {
 }
 
 fn fire_message(f: Fire) -> String {
-  "the fire is " <> fire_text(f)
+  // `_('the fire is {0}', fire.text)` — both template and word are msgids.
+  i18n.t1("the fire is {0}", i18n.t(fire_text(f)))
 }
 
 /// Light the fire (to Burning). Costs `light_cost` wood once wood exists; the
@@ -320,13 +322,13 @@ pub fn adjust_temp(s: State) -> #(State, List(String)) {
     True, _ -> {
       let warmer = temp_from_int(t + 1)
       #(state.set_game(s, temp_key, temp_to_int(warmer)), [
-        "the room is " <> temp_text(warmer),
+        i18n.t1("the room is {0}", i18n.t(temp_text(warmer))),
       ])
     }
     _, True -> {
       let cooler = temp_from_int(t - 1)
       #(state.set_game(s, temp_key, temp_to_int(cooler)), [
-        "the room is " <> temp_text(cooler),
+        i18n.t1("the room is {0}", i18n.t(temp_text(cooler))),
       ])
     }
     _, _ -> #(s, [])

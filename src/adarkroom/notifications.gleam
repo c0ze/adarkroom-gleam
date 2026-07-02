@@ -4,6 +4,7 @@
 //// currently viewing is queued, then flushed (oldest-first) when they arrive.
 //// Messages are stored newest-first for display and gain a trailing period.
 
+import adarkroom/i18n
 import adarkroom/journal
 import gleam/dict.{type Dict}
 import gleam/list
@@ -28,7 +29,13 @@ pub fn messages(notifications: Notifications) -> List(String) {
   notifications.messages
 }
 
+/// Translate, then punctuate — the original translates at the `_()` call site
+/// and `Notifications.notify` appends the period afterwards, so msgids carry
+/// no trailing period unless they end a literal sentence. Messages composed
+/// from parts (`"not enough " <> stuff`) resolve here too, whenever the
+/// composed whole is itself a msgid.
 fn normalize(text: String) -> String {
+  let text = i18n.t(text)
   case string.ends_with(text, ".") {
     True -> text
     False -> text <> "."
