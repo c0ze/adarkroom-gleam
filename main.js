@@ -5,4 +5,10 @@
 import { main } from "./build/dev/javascript/adarkroom/adarkroom.mjs";
 import { initLanguage } from "./build/dev/javascript/adarkroom/adarkroom/i18n_ffi.mjs";
 
-initLanguage().then(main);
+// The catalog is a nicety; the game must boot even if loading it rejects
+// (t() falls back to the English msgids when no table was installed).
+initLanguage()
+  .catch((error) => {
+    console.error("language catalog failed to load:", error);
+  })
+  .finally(main);
