@@ -4,8 +4,9 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "gleam build && vite",
-    "build": "gleam build && vite build",
+    "dev": "npm run i18n && gleam build && vite",
+    "build": "npm run i18n && gleam build && vite build",
+    "i18n": "node scripts/po2json.mjs",
     "preview": "vite preview"
   },
   "devDependencies": {

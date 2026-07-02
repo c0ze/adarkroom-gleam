@@ -2,6 +2,7 @@
 //// cost tooltip and cooldown bar. The cooldown/disabled *state* is supplied by
 //// the caller (the Model drives it); this module only renders.
 
+import adarkroom/i18n
 import gleam/float
 import gleam/int
 import gleam/list
@@ -65,7 +66,9 @@ pub fn button(config: Config(msg)) -> Element(msg) {
   let children =
     list.flatten([
       [
-        element.text(config.text),
+        // Labels are msgids; every button speaks the current language
+        // (the original wraps each `Button` text in `_()`).
+        element.text(i18n.t(config.text)),
         cooldown_bar(config.cooldown, config.cooldown_ms),
       ],
       tooltip_children,
@@ -120,7 +123,7 @@ fn tooltip(cost: List(#(String, Int))) -> Element(msg) {
       list.map(cost, fn(pair) {
         let #(name, amount) = pair
         [
-          html.div([attribute.class("row_key")], [element.text(name)]),
+          html.div([attribute.class("row_key")], [element.text(i18n.t(name))]),
           html.div([attribute.class("row_val")], [
             element.text(int.to_string(amount)),
           ]),

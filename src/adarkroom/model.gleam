@@ -12,6 +12,7 @@ import adarkroom/encounters
 import adarkroom/events
 import adarkroom/executioner
 import adarkroom/fabricator
+import adarkroom/i18n
 import adarkroom/journal
 import adarkroom/notifications.{type Notifications}
 import adarkroom/outside
@@ -191,6 +192,8 @@ pub type Msg {
   RestartGame
   /// The ending's app-store links.
   OpenStore(url: String)
+  /// The menu's language list: reload the page speaking the chosen tongue.
+  SwitchLanguage(code: String)
   /// Timer: flash the page title "*** EVENT ***" (every 3s while blinking).
   BlinkOn
   /// Timer: restore the page title (1.5s after each flash).
@@ -1114,6 +1117,13 @@ fn step_world(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
     )
 
     OpenStore(url: url) -> #(model, open_link(url))
+
+    // Reload the page with `?lang=` set (`Engine.switchLanguage`); the boot
+    // resumes the save under the new catalog.
+    SwitchLanguage(code: code) -> #(
+      model,
+      effect.from(fn(_) { i18n.switch_language(code) }),
+    )
 
     BlinkOn ->
       case model.blinking {
@@ -2225,9 +2235,11 @@ pub fn startup_music(model: Model) -> #(Model, Effect(Msg)) {
 /// What every boot announces (`Room.init`): the room's temperature, then the
 /// fire — so the fire reads first in the newest-first log.
 pub fn boot_announcements(model: Model) -> Model {
+  let temperature = i18n.t(room.temp_text(room.temperature(model.state)))
+  let fire = i18n.t(room.fire_text(room.fire(model.state)))
   notify_room(model, [
-    "the room is " <> room.temp_text(room.temperature(model.state)),
-    "the fire is " <> room.fire_text(room.fire(model.state)),
+    i18n.t1("the room is {0}", temperature),
+    i18n.t1("the fire is {0}", fire),
   ])
 }
 

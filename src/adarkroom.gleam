@@ -10,6 +10,8 @@ import adarkroom/combat
 import adarkroom/craft.{type Craftable}
 import adarkroom/events
 import adarkroom/fabricator
+import adarkroom/i18n.{t, t1, t2}
+import adarkroom/i18n/languages
 import adarkroom/model.{
   type Model, type Msg, AdjustTemp, Build, BuilderProgress, Buy, CheckLiftoff,
   CheckTraps, ChooseEvent, CollectIncome, CoolCheck, DecreaseSupply,
@@ -181,7 +183,7 @@ fn ending_view(ending: model.Ending) -> Element(Msg) {
         |> list.map(fn(lines) {
           html.div(
             [attribute.class("outro"), attribute.style("opacity", "1")],
-            list.map(lines, fn(line) { html.div([], [element.text(line)]) }),
+            list.map(lines, fn(line) { html.div([], [element.text(t(line))]) }),
           )
         })
       let wait = case n >= 5 {
@@ -204,14 +206,14 @@ fn ending_view(ending: model.Ending) -> Element(Msg) {
         html.span(
           [attribute.class("endGame"), attribute.style("opacity", "1")],
           [
-            element.text("score for this game: " <> int.to_string(this)),
+            element.text(t1("score for this game: {0}", int.to_string(this))),
           ],
         ),
         html.br([]),
         html.span(
           [attribute.class("endGame"), attribute.style("opacity", "1")],
           [
-            element.text("total score: " <> int.to_string(total)),
+            element.text(t1("total score: {0}", int.to_string(total))),
           ],
         ),
         html.br([]),
@@ -222,7 +224,7 @@ fn ending_view(ending: model.Ending) -> Element(Msg) {
             attribute.style("opacity", "1"),
             event.on_click(model.RestartGame),
           ],
-          [element.text("restart.")],
+          [element.text(t("restart."))],
         ),
         html.br([]),
         html.br([]),
@@ -244,7 +246,7 @@ fn ending_view(ending: model.Ending) -> Element(Msg) {
               "https://itunes.apple.com/app/apple-store/id736683061?pt=2073437&ct=gameover&mt=8",
             )),
           ],
-          [element.text("iOS.")],
+          [element.text(t("iOS."))],
         ),
         html.br([]),
         html.span(
@@ -255,7 +257,7 @@ fn ending_view(ending: model.Ending) -> Element(Msg) {
               "https://play.google.com/store/apps/details?id=com.yourcompany.adarkroom",
             )),
           ],
-          [element.text("android.")],
+          [element.text(t("android."))],
         ),
       ])
   }
@@ -281,24 +283,47 @@ fn game_view(m: Model) -> Element(Msg) {
         // above everything when active (at most one at a time).
         event_overlay(m),
         combat_overlay(m),
-        pause_corner(m),
+        [menu_corner(m)],
         pause_overlay(m),
       ]),
     ),
   )
 }
 
-/// The pause control, in the original menu's corner — an addition over the
-/// original (which has no global pause), offered only when nothing is afoot.
-fn pause_corner(m: Model) -> List(Element(Msg)) {
-  case model.can_pause(m) && !m.paused {
+/// The original's bottom-right menu: the language selector, plus the port's
+/// pause control (an addition — the original has no global pause), the latter
+/// offered only when nothing is afoot.
+fn menu_corner(m: Model) -> Element(Msg) {
+  let pause = case model.can_pause(m) && !m.paused {
     True -> [
-      html.div([attribute.class("menu")], [
-        html.span([event.on_click(model.TogglePause)], [element.text("pause.")]),
-      ]),
+      html.span([event.on_click(model.TogglePause)], [element.text("pause.")]),
     ]
     False -> []
   }
+  html.div([attribute.class("menu")], [language_select(), ..pause])
+}
+
+/// The language menu (`Engine.init`'s customSelect): a hover-expanded list of
+/// every language the pipeline converted, headed by an inert "language." row.
+/// Picking one reloads the page with `?lang=` set, as the original does.
+fn language_select() -> Element(Msg) {
+  html.span([attribute.class("customSelect menuBtn")], [
+    html.span([attribute.class("customSelectOptions")], [
+      html.ul([], [
+        html.li([], [element.text("language.")]),
+        ..list.map(languages.languages, fn(lang) {
+          let #(code, name) = lang
+          html.li(
+            [
+              attribute.attribute("data-language", code),
+              event.on_click(model.SwitchLanguage(code)),
+            ],
+            [element.text(name)],
+          )
+        })
+      ]),
+    ]),
+  ])
 }
 
 /// While paused the world holds its breath behind a quiet sheet; one click
@@ -331,7 +356,7 @@ fn combat_overlay(m: Model) -> List(Element(Msg)) {
           list.append(
             case cs.enemy.death_message {
               "" -> []
-              message -> [html.div([], [element.text(message)])]
+              message -> [html.div([], [element.text(t(message))])]
             },
             loot_section(m),
           ),
@@ -380,7 +405,7 @@ fn loot_section(m: Model) -> List(Element(Msg)) {
       html.div(
         [
           attribute.id("lootButtons"),
-          attribute.attribute("data-legend", "take:"),
+          attribute.attribute("data-legend", t("take:")),
         ],
         list.append(list.map(rows, loot_row(m, _)), [take_everything_row(m)]),
       ),
@@ -397,9 +422,10 @@ fn loot_row(m: Model, row: #(String, Int)) -> Element(Msg) {
     False -> num
   }
   let can_take = int.min(fits, num)
+  // `_('take') + ' '` then the count, or `_('all')` when it all fits.
   let take_all_label = case can_take < num {
-    True -> "take " <> int.to_string(can_take)
-    False -> "take all"
+    True -> t("take") <> " " <> int.to_string(can_take)
+    False -> t("take") <> " " <> t("all")
   }
   let take_all_class = case can_take > 0 {
     True -> "button lootTakeAll"
@@ -416,7 +442,7 @@ fn loot_row(m: Model, row: #(String, Int)) -> Element(Msg) {
         event.on_click(model.TakeLoot(name)),
       ],
       list.append(
-        [element.text(name <> " [" <> int.to_string(num) <> "]")],
+        [element.text(t(name) <> " [" <> int.to_string(num) <> "]")],
         drop,
       ),
     ),
@@ -450,7 +476,7 @@ fn drop_menu(m: Model, wanted: String) -> Element(Msg) {
                   event.on_click(model.DropCarried(name, to_drop))
                   |> event.stop_propagation,
                 ],
-                [element.text(name <> " x" <> int.to_string(to_drop))],
+                [element.text(t(name) <> " x" <> int.to_string(to_drop))],
               ))
             False -> Error(Nil)
           }
@@ -458,14 +484,14 @@ fn drop_menu(m: Model, wanted: String) -> Element(Msg) {
       }
     })
   html.div(
-    [attribute.id("dropMenu"), attribute.attribute("data-legend", "drop:")],
+    [attribute.id("dropMenu"), attribute.attribute("data-legend", t("drop:"))],
     list.append(options, [
       html.div(
         [
           attribute.id("no_drop"),
           event.on_click(model.CancelDrop) |> event.stop_propagation,
         ],
-        [element.text("nothing")],
+        [element.text(t("nothing"))],
       ),
     ]),
   )
@@ -475,10 +501,11 @@ fn drop_menu(m: Model, wanted: String) -> Element(Msg) {
 /// leave" on a plain encounter), "take all you can" otherwise.
 fn take_everything_row(m: Model) -> Element(Msg) {
   let fits = model.loot_fits_entirely(m)
+  // `canLeave`: `_('take everything') + _(' and ') + leaveBtn.text()`.
   let label = case fits, m.active_event, m.combat {
-    True, None, Some(_) -> "take everything and leave"
-    True, _, _ -> "take everything"
-    False, _, _ -> "take all you can"
+    True, None, Some(_) -> t("take everything") <> t(" and ") <> t("leave")
+    True, _, _ -> t("take everything")
+    False, _, _ -> t("take all you can")
   }
   html.div([attribute.class("takeETrow")], [
     button.button(button.Config(
@@ -666,7 +693,7 @@ fn labelled_span(char: String, label: String, x: Int, y: Int) -> Element(Msg) {
   html.span([attribute.class("landmark")], [
     element.text(char),
     html.div([attribute.class("tooltip" <> horizontal <> vertical)], [
-      element.text(label),
+      element.text(t(label)),
     ]),
   ])
 }
@@ -736,12 +763,12 @@ fn event_overlay(m: Model) -> List(Element(Msg)) {
         Ok(scene) -> [
           html.div([attribute.id("event"), attribute.class("eventPanel")], [
             html.div([attribute.class("eventTitle")], [
-              element.text(active.event.title),
+              element.text(t(active.event.title)),
             ]),
             html.div(
               [attribute.id("description")],
               list.map(scene.text, fn(line) {
-                html.div([], [element.text(line)])
+                html.div([], [element.text(t(line))])
               }),
             ),
             html.div([], loot_section(m)),
@@ -764,10 +791,12 @@ fn event_button(m: Model, pair: #(String, events.SceneButton)) -> Element(Msg) {
   case enabled {
     True ->
       html.div([attribute.class("button"), event.on_click(ChooseEvent(id))], [
-        element.text(btn.text),
+        element.text(t(btn.text)),
       ])
     False ->
-      html.div([attribute.class("button disabled")], [element.text(btn.text)])
+      html.div([attribute.class("button disabled")], [
+        element.text(t(btn.text)),
+      ])
   }
 }
 
@@ -786,7 +815,7 @@ fn header(m: Model) -> Element(Msg) {
         _ -> model.location_title(loc)
       }
       html.div([attribute.class(class), event.on_click(Navigate(to: loc))], [
-        element.text(title),
+        element.text(t(title)),
       ])
     }),
   )
@@ -938,7 +967,7 @@ fn worker_row(
   buttons: List(Element(Msg)),
 ) -> Element(Msg) {
   html.div([attribute.class("workerRow")], [
-    html.div([attribute.class("row_key")], [element.text(name)]),
+    html.div([attribute.class("row_key")], [element.text(t(name))]),
     html.div([attribute.class("row_val")], [
       html.span([], [element.text(int.to_string(count))]),
       ..buttons
@@ -950,7 +979,7 @@ fn worker_row(
       [attribute.class("tooltip bottom right")],
       list.map(outside.worker_ledger(name), fn(delta) {
         html.div([attribute.class("storeRow")], [
-          html.div([attribute.class("row_key")], [element.text(delta.0)]),
+          html.div([attribute.class("row_key")], [element.text(t(delta.0))]),
           html.div([attribute.class("row_val")], [
             element.text(income_msg(delta.1, outside.income_delay_s)),
           ]),
@@ -961,13 +990,14 @@ fn worker_row(
 }
 
 /// A rate as the original prints it (`Engine.getIncomeMsg`): signed, whole
-/// numbers plain, per the collection delay.
+/// numbers plain, per the collection delay — through the `'{0} per {1}s'`
+/// template.
 fn income_msg(amount: Float, delay: Int) -> String {
   let sign = case amount >. 0.0 {
     True -> "+"
     False -> ""
   }
-  sign <> number_text(amount) <> " per " <> int.to_string(delay) <> "s"
+  t2("{0} per {1}s", sign <> number_text(amount), int.to_string(delay))
 }
 
 /// A number as JavaScript prints it: whole values without the decimal.
@@ -991,23 +1021,22 @@ fn path_panel(m: Model) -> Element(Msg) {
   let s = m.state
   let bagspace =
     html.div([attribute.id("bagspace")], [
-      element.text(
-        "free "
-        <> int.to_string(float.truncate(path.free_space(s)))
-        <> "/"
-        <> int.to_string(path.capacity(s)),
-      ),
+      element.text(t2(
+        "free {0}/{1}",
+        int.to_string(float.truncate(path.free_space(s))),
+        int.to_string(path.capacity(s)),
+      )),
     ])
   let armour =
     html.div([attribute.id("armourRow"), attribute.class("outfitRow")], [
-      html.div([attribute.class("row_key")], [element.text("armour")]),
+      html.div([attribute.class("row_key")], [element.text(t("armour"))]),
       html.div([attribute.class("row_val")], [element.text(path.armour(s))]),
       clear_div(),
     ])
   // The water row rides under the armour (`updateOutfitting`'s #waterRow).
   let water =
     html.div([attribute.id("waterRow"), attribute.class("outfitRow")], [
-      html.div([attribute.class("row_key")], [element.text("water")]),
+      html.div([attribute.class("row_key")], [element.text(t("water"))]),
       html.div([attribute.class("row_val")], [
         element.text(int.to_string(world.max_water(s))),
       ]),
@@ -1033,7 +1062,7 @@ fn path_panel(m: Model) -> Element(Msg) {
         html.div(
           [
             attribute.id("outfitting"),
-            attribute.attribute("data-legend", "supplies:"),
+            attribute.attribute("data-legend", t("supplies:")),
           ],
           [armour, water, bagspace, ..supplies],
         ),
@@ -1051,12 +1080,12 @@ fn perks_view(s: state.State) -> List(Element(Msg)) {
     [] -> []
     perks -> [
       html.div(
-        [attribute.id("perks"), attribute.attribute("data-legend", "perks")],
+        [attribute.id("perks"), attribute.attribute("data-legend", t("perks"))],
         list.map(perks, fn(perk) {
           html.div([attribute.class("perkRow")], [
-            html.div([attribute.class("row_key")], [element.text(perk)]),
+            html.div([attribute.class("row_key")], [element.text(t(perk))]),
             html.div([attribute.class("tooltip bottom right")], [
-              element.text(state.perk_desc(perk)),
+              element.text(t(state.perk_desc(perk))),
             ]),
           ])
         }),
@@ -1073,7 +1102,7 @@ fn outfit_row(s: state.State, item: String) -> Element(Msg) {
     packed >= state.get_store(s, item)
     || path.free_space(s) <. path.weight(item)
   html.div([attribute.class("outfitRow")], [
-    html.div([attribute.class("row_key")], [element.text(item)]),
+    html.div([attribute.class("row_key")], [element.text(t(item))]),
     html.div([attribute.class("row_val")], [
       html.span([], [element.text(int.to_string(packed))]),
       arrow_btn("upBtn", IncreaseSupply(item, 1), full),
@@ -1094,11 +1123,11 @@ fn outfit_row(s: state.State, item: String) -> Element(Msg) {
 fn outfit_tooltip(s: state.State, item: String) -> Element(Msg) {
   let lead = case combat.get_weapon(item) {
     Ok(weapon) -> [
-      html.div([attribute.class("row_key")], [element.text("damage")]),
+      html.div([attribute.class("row_key")], [element.text(t("damage"))]),
       html.div([attribute.class("row_val")], [
         element.text(case weapon.damage {
           combat.Hit(n) -> int.to_string(n)
-          combat.Stun -> "stun"
+          combat.Stun -> t("stun")
         }),
       ]),
     ]
@@ -1113,11 +1142,11 @@ fn outfit_tooltip(s: state.State, item: String) -> Element(Msg) {
     list.flatten([
       lead,
       [
-        html.div([attribute.class("row_key")], [element.text("weight")]),
+        html.div([attribute.class("row_key")], [element.text(t("weight"))]),
         html.div([attribute.class("row_val")], [
           element.text(weight_text(path.weight(item))),
         ]),
-        html.div([attribute.class("row_key")], [element.text("available")]),
+        html.div([attribute.class("row_key")], [element.text(t("available"))]),
         html.div([attribute.class("row_val numAvailable")], [
           element.text(int.to_string(state.get_store(s, item))),
         ]),
@@ -1129,12 +1158,12 @@ fn outfit_tooltip(s: state.State, item: String) -> Element(Msg) {
 /// A tool's tooltip note (the carryable table's `desc`); most have none.
 fn outfit_desc(item: String) -> String {
   case item {
-    // `'restores' + ' ' + World.MEAT_HEAL + ' ' + 'hp'` — the static base
-    // amounts, not the perk-adjusted ones.
-    "cured meat" -> "restores 8 hp"
-    "medicine" -> "restores 20 hp"
-    "bullets" -> "use with rifle"
-    "energy cell" -> "emits a soft red glow"
+    // `_('restores') + ' ' + World.MEAT_HEAL + ' ' + _('hp')` — the static
+    // base amounts, not the perk-adjusted ones.
+    "cured meat" -> t("restores") <> " 8 " <> t("hp")
+    "medicine" -> t("restores") <> " 20 " <> t("hp")
+    "bullets" -> t("use with rifle")
+    "energy cell" -> t("emits a soft red glow")
     _ -> ""
   }
 }
@@ -1157,12 +1186,12 @@ fn village_view(s: state.State) -> Element(Msg) {
     [] -> element.none()
     buildings -> {
       let legend = case craft.building_count(s, "hut") > 0 {
-        True -> "village"
-        False -> "forest"
+        True -> t("village")
+        False -> t("forest")
       }
       let village_row = fn(name, count) {
         html.div([attribute.class("storeRow")], [
-          html.div([attribute.class("row_key")], [element.text(name)]),
+          html.div([attribute.class("row_key")], [element.text(t(name))]),
           html.div([attribute.class("row_val")], [
             element.text(int.to_string(count)),
           ]),
@@ -1182,7 +1211,7 @@ fn village_view(s: state.State) -> Element(Msg) {
       let population =
         html.div([attribute.id("population")], [
           element.text(
-            "pop "
+            t("pop ")
             <> int.to_string(outside.population(s))
             <> "/"
             <> int.to_string(outside.max_population(s)),
@@ -1229,8 +1258,8 @@ fn room_panel(m: Model) -> Element(Msg) {
   let #(builds, crafts) = craft.visible(m.revealed)
   html.div([attribute.class("location")], [
     html.div([attribute.id("fireButtons")], [fire_button]),
-    build_section("buildBtns", "build:", m.state, builds),
-    build_section("craftBtns", "craft:", m.state, crafts),
+    build_section("buildBtns", t("build:"), m.state, builds),
+    build_section("craftBtns", t("craft:"), m.state, crafts),
     buy_section(m.state, trade.visible(m.state)),
     html.div([attribute.id("storesContainer")], [stores_view(m.state, True)]),
   ])
@@ -1275,7 +1304,7 @@ fn buy_section(s: state.State, goods: List(#(String, Good))) -> Element(Msg) {
     [] -> element.none()
     _ ->
       html.div(
-        [attribute.id("buyBtns"), attribute.attribute("data-legend", "buy:")],
+        [attribute.id("buyBtns"), attribute.attribute("data-legend", t("buy:"))],
         list.map(goods, fn(entry) {
           let #(name, g) = entry
           buy_button(s, name, g)
@@ -1304,13 +1333,13 @@ fn buy_button(s: state.State, name: String, g: Good) -> Element(Msg) {
 fn ship_panel(m: Model) -> Element(Msg) {
   html.div([attribute.id("shipPanel"), attribute.class("location")], [
     html.div([attribute.id("hullRow"), attribute.class("storeRow")], [
-      html.div([attribute.class("row_key")], [element.text("hull:")]),
+      html.div([attribute.class("row_key")], [element.text(t("hull:"))]),
       html.div([attribute.class("row_val")], [
         element.text(int.to_string(ship.hull(m.state))),
       ]),
     ]),
     html.div([attribute.id("engineRow"), attribute.class("storeRow")], [
-      html.div([attribute.class("row_key")], [element.text("engine:")]),
+      html.div([attribute.class("row_key")], [element.text(t("engine:"))]),
       html.div([attribute.class("row_val")], [
         element.text(int.to_string(ship.thrusters(m.state))),
       ]),
@@ -1360,7 +1389,7 @@ fn fabricator_panel(m: Model) -> Element(Msg) {
         ],
         list.map(redeemed, fn(name) {
           html.div([attribute.class("blueprintRow")], [
-            html.div([attribute.class("row_key")], [element.text(name)]),
+            html.div([attribute.class("row_key")], [element.text(t(name))]),
           ])
         }),
       ),
@@ -1374,7 +1403,7 @@ fn fabricator_panel(m: Model) -> Element(Msg) {
       ],
       list.map(fabricator.bench(m.state), fn(c) {
         let label = case c.quantity > 1 {
-          True -> c.name <> " (x" <> int.to_string(c.quantity) <> ")"
+          True -> t(c.name) <> " (x" <> int.to_string(c.quantity) <> ")"
           False -> c.name
         }
         button.button(button.Config(
@@ -1434,7 +1463,9 @@ fn space_panel(m: Model) -> Element(Msg) {
           rocks,
           [
             html.div([attribute.id("hullRemaining")], [
-              html.div([attribute.class("row_key")], [element.text("hull: ")]),
+              html.div([attribute.class("row_key")], [
+                element.text(t("hull: ")),
+              ]),
               html.div([attribute.class("row_val")], [
                 element.text(
                   int.to_string(flight.hull)
@@ -1463,9 +1494,12 @@ fn world_panel(exp: Expedition) -> Element(Msg) {
   let vitals =
     html.div([attribute.id("worldVitals")], [
       element.text(
-        "hp "
+        t("hp")
+        <> " "
         <> int.to_string(exp.vitals.health)
-        <> "   water "
+        <> "   "
+        <> t("water")
+        <> " "
         <> int.to_string(exp.vitals.water),
       ),
     ])
@@ -1582,7 +1616,7 @@ fn income_rows(
               list.flat_map(lines, fn(line) {
                 [
                   html.div([attribute.class("row_key")], [
-                    element.text(line.0),
+                    element.text(t(line.0)),
                   ]),
                   html.div([attribute.class("row_val")], [
                     element.text(income_msg(line.1, outside.income_delay_s)),
@@ -1591,7 +1625,7 @@ fn income_rows(
               }),
               [
                 html.div([attribute.class("total row_key")], [
-                  element.text("total"),
+                  element.text(t("total")),
                 ]),
                 html.div([attribute.class("total row_val")], [
                   element.text(income_msg(total, outside.income_delay_s)),
@@ -1615,7 +1649,7 @@ fn store_row(
     [attribute.class("storeRow")],
     list.flatten([
       [
-        html.div([attribute.class("row_key")], [element.text(name)]),
+        html.div([attribute.class("row_key")], [element.text(t(name))]),
         html.div([attribute.class("row_val")], [
           element.text(int.to_string(count)),
         ]),
@@ -1642,7 +1676,8 @@ fn compass_tooltip(s: state.State, resource_count: Int) -> List(Element(Msg)) {
       [
         html.div([attribute.class(position)], [
           html.div([attribute.class("row_key")], [
-            element.text("the compass points " <> dir),
+            // Composed into a whole msgid ('the compass points east' …).
+            element.text(t("the compass points " <> dir)),
           ]),
         ]),
       ]
@@ -1665,7 +1700,10 @@ fn stores_view(s: state.State, show_weapons: Bool) -> Element(Msg) {
     [], [] -> []
     _, _ -> [
       html.div(
-        [attribute.id("stores"), attribute.attribute("data-legend", "stores")],
+        [
+          attribute.id("stores"),
+          attribute.attribute("data-legend", t("stores")),
+        ],
         list.append(
           case resources {
             [] -> []
@@ -1695,7 +1733,10 @@ fn stores_view(s: state.State, show_weapons: Bool) -> Element(Msg) {
   let armory = case show_weapons, weapons {
     True, [_, ..] -> [
       html.div(
-        [attribute.id("weapons"), attribute.attribute("data-legend", "weapons")],
+        [
+          attribute.id("weapons"),
+          attribute.attribute("data-legend", t("weapons")),
+        ],
         store_rows(weapons),
       ),
     ]
