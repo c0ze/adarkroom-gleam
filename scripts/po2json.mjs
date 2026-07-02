@@ -135,8 +135,12 @@ function convertLanguages() {
     );
     // The language's stylesheet rides along (fonts for CJK/Thai and friends);
     // languages without one get an empty sheet so the link never 404s.
+    // The port's `.button`s are real <button>s (the accessibility pass), so
+    // the originals' div-qualified selectors are retargeted on the way over.
     const cssPath = path.join(langRoot, code, "main.css");
-    const css = fs.existsSync(cssPath) ? fs.readFileSync(cssPath) : "";
+    const css = fs.existsSync(cssPath)
+      ? fs.readFileSync(cssPath, "utf8").replaceAll("div.button", "button.button")
+      : "";
     fs.writeFileSync(path.join(outDir, "main.css"), css);
     converted.push({ code, entries: Object.keys(sorted).length });
   }
