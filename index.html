@@ -25,6 +25,98 @@
         to { width: 0%; }
       }
 
+      /* The accessibility pass: the port's action buttons and location tabs
+         are real <button>s where the original used divs. The original's
+         stylesheets (symlinked, untouched) qualify those rules with `div.`,
+         so they are restated for buttons here — after first stripping the
+         browser's button chrome so nothing else changes. Keyboard focus
+         keeps the browser's default focus-visible outline. */
+      button {
+        display: block;
+        box-sizing: content-box;
+        -webkit-appearance: none;
+        appearance: none;
+        background: none;
+        border: none;
+        margin: 0;
+        padding: 0;
+        font: inherit;
+        color: inherit;
+        text-align: inherit;
+      }
+
+      /* main.css's div.headerButton — the location tabs. */
+      button.headerButton {
+        font-size: 17px;
+        cursor: pointer;
+        float: left;
+        border-left: 1px solid black;
+        margin-left: 10px;
+        padding-left: 10px;
+      }
+      button.headerButton:hover {
+        text-decoration: underline;
+      }
+      button.headerButton:first-child {
+        border-left: none;
+        margin-left: 0px;
+        padding-left: 0px;
+      }
+      button.headerButton.selected, button.headerButton.selected:hover {
+        cursor: default;
+        text-decoration: underline;
+      }
+
+      /* main.css's div.button — every action button. */
+      button.button {
+        position: relative;
+        text-align: center;
+        border: 1px solid black;
+        width: 100px;
+        margin-bottom: 5px;
+        padding: 5px 10px;
+        cursor: pointer;
+        -webkit-touch-callout: none;
+        -webkit-user-select: none;
+        user-select: none;
+      }
+      button.button:hover {
+        text-decoration: underline;
+      }
+      button.button.disabled, button.button.disabled:hover {
+        cursor: default;
+        border-color: #b2b2b2;
+        color: #b2b2b2;
+        text-decoration: none;
+      }
+      button.button div.cooldown {
+        position: absolute;
+        top: 0px;
+        left: 0px;
+        z-index: -1;
+        height: 100%;
+        background-color: #DDDDDD;
+      }
+      button.button div.tooltip {
+        width: 100px;
+      }
+
+      /* The corner menu's pause control (main.css's .menu span). */
+      .menu button {
+        cursor: pointer;
+        float: right;
+        margin-left: 20px;
+      }
+      .menu button:hover {
+        text-decoration: underline;
+      }
+
+      /* The end screen's options sit inline between their <br>s, as the
+         original's spans did (space.css). */
+      button.endGameOption {
+        display: inline-block;
+      }
+
       /* The pause sheet (a port addition: the original has no global pause). */
       #pauseOverlay {
         position: fixed;

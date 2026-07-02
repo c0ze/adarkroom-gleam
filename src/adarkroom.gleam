@@ -188,8 +188,9 @@ fn ending_view(ending: model.Ending) -> Element(Msg) {
         })
       let wait = case n >= 5 {
         True -> [
-          html.div(
+          html.button(
             [
+              attribute.type_("button"),
               attribute.id("wait-btn"),
               attribute.class("button"),
               event.on_click(model.EndingWait),
@@ -218,8 +219,9 @@ fn ending_view(ending: model.Ending) -> Element(Msg) {
         ),
         html.br([]),
         html.br([]),
-        html.span(
+        html.button(
           [
+            attribute.type_("button"),
             attribute.class("endGame endGameOption"),
             attribute.style("opacity", "1"),
             event.on_click(model.RestartGame),
@@ -238,8 +240,9 @@ fn ending_view(ending: model.Ending) -> Element(Msg) {
         ),
         html.br([]),
         html.br([]),
-        html.span(
+        html.button(
           [
+            attribute.type_("button"),
             attribute.class("endGame endGameOption"),
             attribute.style("opacity", "1"),
             event.on_click(model.OpenStore(
@@ -249,8 +252,9 @@ fn ending_view(ending: model.Ending) -> Element(Msg) {
           [element.text(t("iOS."))],
         ),
         html.br([]),
-        html.span(
+        html.button(
           [
+            attribute.type_("button"),
             attribute.class("endGame endGameOption"),
             attribute.style("opacity", "1"),
             event.on_click(model.OpenStore(
@@ -296,7 +300,12 @@ fn game_view(m: Model) -> Element(Msg) {
 fn menu_corner(m: Model) -> Element(Msg) {
   let pause = case model.can_pause(m) && !m.paused {
     True -> [
-      html.span([event.on_click(model.TogglePause)], [element.text("pause.")]),
+      html.button(
+        [attribute.type_("button"), event.on_click(model.TogglePause)],
+        [
+          element.text("pause."),
+        ],
+      ),
     ]
     False -> []
   }
@@ -333,8 +342,12 @@ fn pause_overlay(m: Model) -> List(Element(Msg)) {
     True -> [
       html.div([attribute.id("pauseOverlay")], [
         html.div([], [element.text("paused.")]),
-        html.div(
-          [attribute.class("resumeBtn"), event.on_click(model.TogglePause)],
+        html.button(
+          [
+            attribute.type_("button"),
+            attribute.class("resumeBtn"),
+            event.on_click(model.TogglePause),
+          ],
           [element.text("resume.")],
         ),
       ]),
@@ -435,9 +448,16 @@ fn loot_row(m: Model, row: #(String, Int)) -> Element(Msg) {
     True -> [drop_menu(m, name)]
     False -> []
   }
+  let take_all_aria = case can_take > 0 {
+    True -> []
+    False -> [attribute.aria_disabled(True)]
+  }
   html.div([attribute.class("lootRow")], [
-    html.div(
+    // The drop menu still nests inside the take button, as the original's
+    // markup does — its options stay a pointer-driven flyout.
+    html.button(
       [
+        attribute.type_("button"),
         attribute.class("button lootTake"),
         event.on_click(model.TakeLoot(name)),
       ],
@@ -446,8 +466,13 @@ fn loot_row(m: Model, row: #(String, Int)) -> Element(Msg) {
         drop,
       ),
     ),
-    html.div(
-      [attribute.class(take_all_class), event.on_click(model.TakeAllLoot(name))],
+    html.button(
+      [
+        attribute.type_("button"),
+        attribute.class(take_all_class),
+        event.on_click(model.TakeAllLoot(name)),
+        ..take_all_aria
+      ],
       [element.text(take_all_label)],
     ),
   ])
@@ -790,22 +815,35 @@ fn event_button(m: Model, pair: #(String, events.SceneButton)) -> Element(Msg) {
     && events.affordable(btn.cost, m.state, model.event_purse(m))
   case enabled {
     True ->
-      html.div([attribute.class("button"), event.on_click(ChooseEvent(id))], [
-        element.text(t(btn.text)),
-      ])
+      html.button(
+        [
+          attribute.type_("button"),
+          attribute.class("button"),
+          event.on_click(ChooseEvent(id)),
+        ],
+        [element.text(t(btn.text))],
+      )
     False ->
-      html.div([attribute.class("button disabled")], [
-        element.text(t(btn.text)),
-      ])
+      html.button(
+        [
+          attribute.type_("button"),
+          attribute.class("button disabled"),
+          attribute.aria_disabled(True),
+        ],
+        [element.text(t(btn.text))],
+      )
   }
 }
 
 /// The location tabs — one per unlocked location, with the current one marked.
+/// Real `<button role="tab">`s in a tablist: each sits in the Tab order and
+/// answers Enter/Space, and `aria-selected` names the current location.
 fn header(m: Model) -> Element(Msg) {
   html.div(
-    [attribute.id("header")],
+    [attribute.id("header"), attribute.role("tablist")],
     list.map(model.unlocked_locations(m), fn(loc) {
-      let class = case loc == m.location {
+      let selected = loc == m.location
+      let class = case selected {
         True -> "headerButton selected"
         False -> "headerButton"
       }
@@ -814,9 +852,16 @@ fn header(m: Model) -> Element(Msg) {
         model.Outside -> outside.title(m.state)
         _ -> model.location_title(loc)
       }
-      html.div([attribute.class(class), event.on_click(Navigate(to: loc))], [
-        element.text(t(title)),
-      ])
+      html.button(
+        [
+          attribute.type_("button"),
+          attribute.class(class),
+          attribute.role("tab"),
+          attribute.aria_selected(selected),
+          event.on_click(Navigate(to: loc)),
+        ],
+        [element.text(t(title))],
+      )
     }),
   )
 }
@@ -947,10 +992,30 @@ fn workers_view(s: state.State) -> Element(Msg) {
         list.map(roles, fn(role) {
           let count = outside.worker_count(s, role)
           worker_row(role, count, [
-            arrow_btn("upBtn", IncreaseWorker(role, 1), no_free),
-            arrow_btn("dnBtn", DecreaseWorker(role, 1), count <= 0),
-            arrow_btn("upManyBtn", IncreaseWorker(role, 10), no_free),
-            arrow_btn("dnManyBtn", DecreaseWorker(role, 10), count <= 0),
+            arrow_btn(
+              "upBtn",
+              t(role) <> " +1",
+              IncreaseWorker(role, 1),
+              no_free,
+            ),
+            arrow_btn(
+              "dnBtn",
+              t(role) <> " -1",
+              DecreaseWorker(role, 1),
+              count <= 0,
+            ),
+            arrow_btn(
+              "upManyBtn",
+              t(role) <> " +10",
+              IncreaseWorker(role, 10),
+              no_free,
+            ),
+            arrow_btn(
+              "dnManyBtn",
+              t(role) <> " -10",
+              DecreaseWorker(role, 10),
+              count <= 0,
+            ),
           ])
         })
       html.div(
@@ -1009,10 +1074,35 @@ fn number_text(value: Float) -> String {
 }
 
 /// A small ±step arrow button (workers and supplies), inert when disabled.
-fn arrow_btn(class: String, msg: Msg, disabled: Bool) -> Element(Msg) {
+/// The arrow glyph is pure CSS, so the button speaks through `aria-label` —
+/// the row's (already translated) name plus the language-neutral step.
+fn arrow_btn(
+  class: String,
+  label: String,
+  msg: Msg,
+  disabled: Bool,
+) -> Element(Msg) {
   case disabled {
-    True -> html.div([attribute.class(class <> " disabled")], [])
-    False -> html.div([attribute.class(class), event.on_click(msg)], [])
+    True ->
+      html.button(
+        [
+          attribute.type_("button"),
+          attribute.class(class <> " disabled"),
+          attribute.aria_label(label),
+          attribute.aria_disabled(True),
+        ],
+        [],
+      )
+    False ->
+      html.button(
+        [
+          attribute.type_("button"),
+          attribute.class(class),
+          attribute.aria_label(label),
+          event.on_click(msg),
+        ],
+        [],
+      )
   }
 }
 
@@ -1105,10 +1195,15 @@ fn outfit_row(s: state.State, item: String) -> Element(Msg) {
     html.div([attribute.class("row_key")], [element.text(t(item))]),
     html.div([attribute.class("row_val")], [
       html.span([], [element.text(int.to_string(packed))]),
-      arrow_btn("upBtn", IncreaseSupply(item, 1), full),
-      arrow_btn("dnBtn", DecreaseSupply(item, 1), packed <= 0),
-      arrow_btn("upManyBtn", IncreaseSupply(item, 10), full),
-      arrow_btn("dnManyBtn", DecreaseSupply(item, 10), packed <= 0),
+      arrow_btn("upBtn", t(item) <> " +1", IncreaseSupply(item, 1), full),
+      arrow_btn("dnBtn", t(item) <> " -1", DecreaseSupply(item, 1), packed <= 0),
+      arrow_btn("upManyBtn", t(item) <> " +10", IncreaseSupply(item, 10), full),
+      arrow_btn(
+        "dnManyBtn",
+        t(item) <> " -10",
+        DecreaseSupply(item, 10),
+        packed <= 0,
+      ),
     ]),
     // The float-clearer gives the row its height (`createOutfittingRow`
     // appends one per row) — without it every row collapses and the arrows
@@ -1748,13 +1843,26 @@ fn stores_view(s: state.State, show_weapons: Bool) -> Element(Msg) {
 /// The running message log, newest first, fading toward the bottom under the
 /// gradient. Keyed by each message's sequence number so only a freshly-printed
 /// one runs the fade-in (`printMessage`'s 500ms opacity animate).
+/// A polite live log, so screen readers hear each message as it prints.
 fn notifications_view(n: Notifications) -> Element(Msg) {
   let messages = notifications.messages(n)
   let total = list.length(messages)
   keyed.div(
-    [attribute.id("notifications")],
+    [
+      attribute.id("notifications"),
+      attribute.role("log"),
+      attribute.aria_live("polite"),
+    ],
     list.append(
-      [#("gradient", html.div([attribute.id("notifyGradient")], []))],
+      [
+        #(
+          "gradient",
+          html.div(
+            [attribute.id("notifyGradient"), attribute.aria_hidden(True)],
+            [],
+          ),
+        ),
+      ],
       list.index_map(messages, fn(msg, index) {
         #(
           int.to_string(total - index),

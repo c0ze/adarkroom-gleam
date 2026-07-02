@@ -13,6 +13,6 @@
 div#workers {
     width: 160px !important;
 }
-div.button div.tooltip {
+button.button div.tooltip {
 	width: 120px !important;
 }

@@ -56,3 +56,29 @@ pub fn cooldown_clamps_to_full_test() {
   |> string.contains("100%")
   |> should.be_true
 }
+
+// --- The accessibility pass: a real <button>, spoken states ---
+
+pub fn renders_a_native_button_test() {
+  let html = render(button.new("light fire", Clicked))
+  string.contains(html, "<button") |> should.be_true
+  string.contains(html, "type=\"button\"") |> should.be_true
+}
+
+pub fn disabled_wears_aria_disabled_test() {
+  render(button.Config(..button.new("x", Clicked), disabled: True))
+  |> string.contains("aria-disabled=\"true\"")
+  |> should.be_true
+}
+
+pub fn cooldown_wears_aria_disabled_test() {
+  render(button.Config(..button.new("x", Clicked), cooldown: 0.5))
+  |> string.contains("aria-disabled=\"true\"")
+  |> should.be_true
+}
+
+pub fn enabled_carries_no_aria_disabled_test() {
+  render(button.new("gather wood", Clicked))
+  |> string.contains("aria-disabled")
+  |> should.be_false
+}
