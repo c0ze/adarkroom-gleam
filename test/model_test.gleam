@@ -2603,3 +2603,9 @@ pub fn heals_keep_their_cooldown_while_the_fuse_burns_test() {
   let twice = run(once, model.Heal("cured meat"))
   state.get_outfit(twice.state, "cured meat") |> should.equal(2)
 }
+
+pub fn the_sound_prompt_waits_out_a_trip_test() {
+  let later = run(world_model(10), model.SoundPromptDue)
+  later.dialog |> should.equal(option.None)
+  menu.sound_prompt_due(later.state) |> should.be_true
+}

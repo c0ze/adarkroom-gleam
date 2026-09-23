@@ -1328,8 +1328,11 @@ fn step_world(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
             model.active_event == None
             && model.combat == None
             && model.dialog == None
+            && model.expedition == None
+            && model.location != Space
           {
-            // Something else holds the stage; ask again shortly.
+            // Something else holds the stage — or the player is out walking
+            // or flying; ask again shortly.
             False -> #(model, delayed(3000, SoundPromptDue))
             True -> #(
               Model(
