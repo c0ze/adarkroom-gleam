@@ -2,7 +2,9 @@
 
 **Status:** Delivered 2026-06-11 — M0–M7 complete; the port is on `master`
 and live at [adarkroom.coze.org](https://adarkroom.coze.org). M8
-(localization, #34/#35) and accessibility (#42) remain as follow-ups.
+(localization, #34/#35) and accessibility (#42) followed on 2026-07-02.
+A 2026-09 audit closed a round of parity and playability gaps (combat
+timers and ammo, the ascent's layout, the corner menu, saves).
 *(Approved 2026-06-07.)*
 **Target:** Faithful 1:1 port of the current upstream JS game
 (`doublespeakgames/adarkroom` @ `1fada46`, 2025-05-23) to **Gleam + Lustre**.
@@ -105,10 +107,10 @@ and RNG outcomes (seeded). The systematic parity checklist lives in M7.
 - Parity pass & bug bash (string audit + side-by-side lockstep + live
   playthroughs via the journal; ongoing finds become individual PRs)
 
-**M8 · Localization** *(deferred — the remaining milestone, #34/#35)*
+**M8 · Localization** ✅ *(#34/#35)*
 - String catalog + gettext/`.po` pipeline
-- Load 18 languages + language switcher (lives in the bottom menu, which
-  ships alongside)
+- Load the 25 converted languages + language switcher (in the bottom menu,
+  with sound, lights, restart and save)
 
 ---
 
@@ -121,17 +123,25 @@ M2 is the proof-of-architecture checkpoint.
 
 Kept small and clearly marked in code; everything else is bug-for-bug:
 
-- **PWA**: manifest, icons, offline service worker; `viewport width=720`.
+- **PWA**: manifest, icons, offline service worker (the build precaches
+  the shell); `viewport width=920`, the board's real width.
 - **Pause button** (the original has no global pause).
 - **Playthrough journal**: every notification timestamped into a
   localStorage ring buffer — `adrLog()` / `adrLogClear()` in the console.
 - **Touch direction buttons** under the world map (the original used swipe).
+- **A refused import**: a save code that won't read is turned away, where
+  the original would load it and lose the game; an unreadable local save is
+  set aside under `gameState.unreadable` rather than overwritten.
+- **No Penrose mid-ascent**: the cross-promo event can come up anywhere
+  else, as in the original, but not over the asteroid field.
 
 ## Known divergences (documented)
 
 - Mid-trip world changes live in the running page only; a reload returns
   the wanderer home with the outfit intact (matches the original).
 - Button cooldowns don't persist across reloads (the original saves some).
+- The corner menu has no `hyper.`, `share.`, `get the app.` or `github.`;
+  the ascent has no star field.
 - The forest-unlock reload window resumes instead of softlocking (the
   original's resume check is dead code).
 - During the location slide, each panel carries its own stores column
