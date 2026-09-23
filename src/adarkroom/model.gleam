@@ -839,11 +839,14 @@ fn step_world(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
     TriggerEvent(pick: pick, delay: delay) -> {
       let available =
         events.available_events(event_pool(model.location), model.state)
-      case model.active_event, available {
+      // A world fight sits on the JS event stack too (`triggerFight` starts
+      // it as an event), so it counts as one already on screen.
+      let busy = model.active_event != None || model.combat != None
+      case busy, available {
         // An event is already on screen, or none qualify: just reschedule.
-        Some(_), _ -> #(reschedule(model, delay, 1.0), effect.none())
-        None, [] -> #(reschedule(model, delay, 0.5), effect.none())
-        None, avail -> {
+        True, _ -> #(reschedule(model, delay, 1.0), effect.none())
+        False, [] -> #(reschedule(model, delay, 0.5), effect.none())
+        False, avail -> {
           let model = reschedule(model, delay, 1.0)
           case events.pick(avail, pick) {
             Error(_) -> #(model, effect.none())
@@ -2363,7 +2366,11 @@ fn event_pool(location: Location) -> List(events.Event) {
         events.outside_events(),
         events.marketing_events(),
       ])
-    _ -> []
+    // The cross-promo asks no `activeModule` and dreams anywhere — on the
+    // path, out walking, aboard the wreck. (Not mid-ascent: a modal over the
+    // asteroid field would be a death sentence the original never meant.)
+    Path | World | Ship | Fabricator -> events.marketing_events()
+    Space -> []
   }
 }
 

@@ -2469,3 +2469,17 @@ pub fn booting_wakes_a_sleeping_builder_and_reads_the_clock_test() {
   m.now |> should.equal(1_000_000)
   state.get_game(m.state, "builder") |> should.equal(4)
 }
+
+pub fn penrose_can_dream_out_on_the_path_test() {
+  let m = model.Model(..model.init(), location: model.Path, now: 1000)
+  let after = run(m, TriggerEvent(0.0, 0.5))
+  let assert option.Some(active) = after.active_event
+  active.event.title |> should.equal("Penrose")
+}
+
+pub fn a_world_fight_holds_off_the_next_event_test() {
+  let fighting = run(world_model(10), MaybeFight(0.0, 0.0))
+  let m = model.Model(..fighting, now: 1000)
+  let after = run(m, TriggerEvent(0.0, 0.0))
+  after.active_event |> should.equal(option.None)
+}
