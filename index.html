@@ -150,6 +150,61 @@
         color: #EEE;
       }
 
+      /* The ascent: the page fades to black over FTB_SPEED (60s), and at
+         the halfway mark the flight's ink and the menu turn white
+         (`startAscent`, `onArrival`'s panel timeout). The ending plays on
+         in the dark. Lights off runs the same fade toward #EEE. */
+      #sky {
+        display: none;
+      }
+      #wrapper.ascent #sky,
+      .ending #sky {
+        display: block;
+        position: fixed;
+        inset: 0;
+        z-index: -1;
+      }
+      #wrapper.ascent #sky {
+        animation: skyFade 60000ms linear forwards;
+      }
+      .ending #sky {
+        background-color: #000;
+      }
+      @keyframes skyFade {
+        from { background-color: #FFF; }
+        to { background-color: #000; }
+      }
+      #wrapper.ascent #spacePanel,
+      #wrapper.ascent .menu {
+        animation: skyInk 60000ms linear forwards;
+      }
+      @keyframes skyInk {
+        0%, 50% { color: #000; }
+        50.8%, 100% { color: #FFF; }
+      }
+      /* The notification column's fade is painted in the page colour. */
+      #wrapper.ascent #notifyGradient {
+        display: none;
+      }
+      body.lightsOff #wrapper.ascent #sky {
+        animation-name: skyFadeDark;
+      }
+      body.lightsOff .ending #sky {
+        background-color: #EEE;
+      }
+      @keyframes skyFadeDark {
+        from { background-color: #272823; }
+        to { background-color: #EEE; }
+      }
+      body.lightsOff #wrapper.ascent #spacePanel,
+      body.lightsOff #wrapper.ascent .menu {
+        animation-name: skyInkDark;
+      }
+      @keyframes skyInkDark {
+        0%, 50% { color: #EEE; }
+        50.8%, 100% { color: #272823; }
+      }
+
       /* The end screen's options sit inline between their <br>s, as the
          original's spans did (space.css). */
       button.endGameOption {

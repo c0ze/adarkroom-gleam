@@ -156,7 +156,12 @@ fn save_effect(s: state.State) -> Effect(Msg) {
 
 fn view(m: Model) -> Element(Msg) {
   case m.ending {
-    Some(ending) -> ending_view(ending)
+    // The ending plays out in the dark the ascent faded into.
+    Some(ending) ->
+      html.div([attribute.class("ending")], [
+        html.div([attribute.id("sky")], []),
+        ending_view(ending),
+      ])
     None -> game_view(m)
   }
 }
@@ -196,6 +201,8 @@ fn ending_view(ending: model.Ending) -> Element(Msg) {
               attribute.type_("button"),
               attribute.id("wait-btn"),
               attribute.class("button"),
+              // space.css starts it hidden for the original's fade-in.
+              attribute.style("opacity", "1"),
               event.on_click(model.EndingWait),
             ],
             [element.text("wait")],
@@ -271,16 +278,33 @@ fn ending_view(ending: model.Ending) -> Element(Msg) {
 }
 
 fn game_view(m: Model) -> Element(Msg) {
+  // The ascent fades the page to black behind the flight (`startAscent`'s
+  // body animation): the backdrop is always there, and its CSS clock starts
+  // when the wrapper turns `ascent`.
+  let ascent = case m.location {
+    model.Space -> [attribute.class("ascent")]
+    _ -> []
+  }
   html.div(
-    [attribute.id("wrapper")],
+    [attribute.id("wrapper"), ..ascent],
     list.append(
       [
+        html.div([attribute.id("sky")], []),
         html.div([attribute.id("content")], [
-          html.div([attribute.id("outerSlider")], [
+          // Lift-off slides the village down out of sight and brings the
+          // sky (#spacePanel, parked 700px up) into view (`liftOff`'s
+          // #outerSlider animation).
+          html.div([attribute.id("outerSlider"), ..outer_slide(m)], [
             html.div([attribute.id("main")], [
               header(m),
               location_slider(m),
             ]),
+            // The sky hangs off the outer slider itself, above #main
+            // (`Space.init` appends it to #outerSlider).
+            ..case m.location {
+              model.Space -> [space_panel(m)]
+              _ -> []
+            }
           ]),
         ]),
         notifications_view(m.notifications),
@@ -297,6 +321,16 @@ fn game_view(m: Model) -> Element(Msg) {
       ]),
     ),
   )
+}
+
+fn outer_slide(m: Model) -> List(attribute.Attribute(Msg)) {
+  case m.location {
+    model.Space -> [
+      attribute.style("top", "700px"),
+      attribute.style("transition", "top 300ms linear"),
+    ]
+    _ -> []
+  }
 }
 
 /// The original's bottom-right menu (`Engine.init`), rightmost first: the
@@ -1055,7 +1089,7 @@ fn slider_index(locations: List(model.Location), loc: model.Location) -> Int {
 /// Out in the world or aloft, that location's panel takes the stage alone.
 fn location_slider(m: Model) -> Element(Msg) {
   case m.location {
-    model.Space -> html.div([attribute.id("locationSlider")], [space_panel(m)])
+    model.Space -> html.div([attribute.id("locationSlider")], [])
     model.World ->
       html.div([attribute.id("locationSlider")], [
         case m.expedition {
