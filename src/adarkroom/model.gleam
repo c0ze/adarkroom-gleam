@@ -461,6 +461,8 @@ fn step_world(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
       let arrived = case location {
         Room -> apply_room(navigated, room.become_helper(navigated.state))
         Outside -> apply_outside(navigated, outside.see_forest(navigated.state))
+        // The pack can't hold what the village has since spent.
+        Path -> Model(..navigated, state: path.settle(navigated.state))
         // First sight of the old wreck.
         Ship -> apply_at(navigated, "ship", ship.see_ship(navigated.state))
         // The hum of real tools.
@@ -722,8 +724,9 @@ fn step_world(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
           // Take the packed supplies out of the village and set out. Reaching
           // the world unlocks the events that only the well-travelled can draw
           // (the Scout, the Master).
+          let packed = path.settle(model.state)
           let stocked =
-            list.fold(state.outfit_list(model.state), model.state, fn(s, item) {
+            list.fold(state.outfit_list(packed), packed, fn(s, item) {
               state.add_store(s, item.0, -item.1)
             })
             |> state.set_feature("location.world", True)

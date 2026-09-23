@@ -2240,3 +2240,20 @@ pub fn the_arrows_walk_the_world_test() {
   let assert option.Some(still) = home.expedition
   still.pos |> should.equal(exp.pos)
 }
+
+pub fn supplies_spent_after_packing_cannot_be_duplicated_test() {
+  let base = model.init()
+  // Five alloy packed, then all five spent on the hull.
+  let m =
+    model.Model(
+      ..base,
+      location: model.Path,
+      state: base.state
+        |> state.set_store("cured meat", 5)
+        |> state.set_outfit("cured meat", 5)
+        |> state.set_outfit("alien alloy", 5),
+    )
+  let after = run(m, model.Embarked(seed: 1, cache: False))
+  state.get_outfit(after.state, "alien alloy") |> should.equal(0)
+  state.get_store(after.state, "alien alloy") |> should.equal(0)
+}
