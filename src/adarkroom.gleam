@@ -1154,8 +1154,9 @@ fn path_panel(m: Model) -> Element(Msg) {
       on_click: Embark,
       cost: [],
       disabled: state.get_outfit(s, "cured meat") <= 0,
-      cooldown: 0.0,
-      cooldown_ms: 0,
+      // A death rests the button for two minutes (`DEATH_COOLDOWN`).
+      cooldown: model.cooldown_fraction(m, "embark", model.death_cooldown_ms),
+      cooldown_ms: model.death_cooldown_ms,
       id: "embarkButton",
     ))
   html.div(

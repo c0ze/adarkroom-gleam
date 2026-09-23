@@ -35,6 +35,7 @@ import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/result
 import gleam/set.{type Set}
+import gleam/string
 import lustre/effect.{type Effect}
 
 /// The screens the player can be on.
@@ -247,6 +248,11 @@ pub type Model {
     /// Which fight this is — a finished fight's clocks (its attack timer,
     /// specials, statuses, poison) must not reach the next one.
     fight_run: Int,
+    /// The `world.*` discoveries as they stood at embark. The original keeps
+    /// a trip's finds (the ship, the executioner and its wings) on a
+    /// throwaway `World.state` that death discards; here they are written
+    /// straight away, so death rolls them back to this. Runtime-only.
+    trip_flags: Dict(String, Int),
     /// The ending, once the ascent is survived. Runtime-only — the game is
     /// over.
     ending: Option(Ending),
@@ -307,6 +313,7 @@ pub fn init() -> Model {
     flight_last_move: 0,
     flight_run: 0,
     fight_run: 0,
+    trip_flags: dict.new(),
     ending: None,
     loot: [],
     drop_for: None,
@@ -738,9 +745,9 @@ fn step_world(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
     // Only embark from the path, and only when not already exploring — guards
     // against a double-click or a replayed effect re-deducting supplies.
     Embark ->
-      case model.location, model.expedition {
-        Path, None -> #(model, roll_seed())
-        _, _ -> #(model, effect.none())
+      case model.location, model.expedition, on_cooldown(model, "embark") {
+        Path, None, False -> #(model, roll_seed())
+        _, _, _ -> #(model, effect.none())
       }
 
     Embarked(seed: seed, cache: cache) ->
@@ -776,11 +783,22 @@ fn step_world(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
                 location: World,
                 prev_location: model.location,
                 expedition: Some(exp),
+                trip_flags: world_flags(stocked),
                 fight_move: 0,
                 combat: None,
               ),
             )
-          #(embarked, effect.batch([sound(audio.embark), keys]))
+          // The world's own theme and title (`World.onArrival`).
+          let #(embarked, music) = tune_music(embarked)
+          #(
+            embarked,
+            effect.batch([
+              sound(audio.embark),
+              keys,
+              music,
+              restore_title(embarked),
+            ]),
+          )
         }
         _, _ -> #(model, effect.none())
       }
@@ -1762,6 +1780,9 @@ fn grow_row(
 /// spend cooling.
 pub const leave_cooldown_ms = 1000
 
+/// `World.DEATH_COOLDOWN` — how long the embark button rests after a death.
+pub const death_cooldown_ms = 120_000
+
 /// Use a healing item mid-fight: spend one from the outfit and mend the player,
 /// once its cooldown is up. Cured meat is the gastronome-boosted `meat_heal`;
 /// medicine and hypos mend a fixed amount.
@@ -2053,10 +2074,12 @@ fn step(model: Model, dir: world.Dir) -> #(Model, Effect(Msg)) {
           #(dead, effect.batch([die_fx(dead), steps]))
         }
         // The last step's fog rides home with the commit.
-        True, True -> #(
-          go_home(Model(..model, expedition: Some(s.expedition))),
-          steps,
-        )
+        True, True -> {
+          let home = go_home(Model(..model, expedition: Some(s.expedition)))
+          // The path's theme and title (`Path.onArrival`).
+          let #(home, music) = tune_music(home)
+          #(home, effect.batch([steps, music, restore_title(home)]))
+        }
         True, False -> {
           // Past the armour's depth, the warning; back under it, the relief
           // (`checkDanger` after the step).
@@ -2074,7 +2097,12 @@ fn step(model: Model, dir: world.Dir) -> #(Model, Effect(Msg)) {
           // may instead spring an encounter.
           let #(model, fx) = case setpiece_at(watched, s.state) {
             Ok(event) -> start_event(model, event)
-            Error(_) -> #(model, roll_fight())
+            Error(_) ->
+              case world.open_ground(watched) {
+                True -> #(model, roll_fight())
+                // A used outpost is a quiet place: no fight springs there.
+                False -> #(model, effect.none())
+              }
           }
           #(model, effect.batch([fx, steps]))
         }
@@ -2140,17 +2168,18 @@ fn go_home(model: Model) -> Model {
   let #(s, unlock_messages) = unlock_returns(s)
   let #(s, blueprint_messages) = world.redeem_blueprints(s)
   let s = return_outfit(s)
+  // Back on the path (`goHome` travels to Path, not the Room).
   let home =
     Model(
-      ..notify_world(model, ["a haze falls over the village"]),
+      ..model,
       state: s,
-      location: Room,
+      location: Path,
       prev_location: model.location,
       expedition: None,
       combat: None,
     )
-  // Announced once home, where the player now stands.
-  notify_room(home, list.append(unlock_messages, blueprint_messages))
+  // Announced where the player now stands.
+  notify_at(home, "path", list.append(unlock_messages, blueprint_messages))
 }
 
 /// A safe return commissions what was found out there: the crashed ship opens
@@ -2231,24 +2260,49 @@ fn leave_at_home(item: String) -> Bool {
 /// Die in the wilds: the supplies are lost and the player wakes in the room.
 /// Death's audio: the knell, and whatever event or battle music was up fades.
 fn die_fx(model: Model) -> Effect(Msg) {
-  effect.batch([event_closed_fx(model), sound(audio.death)])
+  let track = model.playing
+  effect.batch([
+    event_closed_fx(model),
+    sound(audio.death),
+    effect.from(fn(_) { audio.play_background_music(track) }),
+  ])
 }
 
 fn die(model: Model) -> Model {
   let model = notify_world(model, ["the world fades"])
-  Model(
-    ..model,
-    state: state.State(..model.state, outfit: dict.new()),
-    location: Room,
-    prev_location: model.location,
-    expedition: None,
-    combat: None,
-    // A setpiece modal closes with the death — there's no scene to return to.
-    active_event: None,
-    loot: [],
-    drop_for: None,
-    blinking: False,
-  )
+  // The trip's discoveries die with it; the embark button rests.
+  let s = restore_world_flags(model.state, model.trip_flags)
+  let dead =
+    Model(
+      ..start_cooldown(model, "embark", death_cooldown_ms),
+      state: state.State(..s, outfit: dict.new()),
+      location: Room,
+      prev_location: model.location,
+      expedition: None,
+      combat: None,
+      // A setpiece modal closes with the death — there's no scene to return to.
+      active_event: None,
+      loot: [],
+      drop_for: None,
+      blinking: False,
+    )
+  // Home to the room (`Room.onArrival`): a sleeping builder wakes to help,
+  // and the fire's own music takes over (`die_fx` plays it).
+  let dead = apply_room(dead, room.become_helper(dead.state))
+  Model(..dead, playing: location_track(dead))
+}
+
+/// The trip-scoped discoveries (`World.state`'s ship, executioner and wing
+/// marks), as `game.world.*` keys.
+fn world_flags(s: State) -> Dict(String, Int) {
+  dict.filter(s.game, fn(key, _) { string.starts_with(key, "world.") })
+}
+
+/// Put the trip-scoped discoveries back as they were at embark.
+fn restore_world_flags(s: State, flags: Dict(String, Int)) -> State {
+  let kept =
+    dict.filter(s.game, fn(key, _) { !string.starts_with(key, "world.") })
+  state.State(..s, game: dict.merge(kept, flags))
 }
 
 /// An effect that rolls a map seed and dispatches `Embarked`.

@@ -437,7 +437,7 @@ pub fn reaching_the_village_ends_the_expedition_test() {
   let embarked = run(m, model.Embarked(seed: 1, cache: False))
   // Step out and back onto the village.
   let home = run(run(embarked, model.MoveEast), model.MoveWest)
-  home.location |> should.equal(model.Room)
+  home.location |> should.equal(model.Path)
   option.is_none(home.expedition) |> should.equal(True)
 }
 
@@ -1006,7 +1006,7 @@ pub fn a_safe_return_grants_a_cleared_mine_building_test() {
     )
   // Step west onto the village — home safe.
   let home = run(m, model.MoveWest)
-  home.location |> should.equal(model.Room)
+  home.location |> should.equal(model.Path)
   craft.building_count(home.state, "coal mine") |> should.equal(1)
 }
 
@@ -1083,7 +1083,7 @@ pub fn a_parched_step_onto_the_village_is_a_safe_return_not_a_death_test() {
       expedition: option.Some(exp),
     )
   let home = run(m, model.MoveWest)
-  home.location |> should.equal(model.Room)
+  home.location |> should.equal(model.Path)
   home.expedition |> should.equal(option.None)
   craft.building_count(home.state, "iron mine") |> should.equal(1)
 }
@@ -2069,7 +2069,7 @@ pub fn coming_home_commits_the_trip_test() {
       expedition: option.Some(exp),
     )
   let home = run(m, model.MoveWest)
-  home.location |> should.equal(model.Room)
+  home.location |> should.equal(model.Path)
   let assert option.Some(ws) = home.state.world
   let assert Ok(resumed) = world.resume(ws, state.new())
   set.contains(resumed.visited, mark) |> should.be_true
@@ -2369,4 +2369,46 @@ pub fn an_unarmed_masters_fists_recover_twice_as_fast_test() {
   let master =
     model.Model(..m, state: state.add_perk(m.state, "unarmed master"))
   model.strike_cooldown_ms(master, "fists") |> should.equal(1000)
+}
+
+// --- death and the trip's discoveries -----------------------------------------
+
+pub fn death_rests_the_embark_button_test() {
+  let fighting = run(world_model(1), MaybeFight(0.0, 0.0))
+  let dead = run(fighting, ResolveEnemyTurn(0.0))
+  dead.location |> should.equal(model.Room)
+  model.on_cooldown(dead, "embark") |> should.be_true
+  let back =
+    model.Model(
+      ..dead,
+      location: model.Path,
+      state: state.set_outfit(dead.state, "cured meat", 1),
+    )
+  let #(_, fx) = model.update(back, model.Embark)
+  fx |> should.equal(effect.none())
+}
+
+pub fn a_trips_discoveries_die_with_it_test() {
+  let base = model.init()
+  let m =
+    model.Model(
+      ..base,
+      location: model.Path,
+      state: state.set_outfit(base.state, "cured meat", 1)
+        |> state.set_store("cured meat", 1),
+    )
+  let out = run(m, model.Embarked(seed: 1, cache: False))
+  // The crashed ship is found out there…
+  let found =
+    model.Model(..out, state: state.set_game(out.state, "world.ship", 1))
+  // …and then the wanderer dies before bringing word home.
+  let fighting =
+    model.Model(
+      ..found,
+      expedition: option.Some(forest_expedition(3, 1)),
+      fight_move: 4,
+    )
+    |> run(MaybeFight(0.0, 0.0))
+  let dead = run(fighting, ResolveEnemyTurn(0.0))
+  state.get_game(dead.state, "world.ship") |> should.equal(0)
 }
