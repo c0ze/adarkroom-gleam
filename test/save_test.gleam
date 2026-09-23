@@ -1,8 +1,9 @@
 import adarkroom/rng
 import adarkroom/save
 import adarkroom/state
+import adarkroom/storage
 import adarkroom/world
-import gleam/option.{Some}
+import gleam/option.{None, Some}
 import gleeunit/should
 
 fn sample() -> state.State {
@@ -22,8 +23,26 @@ pub fn decode_invalid_json_is_error_test() {
   save.decode("not valid json") |> should.be_error
 }
 
-pub fn decode_missing_field_is_error_test() {
-  save.decode("{\"stores\":{}}") |> should.be_error
+pub fn decode_tolerates_a_missing_category_test() {
+  // A save from before a category existed still loads, that category empty.
+  let assert Ok(s) = save.decode("{\"stores\":{\"wood\":7}}")
+  state.get_store(s, "wood") |> should.equal(7)
+}
+
+pub fn decode_rejects_the_original_games_save_test() {
+  // The JS game nests its categories; it is not ours to read.
+  save.decode(
+    "{\"version\":1.3,\"stores\":{\"wood\":5},\"features\":{\"location\":{\"room\":true}}}",
+  )
+  |> should.be_error
+}
+
+pub fn an_unreadable_save_is_set_aside_not_lost_test() {
+  storage.set("gameState", "{not json")
+  save.load() |> should.equal(None)
+  storage.get(save.unreadable_key) |> should.equal(Some("{not json"))
+  storage.get("gameState") |> should.equal(None)
+  storage.remove(save.unreadable_key)
 }
 
 pub fn export_import_roundtrip_test() {

@@ -23,10 +23,27 @@ export function getItem(key) {
   return v === undefined || v === null ? "" : v;
 }
 
+// The playthrough journal is a luxury that shares the save's quota: when a
+// write is refused for space, the journal goes first and the write retries.
+const JOURNAL_KEY = "adrJournal";
+
 export function setItem(key, value) {
   const b = backing();
-  if (b instanceof Map) b.set(key, value);
-  else b.setItem(key, value);
+  if (b instanceof Map) {
+    b.set(key, value);
+    return undefined;
+  }
+  try {
+    b.setItem(key, value);
+  } catch (error) {
+    try {
+      if (key === JOURNAL_KEY) throw error;
+      b.removeItem(JOURNAL_KEY);
+      b.setItem(key, value);
+    } catch (retryError) {
+      console.error(`could not save ${key}:`, retryError);
+    }
+  }
   return undefined;
 }
 

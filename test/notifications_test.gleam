@@ -1,4 +1,6 @@
 import adarkroom/notifications as notif
+import gleam/int
+import gleam/list
 import gleeunit/should
 
 pub fn new_is_empty_test() {
@@ -53,4 +55,20 @@ pub fn log_is_newest_first_test() {
     |> notif.notify_global("one")
     |> notif.notify_global("two")
   notif.messages(notes) |> should.equal(["two.", "one."])
+}
+
+pub fn the_log_forgets_what_has_long_faded_test() {
+  let log =
+    list.repeat(Nil, 100)
+    |> list.index_fold(notif.new(), fn(acc, _, i) {
+      notif.notify(
+        acc,
+        current: "room",
+        target: "room",
+        text: "line " <> int.to_string(i + 1),
+      )
+    })
+  let shown = notif.messages(log)
+  list.length(shown) |> should.equal(40)
+  list.first(shown) |> should.equal(Ok("line 100."))
 }
