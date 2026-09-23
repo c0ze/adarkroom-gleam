@@ -323,16 +323,46 @@ pub fn killing_the_enemy_wins_the_fight_test() {
   after.won |> should.equal(True)
 }
 
-pub fn a_stun_weapon_makes_the_enemy_skip_its_next_attack_test() {
+pub fn a_stun_weapon_holds_the_enemy_still_test() {
   let cs = combat.begin_combat(beast(), 10, 10)
   let stunned =
     combat.player_strike(cs, weapon_named("bolas"), state.new(), 0.5)
   stunned.enemy_stunned |> should.equal(True)
   stunned.enemy_hp |> should.equal(5)
-  // The stunned enemy can't connect, and the stun is spent.
-  let after = combat.enemy_strike(stunned, state.new(), 0.0)
+  // The stunned enemy can't connect — turn after turn, until the model's
+  // clock lifts the stun (`STUN_DURATION`).
+  let after =
+    stunned
+    |> combat.enemy_strike(state.new(), 0.0)
+    |> combat.enemy_strike(state.new(), 0.0)
   after.player_hp |> should.equal(10)
-  after.enemy_stunned |> should.equal(False)
+  after.enemy_stunned |> should.equal(True)
+}
+
+pub fn a_swing_spends_its_ammo_test() {
+  let s = state.set_outfit(state.new(), "bullets", 1)
+  let assert Ok(paid) = combat.spend_ammo(weapon_named("rifle"), s)
+  state.get_outfit(paid, "bullets") |> should.equal(0)
+  combat.spend_ammo(weapon_named("rifle"), paid) |> should.equal(Error(Nil))
+}
+
+pub fn stun_weapons_can_be_swung_test() {
+  let s = state.set_outfit(state.new(), "bolas", 1)
+  combat.can_use(weapon_named("bolas"), s) |> should.be_true
+  combat.can_use(weapon_named("disruptor"), state.new()) |> should.be_true
+  // …but they are no damage-dealer: the fists still come along.
+  combat.attack_options(state.set_outfit(s, "bolas", 1))
+  |> should.equal(["fists", "bolas"])
+}
+
+pub fn the_fiftieth_punch_teaches_the_boxer_test() {
+  let s = state.set_character(state.new(), "punches", 49)
+  let #(s, learned) = combat.count_punch(s)
+  state.has_perk(s, "boxer") |> should.be_true
+  learned |> should.equal([state.perk_notify("boxer")])
+  let #(s, learned) = combat.count_punch(s)
+  state.get_character(s, "punches") |> should.equal(51)
+  learned |> should.equal([])
 }
 
 pub fn an_enemy_strike_wounds_the_player_test() {

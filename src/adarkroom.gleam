@@ -362,8 +362,10 @@ fn combat_overlay(m: Model) -> List(Element(Msg)) {
   case m.combat {
     None -> []
     // The fight is won: the looting phase (`winFight`) — the death message,
-    // the loot rows, and the way onward.
-    Some(cs) if cs.won -> [
+    // the loot rows, and the way onward. A dying enemy's blast comes first:
+    // the fight screen holds until it lands (`explode`), so it can't be
+    // walked away from.
+    Some(cs) if cs.won && cs.exploding == None -> [
       html.div([attribute.id("event"), attribute.class("eventPanel")], [
         html.div(
           [attribute.id("description")],
@@ -402,7 +404,10 @@ fn combat_overlay(m: Model) -> List(Element(Msg)) {
           ]),
         ]),
         html.div([attribute.id("buttons")], [
-          html.div([attribute.id("attackButtons")], attack_buttons(m, cs)),
+          html.div([attribute.id("attackButtons")], case cs.won {
+            True -> []
+            False -> attack_buttons(m, cs)
+          }),
           html.div([attribute.id("healButtons")], heal_buttons(m)),
         ]),
       ]),
@@ -765,11 +770,13 @@ fn attack_buttons(m: Model, _cs: combat.CombatState) -> List(Element(Msg)) {
 fn attack_button(m: Model, name: String, weapon: combat.Weapon) -> Element(Msg) {
   // A stim's boost halves the recovery, bars included.
   let cooldown_ms = model.strike_cooldown_ms(m, name)
+  // The button speaks the weapon's verb and prices its ammo; stun weapons
+  // swing like any other (`createAttackButton`).
   button.button(button.Config(
-    text: name,
+    text: weapon.verb,
     on_click: StrikeEnemy(name),
-    cost: [],
-    disabled: !combat.can_attack_with(weapon, m.state),
+    cost: weapon.cost,
+    disabled: !combat.can_use(weapon, m.state),
     cooldown: model.cooldown_fraction(m, "attack_" <> name, cooldown_ms),
     cooldown_ms: cooldown_ms,
     id: "attack_" <> name,

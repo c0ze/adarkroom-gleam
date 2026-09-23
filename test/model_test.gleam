@@ -20,6 +20,7 @@ import gleam/option
 import gleam/set
 import gleam/string
 import gleeunit/should
+import lustre/effect
 
 /// Apply an update and discard the effect.
 fn run(m: model.Model, msg: model.Msg) -> model.Model {
@@ -1472,7 +1473,7 @@ fn special_fight(
 pub fn a_fixed_special_takes_hold_test() {
   let m =
     special_fight([combat.SetStatusEvery(5.0, combat.Shield)], combat.NoStatus)
-  let after = run(m, model.SpecialFire(0))
+  let after = run(m, model.SpecialFire(m.fight_run, 0))
   let assert option.Some(cs) = after.combat
   cs.enemy_status |> should.equal(combat.Shield)
 }
@@ -1483,7 +1484,7 @@ pub fn a_won_fight_silences_the_specials_test() {
   let assert option.Some(cs) = m.combat
   let m =
     model.Model(..m, combat: option.Some(combat.CombatState(..cs, won: True)))
-  let after = run(m, model.SpecialFire(0))
+  let after = run(m, model.SpecialFire(m.fight_run, 0))
   let assert option.Some(after_cs) = after.combat
   after_cs.enemy_status |> should.equal(combat.NoStatus)
 }
@@ -1513,7 +1514,7 @@ pub fn a_status_expires_on_its_clock_test() {
         combat.CombatState(..cs, enemy_status: combat.Enraged),
       ),
     )
-  let after = run(raging, model.StatusExpire)
+  let after = run(raging, model.StatusExpire(raging.fight_run))
   let assert option.Some(calm) = after.combat
   calm.enemy_status |> should.equal(combat.NoStatus)
 }
@@ -1526,7 +1527,7 @@ pub fn poison_drips_each_tick_test() {
       ..m,
       combat: option.Some(combat.CombatState(..cs, player_dot: 3)),
     )
-  let after = run(poisoned, model.DotTick)
+  let after = run(poisoned, model.DotTick(poisoned.fight_run))
   let assert option.Some(dripping) = after.combat
   dripping.player_hp |> should.equal(7)
 }
@@ -1539,7 +1540,7 @@ pub fn poison_can_finish_the_fight_test() {
       ..m,
       combat: option.Some(combat.CombatState(..cs, player_dot: 3, player_hp: 2)),
     )
-  let after = run(nearly, model.DotTick)
+  let after = run(nearly, model.DotTick(nearly.fight_run))
   // The world fades: gear lost, back to the room.
   after.combat |> should.equal(option.None)
   after.expedition |> should.equal(option.None)
@@ -1578,13 +1579,15 @@ fn exploding_fight(player_hp: Int) -> model.Model {
 }
 
 pub fn surviving_the_blast_wins_the_fight_test() {
-  let after = run(exploding_fight(50), model.ExplosionResolve)
+  let after = run(exploding_fight(50), model.ExplosionResolve(0))
   let assert option.Some(cs) = after.combat
   cs.player_hp |> should.equal(20)
+  // The blast is spent: the loot screen may open.
+  cs.exploding |> should.equal(option.None)
 }
 
 pub fn the_blast_can_be_the_end_test() {
-  let after = run(exploding_fight(30), model.ExplosionResolve)
+  let after = run(exploding_fight(30), model.ExplosionResolve(0))
   after.combat |> should.equal(option.None)
   after.expedition |> should.equal(option.None)
   after.location |> should.equal(model.Room)
@@ -2288,4 +2291,82 @@ pub fn no_income_is_collected_during_the_ascent_test() {
   // The same village at home does earn.
   run(model.Model(..m, location: model.Room), model.CollectIncome).state
   |> should.not_equal(m.state)
+}
+
+// --- fight clocks belong to their fight ----------------------------------------
+
+pub fn a_finished_fights_clocks_cannot_reach_the_next_test() {
+  // Fight one is won; fight two begins before fight one's attack timer fires.
+  let first = run(world_model(10), MaybeFight(0.0, 0.0))
+  let stale = first.fight_run
+  let won = run(first, ResolveStrike("steel sword", 0.5))
+  let looting = run(won, CollectLoot([0.9, 0.9, 0.9]))
+  let second =
+    model.Model(..run(looting, model.LootDone), fight_move: 4)
+    |> run(MaybeFight(0.0, 0.0))
+  second.fight_run |> should.not_equal(stale)
+  // Fight one's leftovers fire into fight two — and do nothing.
+  let #(_, fx) = model.update(second, model.EnemyTurn(stale))
+  fx |> should.equal(effect.none())
+  run(second, model.DotTick(stale)) |> should.equal(second)
+  run(second, model.StatusExpire(stale)) |> should.equal(second)
+}
+
+pub fn a_rifle_shot_spends_a_bullet_test() {
+  let base = world_model(10)
+  let m =
+    model.Model(
+      ..base,
+      state: base.state
+        |> state.set_outfit("rifle", 1)
+        |> state.set_outfit("bullets", 1),
+    )
+    |> run(MaybeFight(0.0, 0.0))
+  let shot = run(m, model.StrikeEnemy("rifle"))
+  state.get_outfit(shot.state, "bullets") |> should.equal(0)
+  // No bullets, no shot (and no cooldown started).
+  let dry = model.Model(..shot, cooldowns: dict.new())
+  run(dry, model.StrikeEnemy("rifle")) |> should.equal(dry)
+}
+
+pub fn thrown_punches_are_counted_test() {
+  let fighting = run(world_model(10), MaybeFight(0.0, 0.0))
+  let punched = run(fighting, model.StrikeEnemy("fists"))
+  state.get_character(punched.state, "punches") |> should.equal(1)
+}
+
+pub fn a_stun_lasts_until_its_clock_runs_out_test() {
+  let base = world_model(10)
+  let m =
+    model.Model(..base, state: state.set_outfit(base.state, "bolas", 2))
+    |> run(MaybeFight(0.0, 0.0))
+  let stunned = run(m, ResolveStrike("bolas", 0.5))
+  let held = run(stunned, ResolveEnemyTurn(0.0))
+  let assert option.Some(cs) = held.combat
+  cs.enemy_stunned |> should.be_true
+  cs.player_hp |> should.equal(10)
+  let freed = run(held, model.StunExpire(held.fight_run))
+  let assert option.Some(cs) = freed.combat
+  cs.enemy_stunned |> should.be_false
+}
+
+pub fn the_stims_boost_wears_off_test() {
+  let base = world_model(30)
+  let m =
+    model.Model(..base, state: state.set_outfit(base.state, "stim", 1))
+    |> run(MaybeFight(0.0, 0.0))
+  let boosted = run(m, model.UseStim)
+  let assert option.Some(cs) = boosted.combat
+  cs.player_status |> should.equal(combat.Boost)
+  let worn = run(boosted, model.BoostExpire(boosted.fight_run))
+  let assert option.Some(cs) = worn.combat
+  cs.player_status |> should.equal(combat.NoStatus)
+}
+
+pub fn an_unarmed_masters_fists_recover_twice_as_fast_test() {
+  let m = world_model(10)
+  model.strike_cooldown_ms(m, "fists") |> should.equal(2000)
+  let master =
+    model.Model(..m, state: state.add_perk(m.state, "unarmed master"))
+  model.strike_cooldown_ms(master, "fists") |> should.equal(1000)
 }

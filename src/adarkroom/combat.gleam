@@ -150,9 +150,46 @@ fn apply_perks(kind: WeaponType, base: Int, s: state.State) -> Int {
 
 // --- which weapons a fight offers -------------------------------------------
 
-/// Whether a weapon can actually be swung right now: it must deal positive
-/// numeric damage (stun weapons don't count) and the outfit must hold enough
-/// ammo for one use.
+/// Whether the outfit holds the ammo for one swing (`createAttackButton`
+/// disables the button otherwise). Stun weapons swing like any other.
+pub fn can_use(weapon: Weapon, s: state.State) -> Bool {
+  list.all(weapon.cost, fn(c) { state.get_outfit(s, c.0) >= c.1 })
+}
+
+/// Pay a swing's ammo out of the outfit (`useWeapon`'s `Path.outfit[m] +=
+/// mod[m]`); an empty pouch refuses the swing.
+pub fn spend_ammo(weapon: Weapon, s: state.State) -> Result(state.State, Nil) {
+  case can_use(weapon, s) {
+    False -> Error(Nil)
+    True ->
+      Ok(
+        list.fold(weapon.cost, s, fn(acc, c) {
+          state.set_outfit(acc, c.0, state.get_outfit(acc, c.0) - c.1)
+        }),
+      )
+  }
+}
+
+/// Count a thrown punch; the 50th, 150th and 300th teach the fist perks
+/// (`useWeapon`'s `character.punches`).
+pub fn count_punch(s: state.State) -> #(state.State, List(String)) {
+  let punches = state.get_character(s, "punches") + 1
+  let s = state.set_character(s, "punches", punches)
+  let perk = case punches {
+    50 -> "boxer"
+    150 -> "martial artist"
+    300 -> "unarmed master"
+    _ -> ""
+  }
+  case perk != "" && !state.has_perk(s, perk) {
+    True -> #(state.add_perk(s, perk), [state.perk_notify(perk)])
+    False -> #(s, [])
+  }
+}
+
+/// Whether a weapon counts as a real damage-dealer for the fists fallback: it
+/// must deal positive numeric damage (stun weapons don't count) and the
+/// outfit must hold enough ammo for one use.
 pub fn can_attack_with(weapon: Weapon, s: state.State) -> Bool {
   case weapon.damage {
     Stun -> False
@@ -301,6 +338,12 @@ pub const enrage_duration_ms = 4000
 /// `MEDITATE_DURATION` — how long the trance lasts.
 pub const meditate_duration_ms = 5000
 
+/// `STUN_DURATION` — how long a bolas or disruptor keeps the enemy still.
+pub const stun_duration_ms = 4000
+
+/// `BOOST_DURATION` — how long a stim's boost lasts.
+pub const boost_duration_ms = 3000
+
 /// `DOT_TICK` — how often armed poison drips.
 pub const dot_tick_ms = 1000
 
@@ -379,7 +422,7 @@ pub fn effective_attack_delay(cs: CombatState) -> Float {
   }
 }
 
-/// Resolve a player attack on the enemy. A stun makes it skip its next turn
+/// Resolve a player attack on the enemy. A stun holds it still for a spell
 /// (and leaves any shield intact — only a numeric hit breaks one); numeric
 /// damage lowers its HP and may win the fight.
 pub fn player_strike(
@@ -425,16 +468,17 @@ fn trigger_at_health(cs: CombatState, hp: Int, d: Int) -> CombatState {
   })
 }
 
-/// Resolve the enemy's attack on the player. A stunned enemy whiffs and spends
-/// the stun; a meditating one sits the turn out. Once the trance ends, any
-/// banked damage lands as one guaranteed blow — no hit roll.
+/// Resolve the enemy's attack on the player. A stunned enemy sits its turns
+/// out until the stun wears off (the model's clock); so does a meditating
+/// one. Once the trance ends, any banked damage lands as one guaranteed blow
+/// — no hit roll.
 pub fn enemy_strike(
   cs: CombatState,
   s: state.State,
   hit_roll: Float,
 ) -> CombatState {
   case cs.enemy_stunned, cs.enemy_status, cs.meditate_bank {
-    True, _, _ -> CombatState(..cs, enemy_stunned: False)
+    True, _, _ -> cs
     False, Meditation, _ -> cs
     False, _, bank if bank > 0 ->
       hurt_player(CombatState(..cs, meditate_bank: 0), bank)

@@ -111,8 +111,9 @@ pub type Msg {
   StrikeEnemy(weapon: String)
   /// Apply the player's swing (the roll is its hit chance).
   ResolveStrike(weapon: String, roll: Float)
-  /// The enemy takes its turn; rolls then resolves.
-  EnemyTurn
+  /// Timer: the enemy takes its turn; rolls then resolves. Every fight clock
+  /// carries the fight it was armed for (`fight_run`).
+  EnemyTurn(run: Int)
   /// Apply the enemy's blow (the roll is its hit chance).
   ResolveEnemyTurn(roll: Float)
   /// Gather the defeated enemy's loot from the supplied rolls (two per drop).
@@ -128,18 +129,22 @@ pub type Msg {
   /// Run a scene's random `onLoad` (a disaster's toll) with the supplied roll.
   SceneRng(roll: Float)
   /// Timer: a boss special comes due (by index in the fight's specials).
-  SpecialFire(index: Int)
+  SpecialFire(run: Int, index: Int)
   /// Apply a rotation special's pick (the roll chooses among the options).
   ResolveSpecial(index: Int, roll: Float)
   /// Timer: a timed enemy status (enrage, meditation) runs out.
-  StatusExpire
+  StatusExpire(run: Int)
+  /// Timer: a bolas or disruptor stun wears off.
+  StunExpire(run: Int)
+  /// Timer: the stim's boost wears off.
+  BoostExpire(run: Int)
   /// Timer: armed poison drips on the player.
-  DotTick
+  DotTick(run: Int)
   /// Apply scavenged surface maps (one reveal roll per map).
   MapsScavenged(rolls: List(Float))
   /// Timer: the felled enemy detonates — take the blast, then the win or the
   /// grave.
-  ExplosionResolve
+  ExplosionResolve(run: Int)
   /// Plate the starship's hull with an alien alloy.
   ReinforceHull
   /// Tune the starship's engine with an alien alloy.
@@ -239,6 +244,9 @@ pub type Model {
     flight_last_move: Int,
     /// Which ascent this is — stale timers from earlier runs are ignored.
     flight_run: Int,
+    /// Which fight this is — a finished fight's clocks (its attack timer,
+    /// specials, statuses, poison) must not reach the next one.
+    fight_run: Int,
     /// The ending, once the ascent is survived. Runtime-only — the game is
     /// over.
     ending: Option(Ending),
@@ -298,6 +306,7 @@ pub fn init() -> Model {
     space: None,
     flight_last_move: 0,
     flight_run: 0,
+    fight_run: 0,
     ending: None,
     loot: [],
     drop_for: None,
@@ -816,21 +825,33 @@ fn step_world(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
         True, Some(_), Some(exp) -> encounter_music(world.distance(exp.pos))
         _, _, _ -> effect.none()
       }
-      #(model, effect.batch([enemy_timer(model.combat), music]))
+      #(model, effect.batch([enemy_timer(model), music]))
     }
 
     StrikeEnemy(weapon: weapon) ->
-      case on_cooldown(model, "attack_" <> weapon) {
+      case on_cooldown(model, "attack_" <> weapon), combat.get_weapon(weapon) {
         // Still recovering from the last swing — ignore the click.
-        True -> #(model, effect.none())
-        False -> #(
-          start_cooldown(
-            model,
-            "attack_" <> weapon,
-            strike_cooldown_ms(model, weapon),
-          ),
-          roll_strike(weapon),
-        )
+        True, _ | _, Error(_) -> #(model, effect.none())
+        False, Ok(w) ->
+          // The swing spends its ammo up front; an empty pouch refuses it.
+          case combat.spend_ammo(w, model.state) {
+            Error(_) -> #(model, effect.none())
+            Ok(paid) -> {
+              // Every punch thrown counts toward the fist perks.
+              let #(paid, learned) = case w.kind {
+                combat.Unarmed -> combat.count_punch(paid)
+                _ -> #(paid, [])
+              }
+              #(
+                start_cooldown(
+                  notify_world(Model(..model, state: paid), learned),
+                  "attack_" <> weapon,
+                  strike_cooldown_ms(model, weapon),
+                ),
+                roll_strike(weapon),
+              )
+            }
+          }
       }
 
     ResolveStrike(weapon: weapon, roll: roll) -> {
@@ -842,7 +863,18 @@ fn step_world(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
       #(struck, effect.batch([fx, snd]))
     }
 
-    EnemyTurn -> #(model, roll_enemy_turn())
+    // A finished fight's stragglers are dropped (`endFight` clears them).
+    EnemyTurn(run:)
+      | SpecialFire(run:, ..)
+      | StatusExpire(run:)
+      | StunExpire(run:)
+      | BoostExpire(run:)
+      | DotTick(run:)
+      | ExplosionResolve(run:)
+      if run != model.fight_run
+    -> #(model, effect.none())
+
+    EnemyTurn(..) -> #(model, roll_enemy_turn())
 
     ResolveEnemyTurn(roll: roll) -> {
       let dot_before = current_dot(model)
@@ -870,14 +902,14 @@ fn step_world(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
       // A venomous blow that just landed arms the poison drip (one chain; a
       // later blow only changes its strength).
       let dot_armed = case dot_before == 0 && current_dot(model) > 0 {
-        True -> delayed(combat.dot_tick_ms, DotTick)
+        True -> delayed(combat.dot_tick_ms, DotTick(model.fight_run))
         False -> effect.none()
       }
       // The enemy keeps attacking on its delay until the fight ends.
       #(
         model,
         effect.batch([
-          enemy_timer(model.combat),
+          enemy_timer(model),
           dot_armed,
           death_fx,
           strike_snd,
@@ -924,7 +956,11 @@ fn step_world(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
               let dead = die(model)
               #(dead, die_fx(dead))
             }
-            False -> #(model, effect.none())
+            // The boost holds for `BOOST_DURATION`.
+            False -> #(
+              model,
+              delayed(combat.boost_duration_ms, BoostExpire(model.fight_run)),
+            )
           }
         }
         _, _ -> #(model, effect.none())
@@ -947,18 +983,40 @@ fn step_world(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
 
     SceneRng(roll: roll) -> #(run_scene_rng(model, roll), effect.none())
 
-    SpecialFire(index: index) -> fire_special(model, index)
+    SpecialFire(index: index, ..) -> fire_special(model, index)
 
     ResolveSpecial(index: index, roll: roll) ->
       resolve_special(model, index, roll)
 
-    StatusExpire -> #(set_enemy_status(model, combat.NoStatus), effect.none())
+    StatusExpire(..) -> #(
+      set_enemy_status(model, combat.NoStatus),
+      effect.none(),
+    )
 
-    DotTick -> dot_tick(model)
+    StunExpire(..) -> #(
+      map_combat(model, fn(cs) {
+        combat.CombatState(..cs, enemy_stunned: False)
+      }),
+      effect.none(),
+    )
+
+    // The boost wears off; a shield raised since stays up.
+    BoostExpire(..) -> #(
+      map_combat(model, fn(cs) {
+        case cs.player_status {
+          combat.Boost ->
+            combat.CombatState(..cs, player_status: combat.NoStatus)
+          _ -> cs
+        }
+      }),
+      effect.none(),
+    )
+
+    DotTick(..) -> dot_tick(model)
 
     MapsScavenged(rolls: rolls) -> #(scavenge_maps(model, rolls), effect.none())
 
-    ExplosionResolve -> resolve_explosion(model)
+    ExplosionResolve(..) -> resolve_explosion(model)
 
     ReinforceHull -> {
       let applied = apply_at(model, "ship", ship.reinforce_hull(model.state))
@@ -1417,7 +1475,10 @@ fn start_fight(
       exp.vitals.health,
       world.max_health(model.state),
     )
-  notify_world(Model(..model, combat: Some(cs)), [encounter.notification])
+  notify_world(
+    Model(..model, combat: Some(cs), fight_run: model.fight_run + 1),
+    [encounter.notification],
+  )
 }
 
 /// Resolve a player's swing. Winning the fight rolls the enemy's loot.
@@ -1430,10 +1491,16 @@ fn resolve_strike(
     Some(before), Ok(weapon) -> {
       let cs = combat.player_strike(before, weapon, model.state, roll)
       let model = Model(..model, combat: Some(cs))
+      // A landed stun wears off on its own clock (`STUN_DURATION`).
+      let stun = case combat.player_attack(weapon, model.state, roll) {
+        combat.StunHit ->
+          delayed(combat.stun_duration_ms, StunExpire(model.fight_run))
+        _ -> effect.none()
+      }
       // An atHealth trigger may have taken hold mid-blow; timed statuses
       // (enrage, meditation) need their expiry clock started.
       let expiry = case cs.enemy_status != before.enemy_status {
-        True -> status_expiry(cs.enemy_status)
+        True -> status_expiry(model, cs.enemy_status)
         False -> effect.none()
       }
       case cs.won, cs.exploding {
@@ -1442,12 +1509,15 @@ fn resolve_strike(
         True, Some(_) -> #(
           model,
           effect.batch([
-            delayed(combat.explosion_duration_ms, ExplosionResolve),
+            delayed(
+              combat.explosion_duration_ms,
+              ExplosionResolve(model.fight_run),
+            ),
             expiry,
           ]),
         )
         True, None -> #(model, effect.batch([roll_loot(cs.enemy), expiry]))
-        False, _ -> #(model, expiry)
+        False, _ -> #(model, effect.batch([expiry, stun]))
       }
     }
     _, _ -> #(model, effect.none())
@@ -1467,10 +1537,13 @@ fn resolve_explosion(model: Model) -> #(Model, Effect(Msg)) {
               let dead = die(model)
               #(dead, die_fx(dead))
             }
+            // The blast is spent; the loot screen can open.
             False -> #(
               Model(
                 ..model,
-                combat: Some(combat.CombatState(..cs, player_hp: hp)),
+                combat: Some(
+                  combat.CombatState(..cs, player_hp: hp, exploding: None),
+                ),
               ),
               roll_loot(cs.enemy),
             )
@@ -1745,10 +1818,15 @@ fn heal_cooldown(item: String) -> #(String, Int) {
   }
 }
 
-/// How long (ms) a weapon takes to recover between swings.
-fn weapon_cooldown_ms(weapon: String) -> Int {
+/// How long (ms) a weapon takes to recover between swings; an unarmed
+/// master's fists recover twice as fast (`createAttackButton`).
+fn weapon_cooldown_ms(s: State, weapon: String) -> Int {
   case combat.get_weapon(weapon) {
-    Ok(w) -> w.cooldown * 1000
+    Ok(w) ->
+      case w.kind == combat.Unarmed && state.has_perk(s, "unarmed master") {
+        True -> w.cooldown * 500
+        False -> w.cooldown * 1000
+      }
     Error(_) -> 0
   }
 }
@@ -1756,7 +1834,7 @@ fn weapon_cooldown_ms(weapon: String) -> Int {
 /// A swing's cooldown right now: halved while the stim's boost holds
 /// (`Button.cooldown`'s `boosted` check). The view's bars read it too.
 pub fn strike_cooldown_ms(model: Model, weapon: String) -> Int {
-  let ms = weapon_cooldown_ms(weapon)
+  let ms = weapon_cooldown_ms(model.state, weapon)
   case model.combat {
     Some(cs) if cs.player_status == combat.Boost -> ms / 2
     _ -> ms
@@ -1780,8 +1858,8 @@ fn roll_enemy_turn() -> Effect(Msg) {
 
 /// Schedule the enemy's next attack while a fight is on; nothing once it ends.
 /// Re-armed after each enemy turn, so the timer naturally stops on win or death.
-fn enemy_timer(combat: Option(combat.CombatState)) -> Effect(Msg) {
-  case combat {
+fn enemy_timer(model: Model) -> Effect(Msg) {
+  case model.combat {
     // A felled enemy's timer stays down (the explosion window).
     Some(cs) ->
       case cs.won {
@@ -1789,7 +1867,7 @@ fn enemy_timer(combat: Option(combat.CombatState)) -> Effect(Msg) {
         False ->
           delayed(
             float.round(combat.effective_attack_delay(cs) *. 1000.0),
-            EnemyTurn,
+            EnemyTurn(model.fight_run),
           )
       }
     None -> effect.none()
@@ -1805,7 +1883,10 @@ fn fire_special(model: Model, index: Int) -> #(Model, Effect(Msg)) {
     Error(_) -> #(model, effect.none())
     Ok(combat.SetStatusEvery(delay: delay, status: status)) -> #(
       set_enemy_status(model, status),
-      effect.batch([status_expiry(status), special_timer(index, delay)]),
+      effect.batch([
+        status_expiry(model, status),
+        special_timer(model, index, delay),
+      ]),
     )
     Ok(combat.RotateStatusEvery(..)) -> #(
       model,
@@ -1825,13 +1906,16 @@ fn resolve_special(
     Ok(combat.RotateStatusEvery(delay: delay, options: options)), Some(cs) -> {
       let possible = list.filter(options, fn(o) { o != cs.last_special })
       case events.pick(possible, roll) {
-        Error(_) -> #(model, special_timer(index, delay))
+        Error(_) -> #(model, special_timer(model, index, delay))
         Ok(status) -> {
           let cs =
             combat.CombatState(..cs, enemy_status: status, last_special: status)
           #(
             Model(..model, combat: Some(cs)),
-            effect.batch([status_expiry(status), special_timer(index, delay)]),
+            effect.batch([
+              status_expiry(model, status),
+              special_timer(model, index, delay),
+            ]),
           )
         }
       }
@@ -1853,21 +1937,32 @@ fn active_special(model: Model, index: Int) -> Result(combat.Special, Nil) {
 }
 
 /// Re-arm a special's timer.
-fn special_timer(index: Int, delay: Float) -> Effect(Msg) {
-  delayed(float.round(delay *. 1000.0), SpecialFire(index))
+fn special_timer(model: Model, index: Int, delay: Float) -> Effect(Msg) {
+  delayed(float.round(delay *. 1000.0), SpecialFire(model.fight_run, index))
 }
 
 /// Arm a fight's boss-special timers, one per special.
-fn specials_timers(specials: List(combat.Special)) -> Effect(Msg) {
+fn specials_timers(model: Model, specials: List(combat.Special)) -> Effect(Msg) {
   specials
   |> list.index_map(fn(special, index) {
     case special {
       combat.SetStatusEvery(delay: delay, ..)
       | combat.RotateStatusEvery(delay: delay, ..) ->
-        special_timer(index, delay)
+        special_timer(model, index, delay)
     }
   })
   |> effect.batch
+}
+
+/// Change the fight in progress, if there is one.
+fn map_combat(
+  model: Model,
+  f: fn(combat.CombatState) -> combat.CombatState,
+) -> Model {
+  case model.combat {
+    Some(cs) -> Model(..model, combat: Some(f(cs)))
+    None -> model
+  }
 }
 
 /// Put a status on the live enemy.
@@ -1884,10 +1979,12 @@ fn set_enemy_status(model: Model, status: combat.Status) -> Model {
 
 /// Enrage and meditation run out on their clocks (the JS setTimeout sets
 /// 'none' unconditionally); shields and the one-hit buffs spend themselves.
-fn status_expiry(status: combat.Status) -> Effect(Msg) {
+fn status_expiry(model: Model, status: combat.Status) -> Effect(Msg) {
   case status {
-    combat.Enraged -> delayed(combat.enrage_duration_ms, StatusExpire)
-    combat.Meditation -> delayed(combat.meditate_duration_ms, StatusExpire)
+    combat.Enraged ->
+      delayed(combat.enrage_duration_ms, StatusExpire(model.fight_run))
+    combat.Meditation ->
+      delayed(combat.meditate_duration_ms, StatusExpire(model.fight_run))
     _ -> effect.none()
   }
 }
@@ -1910,7 +2007,7 @@ fn dot_tick(model: Model) -> #(Model, Effect(Msg)) {
                 ..model,
                 combat: Some(combat.CombatState(..cs, player_hp: hp)),
               ),
-              delayed(combat.dot_tick_ms, DotTick),
+              delayed(combat.dot_tick_ms, DotTick(model.fight_run)),
             )
           }
         }
@@ -2642,12 +2739,13 @@ fn load_scene(
           )
         None -> cs
       }
-      let model = Model(..model, combat: Some(cs))
+      let model =
+        Model(..model, combat: Some(cs), fight_run: model.fight_run + 1)
       #(
         model,
         effect.batch([
-          enemy_timer(model.combat),
-          specials_timers(cs.specials),
+          enemy_timer(model),
+          specials_timers(model, cs.specials),
           blink_fx,
         ]),
       )
