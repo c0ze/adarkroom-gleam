@@ -12,12 +12,15 @@ let master = null;
 let currentBackground = null;
 let currentEvent = null;
 let currentSound = null;
+// The volume the sound setting asks for, held until the context exists (it
+// is only made on the first sound, which may come after the setting).
+let masterVolume = 1.0;
 
 function ensureContext() {
   if (context === null) {
     context = new (window.AudioContext || window.webkitAudioContext)();
     master = context.createGain();
-    master.gain.setValueAtTime(1.0, context.currentTime);
+    master.gain.setValueAtTime(masterVolume, context.currentTime);
     master.connect(context.destination);
   }
   // Browsers suspend audio until a user gesture; try resuming on every use.
@@ -169,6 +172,7 @@ export function setBackgroundMusicVolume(volume, seconds) {
 }
 
 export function setMasterVolume(volume, seconds) {
+  masterVolume = volume;
   if (master === null) return;
   const value = master.gain.value;
   master.gain.cancelScheduledValues(context.currentTime);

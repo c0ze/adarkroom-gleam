@@ -16,3 +16,7 @@ pub fn reload() -> Nil
 /// Set the page title (the event blink).
 @external(javascript, "./browser_ffi.mjs", "setTitle")
 pub fn set_title(title: String) -> Nil
+
+/// Put the dark stylesheet on or off (`turnLightsOff`'s `darkenLights`).
+@external(javascript, "./browser_ffi.mjs", "setLightsOff")
+pub fn set_lights_off(off: Bool) -> Nil

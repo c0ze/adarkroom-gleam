@@ -2,6 +2,7 @@ import adarkroom/combat
 import adarkroom/craft
 import adarkroom/events
 import adarkroom/executioner
+import adarkroom/menu
 import adarkroom/model.{
   CollectLoot, MaybeFight, Navigate, ResolveEnemyTurn, ResolveEvent,
   ResolveStrike, ScheduleEvent, Tick, TriggerEvent,
@@ -10,6 +11,7 @@ import adarkroom/notifications
 import adarkroom/outside
 import adarkroom/rng
 import adarkroom/room
+import adarkroom/save
 import adarkroom/ship
 import adarkroom/space
 import adarkroom/state
@@ -20,6 +22,7 @@ import gleam/option
 import gleam/set
 import gleam/string
 import gleeunit/should
+import lustre/effect
 
 /// Apply an update and discard the effect.
 fn run(m: model.Model, msg: model.Msg) -> model.Model {
@@ -436,8 +439,22 @@ pub fn reaching_the_village_ends_the_expedition_test() {
   let embarked = run(m, model.Embarked(seed: 1, cache: False))
   // Step out and back onto the village.
   let home = run(run(embarked, model.MoveEast), model.MoveWest)
-  home.location |> should.equal(model.Room)
+  home.location |> should.equal(model.Path)
   option.is_none(home.expedition) |> should.equal(True)
+}
+
+pub fn the_header_cannot_strand_an_expedition_test() {
+  let base = model.init()
+  let m =
+    model.Model(
+      ..base,
+      location: model.Path,
+      state: state.set_outfit(state.new(), "cured meat", 5),
+    )
+  let embarked = run(m, model.Embarked(seed: 1, cache: False))
+  let clicked = run(embarked, Navigate(to: model.Room))
+  clicked.location |> should.equal(model.World)
+  clicked.expedition |> should.equal(embarked.expedition)
 }
 
 pub fn dying_returns_to_the_room_and_drops_the_supplies_test() {
@@ -991,7 +1008,7 @@ pub fn a_safe_return_grants_a_cleared_mine_building_test() {
     )
   // Step west onto the village — home safe.
   let home = run(m, model.MoveWest)
-  home.location |> should.equal(model.Room)
+  home.location |> should.equal(model.Path)
   craft.building_count(home.state, "coal mine") |> should.equal(1)
 }
 
@@ -1068,7 +1085,7 @@ pub fn a_parched_step_onto_the_village_is_a_safe_return_not_a_death_test() {
       expedition: option.Some(exp),
     )
   let home = run(m, model.MoveWest)
-  home.location |> should.equal(model.Room)
+  home.location |> should.equal(model.Path)
   home.expedition |> should.equal(option.None)
   craft.building_count(home.state, "iron mine") |> should.equal(1)
 }
@@ -1458,7 +1475,7 @@ fn special_fight(
 pub fn a_fixed_special_takes_hold_test() {
   let m =
     special_fight([combat.SetStatusEvery(5.0, combat.Shield)], combat.NoStatus)
-  let after = run(m, model.SpecialFire(0))
+  let after = run(m, model.SpecialFire(m.fight_run, 0))
   let assert option.Some(cs) = after.combat
   cs.enemy_status |> should.equal(combat.Shield)
 }
@@ -1469,7 +1486,7 @@ pub fn a_won_fight_silences_the_specials_test() {
   let assert option.Some(cs) = m.combat
   let m =
     model.Model(..m, combat: option.Some(combat.CombatState(..cs, won: True)))
-  let after = run(m, model.SpecialFire(0))
+  let after = run(m, model.SpecialFire(m.fight_run, 0))
   let assert option.Some(after_cs) = after.combat
   after_cs.enemy_status |> should.equal(combat.NoStatus)
 }
@@ -1499,7 +1516,7 @@ pub fn a_status_expires_on_its_clock_test() {
         combat.CombatState(..cs, enemy_status: combat.Enraged),
       ),
     )
-  let after = run(raging, model.StatusExpire)
+  let after = run(raging, model.StatusExpire(raging.fight_run))
   let assert option.Some(calm) = after.combat
   calm.enemy_status |> should.equal(combat.NoStatus)
 }
@@ -1512,7 +1529,7 @@ pub fn poison_drips_each_tick_test() {
       ..m,
       combat: option.Some(combat.CombatState(..cs, player_dot: 3)),
     )
-  let after = run(poisoned, model.DotTick)
+  let after = run(poisoned, model.DotTick(poisoned.fight_run))
   let assert option.Some(dripping) = after.combat
   dripping.player_hp |> should.equal(7)
 }
@@ -1525,7 +1542,7 @@ pub fn poison_can_finish_the_fight_test() {
       ..m,
       combat: option.Some(combat.CombatState(..cs, player_dot: 3, player_hp: 2)),
     )
-  let after = run(nearly, model.DotTick)
+  let after = run(nearly, model.DotTick(nearly.fight_run))
   // The world fades: gear lost, back to the room.
   after.combat |> should.equal(option.None)
   after.expedition |> should.equal(option.None)
@@ -1564,13 +1581,15 @@ fn exploding_fight(player_hp: Int) -> model.Model {
 }
 
 pub fn surviving_the_blast_wins_the_fight_test() {
-  let after = run(exploding_fight(50), model.ExplosionResolve)
+  let after = run(exploding_fight(50), model.ExplosionResolve(0))
   let assert option.Some(cs) = after.combat
   cs.player_hp |> should.equal(20)
+  // The blast is spent: the loot screen may open.
+  cs.exploding |> should.equal(option.None)
 }
 
 pub fn the_blast_can_be_the_end_test() {
-  let after = run(exploding_fight(30), model.ExplosionResolve)
+  let after = run(exploding_fight(30), model.ExplosionResolve(0))
   after.combat |> should.equal(option.None)
   after.expedition |> should.equal(option.None)
   after.location |> should.equal(model.Room)
@@ -1821,8 +1840,10 @@ pub fn surviving_the_fade_wins_test() {
 pub fn a_crashed_runs_stragglers_cannot_touch_the_next_flight_test() {
   // Lift off twice (run 2); run 1's leftover 60s fade and climb must do
   // nothing to the new flight.
+  // The hull gives out: the flight is gone and the ship takes the player back.
+  let crashed = model.Model(..lifting_off(), space: option.None)
   let second =
-    lifting_off()
+    crashed
     |> run(model.Navigate(to: model.Ship))
     |> run(model.Navigate(to: model.Space))
   second.flight_run |> should.equal(2)
@@ -2050,7 +2071,7 @@ pub fn coming_home_commits_the_trip_test() {
       expedition: option.Some(exp),
     )
   let home = run(m, model.MoveWest)
-  home.location |> should.equal(model.Room)
+  home.location |> should.equal(model.Path)
   let assert option.Some(ws) = home.state.world
   let assert Ok(resumed) = world.resume(ws, state.new())
   set.contains(resumed.visited, mark) |> should.be_true
@@ -2223,4 +2244,368 @@ pub fn the_arrows_walk_the_world_test() {
   let home = run(model.Model(..m, location: model.Room), model.KeyDown("d"))
   let assert option.Some(still) = home.expedition
   still.pos |> should.equal(exp.pos)
+}
+
+pub fn supplies_spent_after_packing_cannot_be_duplicated_test() {
+  let base = model.init()
+  // Five alloy packed, then all five spent on the hull.
+  let m =
+    model.Model(
+      ..base,
+      location: model.Path,
+      state: base.state
+        |> state.set_store("cured meat", 5)
+        |> state.set_outfit("cured meat", 5)
+        |> state.set_outfit("alien alloy", 5),
+    )
+  let after = run(m, model.Embarked(seed: 1, cache: False))
+  state.get_outfit(after.state, "alien alloy") |> should.equal(0)
+  state.get_store(after.state, "alien alloy") |> should.equal(0)
+}
+
+pub fn a_won_game_is_retired_and_stops_changing_test() {
+  let base = lifting_off()
+  let won =
+    model.Model(
+      ..base,
+      state: base.state
+        |> state.set_store("fleet beacon", 1)
+        |> state.set_game("population", 5),
+    )
+    |> run(model.GameWon([0.5]))
+  won.retired |> should.be_true
+  // The village's clocks keep ticking in the page, but change nothing.
+  let later = won |> run(model.CollectIncome) |> run(model.AdjustTemp)
+  later.state |> should.equal(won.state)
+  // The ending itself still plays out.
+  run(later, model.OutroStep).ending |> should.not_equal(later.ending)
+}
+
+pub fn no_income_is_collected_during_the_ascent_test() {
+  let flying = lifting_off()
+  let m =
+    model.Model(
+      ..flying,
+      state: flying.state
+        |> state.set_game("population", 5),
+    )
+  run(m, model.CollectIncome).state |> should.equal(m.state)
+  // The same village at home does earn.
+  run(model.Model(..m, location: model.Room), model.CollectIncome).state
+  |> should.not_equal(m.state)
+}
+
+// --- fight clocks belong to their fight ----------------------------------------
+
+pub fn a_finished_fights_clocks_cannot_reach_the_next_test() {
+  // Fight one is won; fight two begins before fight one's attack timer fires.
+  let first = run(world_model(10), MaybeFight(0.0, 0.0))
+  let stale = first.fight_run
+  let won = run(first, ResolveStrike("steel sword", 0.5))
+  let looting = run(won, CollectLoot([0.9, 0.9, 0.9]))
+  let second =
+    model.Model(..run(looting, model.LootDone), fight_move: 4)
+    |> run(MaybeFight(0.0, 0.0))
+  second.fight_run |> should.not_equal(stale)
+  // Fight one's leftovers fire into fight two — and do nothing.
+  let #(_, fx) = model.update(second, model.EnemyTurn(stale))
+  fx |> should.equal(effect.none())
+  run(second, model.DotTick(stale)) |> should.equal(second)
+  run(second, model.StatusExpire(stale)) |> should.equal(second)
+}
+
+pub fn a_rifle_shot_spends_a_bullet_test() {
+  let base = world_model(10)
+  let m =
+    model.Model(
+      ..base,
+      state: base.state
+        |> state.set_outfit("rifle", 1)
+        |> state.set_outfit("bullets", 1),
+    )
+    |> run(MaybeFight(0.0, 0.0))
+  let shot = run(m, model.StrikeEnemy("rifle"))
+  state.get_outfit(shot.state, "bullets") |> should.equal(0)
+  // No bullets, no shot (and no cooldown started).
+  let dry = model.Model(..shot, cooldowns: dict.new())
+  run(dry, model.StrikeEnemy("rifle")) |> should.equal(dry)
+}
+
+pub fn thrown_punches_are_counted_test() {
+  let fighting = run(world_model(10), MaybeFight(0.0, 0.0))
+  let punched = run(fighting, model.StrikeEnemy("fists"))
+  state.get_character(punched.state, "punches") |> should.equal(1)
+}
+
+pub fn a_stun_lasts_until_its_clock_runs_out_test() {
+  let base = world_model(10)
+  let m =
+    model.Model(..base, state: state.set_outfit(base.state, "bolas", 2))
+    |> run(MaybeFight(0.0, 0.0))
+  let stunned = run(m, ResolveStrike("bolas", 0.5))
+  let held = run(stunned, ResolveEnemyTurn(0.0))
+  let assert option.Some(cs) = held.combat
+  cs.enemy_stunned |> should.be_true
+  cs.player_hp |> should.equal(10)
+  let freed = run(held, model.StunExpire(held.fight_run))
+  let assert option.Some(cs) = freed.combat
+  cs.enemy_stunned |> should.be_false
+}
+
+pub fn the_stims_boost_wears_off_test() {
+  let base = world_model(30)
+  let m =
+    model.Model(..base, state: state.set_outfit(base.state, "stim", 1))
+    |> run(MaybeFight(0.0, 0.0))
+  let boosted = run(m, model.UseStim)
+  let assert option.Some(cs) = boosted.combat
+  cs.player_status |> should.equal(combat.Boost)
+  let worn = run(boosted, model.BoostExpire(boosted.fight_run))
+  let assert option.Some(cs) = worn.combat
+  cs.player_status |> should.equal(combat.NoStatus)
+}
+
+pub fn an_unarmed_masters_fists_recover_twice_as_fast_test() {
+  let m = world_model(10)
+  model.strike_cooldown_ms(m, "fists") |> should.equal(2000)
+  let master =
+    model.Model(..m, state: state.add_perk(m.state, "unarmed master"))
+  model.strike_cooldown_ms(master, "fists") |> should.equal(1000)
+}
+
+// --- death and the trip's discoveries -----------------------------------------
+
+pub fn death_rests_the_embark_button_test() {
+  let fighting = run(world_model(1), MaybeFight(0.0, 0.0))
+  let dead = run(fighting, ResolveEnemyTurn(0.0))
+  dead.location |> should.equal(model.Room)
+  model.on_cooldown(dead, "embark") |> should.be_true
+  let back =
+    model.Model(
+      ..dead,
+      location: model.Path,
+      state: state.set_outfit(dead.state, "cured meat", 1),
+    )
+  let #(_, fx) = model.update(back, model.Embark)
+  fx |> should.equal(effect.none())
+}
+
+pub fn a_trips_discoveries_die_with_it_test() {
+  let base = model.init()
+  let m =
+    model.Model(
+      ..base,
+      location: model.Path,
+      state: state.set_outfit(base.state, "cured meat", 1)
+        |> state.set_store("cured meat", 1),
+    )
+  let out = run(m, model.Embarked(seed: 1, cache: False))
+  // The crashed ship is found out there…
+  let found =
+    model.Model(..out, state: state.set_game(out.state, "world.ship", 1))
+  // …and then the wanderer dies before bringing word home.
+  let fighting =
+    model.Model(
+      ..found,
+      expedition: option.Some(forest_expedition(3, 1)),
+      fight_move: 4,
+    )
+    |> run(MaybeFight(0.0, 0.0))
+  let dead = run(fighting, ResolveEnemyTurn(0.0))
+  state.get_game(dead.state, "world.ship") |> should.equal(0)
+}
+
+// --- the room's small courtesies -------------------------------------------------
+
+pub fn lighting_the_fire_cools_the_stoke_button_too_test() {
+  let base = model.init()
+  let m =
+    model.Model(
+      ..base,
+      now: 1000,
+      state: state.set_store(base.state, "wood", 10),
+    )
+  let lit = run(m, model.LightFire)
+  model.on_cooldown(lit, "stokeButton") |> should.be_true
+}
+
+pub fn the_last_trap_says_no_more_will_help_test() {
+  let base = model.init()
+  let m =
+    model.Model(
+      ..base,
+      state: base.state
+        |> state.set_game("building.trap", 9)
+        |> state.set_game("builder", 4)
+        |> state.set_game("temperature", 4)
+        |> state.set_store("wood", 500),
+    )
+  let built = run(m, model.Build("trap"))
+  notifications.messages(built.notifications)
+  |> list.contains("more traps won't help now.")
+  |> should.be_true
+}
+
+pub fn temperature_news_is_not_queued_away_from_the_room_test() {
+  let base = model.init()
+  let m =
+    model.Model(
+      ..base,
+      location: model.Outside,
+      state: base.state
+        |> state.set_game("fire", 4)
+        |> state.set_game("temperature", 0),
+    )
+  let adjusted = run(m, model.AdjustTemp)
+  run(adjusted, Navigate(to: model.Room)).notifications
+  |> notifications.messages
+  |> list.any(fn(msg) { string.starts_with(msg, "the room is") })
+  |> should.be_false
+}
+
+pub fn booting_wakes_a_sleeping_builder_and_reads_the_clock_test() {
+  let base = model.init()
+  let m =
+    model.Model(..base, state: state.set_game(base.state, "builder", 3))
+    |> model.boot(1_000_000)
+  m.now |> should.equal(1_000_000)
+  state.get_game(m.state, "builder") |> should.equal(4)
+}
+
+pub fn penrose_can_dream_out_on_the_path_test() {
+  let m = model.Model(..model.init(), location: model.Path, now: 1000)
+  let after = run(m, TriggerEvent(0.0, 0.5))
+  let assert option.Some(active) = after.active_event
+  active.event.title |> should.equal("Penrose")
+}
+
+pub fn a_world_fight_holds_off_the_next_event_test() {
+  let fighting = run(world_model(10), MaybeFight(0.0, 0.0))
+  let m = model.Model(..fighting, now: 1000)
+  let after = run(m, TriggerEvent(0.0, 0.0))
+  after.active_event |> should.equal(option.None)
+}
+
+// --- the corner menu -----------------------------------------------------------
+
+pub fn the_game_starts_silent_until_asked_test() {
+  let m = model.init()
+  menu.sound_on(m.state) |> should.be_false
+  let asked = run(m, model.SoundPromptDue)
+  asked.dialog |> should.equal(option.Some(menu.SoundPrompt))
+  // Asked once: a later boot doesn't ask again.
+  menu.sound_prompt_due(asked.state) |> should.be_false
+  let answered = run(asked, model.ChooseSound(True))
+  menu.sound_on(answered.state) |> should.be_true
+  answered.dialog |> should.equal(option.None)
+  run(answered, model.ToggleSound).state |> menu.sound_on |> should.be_false
+}
+
+pub fn the_sound_prompt_waits_for_an_event_to_close_test() {
+  let busy = run(room_with_fur(100, 1000), TriggerEvent(0.0, 0.0))
+  option.is_some(busy.active_event) |> should.be_true
+  let later = run(busy, model.SoundPromptDue)
+  later.dialog |> should.equal(option.None)
+  menu.sound_prompt_due(later.state) |> should.be_true
+}
+
+pub fn the_lights_go_out_and_come_back_test() {
+  let dark = run(model.init(), model.ToggleLights)
+  menu.lights_off(dark.state) |> should.be_true
+  run(dark, model.ToggleLights).state |> menu.lights_off |> should.be_false
+}
+
+pub fn exporting_shows_the_current_save_as_a_code_test() {
+  let base = model.init()
+  let m = model.Model(..base, state: state.set_store(base.state, "wood", 42))
+  let shown = run(m, model.OpenDialog(menu.SaveExport("")))
+  let assert option.Some(menu.SaveExport(code)) = shown.dialog
+  save.import_save(code) |> should.equal(Ok(m.state))
+}
+
+pub fn an_unreadable_import_is_refused_not_obeyed_test() {
+  let m =
+    run(model.init(), model.OpenDialog(menu.SaveImport("", False)))
+    |> run(model.ImportDraft("not a save"))
+  let after = run(m, model.ImportSave)
+  after.retired |> should.be_false
+  after.dialog |> should.equal(option.Some(menu.SaveImport("not a save", True)))
+}
+
+pub fn a_readable_import_retires_this_game_test() {
+  let code = save.export_save(state.set_store(state.new(), "wood", 9))
+  let after =
+    run(model.init(), model.OpenDialog(menu.SaveImport("", False)))
+    |> run(model.ImportDraft(code))
+    |> run(model.ImportSave)
+  after.retired |> should.be_true
+}
+
+pub fn no_save_dialog_mid_fight_test() {
+  let fighting = run(world_model(10), MaybeFight(0.0, 0.0))
+  run(fighting, model.OpenDialog(menu.SaveStart)).dialog
+  |> should.equal(option.None)
+}
+
+pub fn a_full_pack_can_take_nothing_test() {
+  let base = world_model(10)
+  let m =
+    model.Model(
+      ..base,
+      state: state.set_outfit(base.state, "cured meat", 10),
+      loot: [#("medicine", 1)],
+    )
+  model.loot_can_take_something(m) |> should.be_false
+  let roomy =
+    model.Model(..m, state: state.set_outfit(m.state, "cured meat", 9))
+  model.loot_can_take_something(roomy) |> should.be_true
+}
+
+pub fn no_menu_dialog_out_walking_test() {
+  let base = model.init()
+  let m =
+    model.Model(
+      ..base,
+      location: model.Path,
+      state: state.set_outfit(base.state, "cured meat", 5)
+        |> state.set_store("cured meat", 5),
+    )
+  let out = run(m, model.Embarked(seed: 1, cache: False))
+  run(out, model.OpenDialog(menu.SaveStart)).dialog |> should.equal(option.None)
+}
+
+pub fn nothing_sets_out_from_behind_a_dialog_test() {
+  let base = model.init()
+  let m =
+    model.Model(
+      ..base,
+      location: model.Path,
+      state: state.set_outfit(base.state, "cured meat", 5),
+      dialog: option.Some(menu.SaveStart),
+    )
+  let #(_, fx) = model.update(m, model.Embark)
+  fx |> should.equal(effect.none())
+}
+
+pub fn a_pasted_code_may_carry_line_breaks_test() {
+  let code = save.export_save(state.set_store(state.new(), "wood", 9))
+  let after =
+    run(model.init(), model.OpenDialog(menu.SaveImport("", False)))
+    |> run(model.ImportDraft(" " <> code <> "\n"))
+    |> run(model.ImportSave)
+  after.retired |> should.be_true
+}
+
+pub fn heals_keep_their_cooldown_while_the_fuse_burns_test() {
+  let m = exploding_fight(50)
+  let m = model.Model(..m, state: state.set_outfit(m.state, "cured meat", 3))
+  let once = run(m, model.Heal("cured meat"))
+  let twice = run(once, model.Heal("cured meat"))
+  state.get_outfit(twice.state, "cured meat") |> should.equal(2)
+}
+
+pub fn the_sound_prompt_waits_out_a_trip_test() {
+  let later = run(world_model(10), model.SoundPromptDue)
+  later.dialog |> should.equal(option.None)
+  menu.sound_prompt_due(later.state) |> should.be_true
 }

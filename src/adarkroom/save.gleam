@@ -13,6 +13,11 @@ import gleam/option.{type Option, None, Some}
 
 const save_key = "gameState"
 
+/// Where a save that won't load is set aside before a fresh game can
+/// overwrite it — the original JS game's save under the same key, say, or a
+/// damaged one. Nothing reads it back; it's there to be rescued by hand.
+pub const unreadable_key = "gameState.unreadable"
+
 // --- encoding ---------------------------------------------------------------
 
 fn int_dict(d: Dict(String, Int)) -> Json {
@@ -68,19 +73,26 @@ fn ints() -> Decoder(Dict(String, Int)) {
   decode.dict(decode.string, decode.int)
 }
 
+/// Every category is optional: a save written before a category existed (or
+/// after one is retired) still loads, with that category empty.
 fn state_decoder() -> Decoder(State) {
-  use stores <- decode.field("stores", ints())
-  use features <- decode.field(
+  use stores <- decode.optional_field("stores", dict.new(), ints())
+  use features <- decode.optional_field(
     "features",
+    dict.new(),
     decode.dict(decode.string, decode.bool),
   )
-  use character <- decode.field("character", ints())
-  use game <- decode.field("game", ints())
-  use income <- decode.field("income", ints())
-  use timers <- decode.field("timers", decode.dict(decode.string, decode.float))
-  use play_stats <- decode.field("play_stats", ints())
-  use previous <- decode.field("previous", ints())
-  use outfit <- decode.field("outfit", ints())
+  use character <- decode.optional_field("character", dict.new(), ints())
+  use game <- decode.optional_field("game", dict.new(), ints())
+  use income <- decode.optional_field("income", dict.new(), ints())
+  use timers <- decode.optional_field(
+    "timers",
+    dict.new(),
+    decode.dict(decode.string, decode.float),
+  )
+  use play_stats <- decode.optional_field("play_stats", dict.new(), ints())
+  use previous <- decode.optional_field("previous", dict.new(), ints())
+  use outfit <- decode.optional_field("outfit", dict.new(), ints())
   // Saves from before the world persisted simply haven't made one yet.
   use world <- decode.optional_field(
     "world",
@@ -122,13 +134,19 @@ pub fn save(state: State) -> Nil {
   storage.set(save_key, encode(state))
 }
 
-/// Load the persisted state, if any (and if it parses).
+/// Load the persisted state, if any (and if it parses). A save that doesn't
+/// parse is moved aside to `unreadable_key` rather than silently lost to the
+/// fresh game's first write.
 pub fn load() -> Option(State) {
   case storage.get(save_key) {
     Some(json_string) ->
       case decode(json_string) {
         Ok(state) -> Some(state)
-        Error(_) -> None
+        Error(_) -> {
+          storage.set(unreadable_key, json_string)
+          storage.remove(save_key)
+          None
+        }
       }
     None -> None
   }

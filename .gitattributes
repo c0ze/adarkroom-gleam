@@ -8,5 +8,5 @@
 *.xlsx binary
 
 # Hide vendor and translation files from language statistics
-lang/* linguist-documentation
-lib/* linguist-vendored
+adarkroom-js/** linguist-vendored
+public/lang/** linguist-generated

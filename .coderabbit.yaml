@@ -1,7 +1,5 @@
 # CodeRabbit configuration — https://docs.coderabbit.ai/guides/configure-coderabbit
-# The port integrates on the `gleam-port` branch (the repo default branch,
-# `master`, still holds the reference JS). CodeRabbit skips non-default base
-# branches by default, so enable auto-review for `gleam-port` too.
+# The port lives on `master`; the reference JS sits in adarkroom-js/.
 language: en-US
 reviews:
   profile: chill
@@ -9,4 +7,3 @@ reviews:
     enabled: true
     base_branches:
       - master
-      - gleam-port

@@ -42,8 +42,17 @@ fn normalize(text: String) -> String {
   }
 }
 
+/// How many messages the log keeps. The column fades out well before this
+/// many; the original prunes the faded ones (`clearHidden`, "to fix some
+/// memory usage issues") and so do we, or a long session re-renders
+/// thousands of invisible rows twice a second.
+const log_cap = 40
+
 fn show(notifications: Notifications, text: String) -> Notifications {
-  Notifications(..notifications, messages: [text, ..notifications.messages])
+  Notifications(
+    ..notifications,
+    messages: list.take([text, ..notifications.messages], log_cap),
+  )
 }
 
 /// Show a message immediately, regardless of location.

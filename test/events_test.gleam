@@ -341,7 +341,8 @@ pub fn learning_scouting_grants_the_perk_then_hides_the_button_test() {
     events.click_button(learn, s0, 0.5, events.HomeStores)
   state.has_perk(s, "scout") |> should.equal(True)
   state.get_store(s, "fur") |> should.equal(0)
-  step |> should.equal(events.EndEvent)
+  // The scene stays up (no `nextScene`): a map can still be bought.
+  step |> should.equal(events.StayOnScene)
   // Already learned — no longer offered.
   events.button_available(learn, s) |> should.equal(False)
 }

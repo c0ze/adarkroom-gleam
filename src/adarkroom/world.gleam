@@ -399,10 +399,11 @@ fn eat(s: State, v: Vitals) -> Supplies {
       let v = Vitals(..v, food_move: 0)
       case state.get_outfit(s, "cured meat") - 1 {
         0 ->
+          // The last meat only notes its passing (`num === 0`): it neither
+          // heals nor breaks a starvation streak.
           Supplies(
             state.set_outfit(s, "cured meat", 0),
-            // Eating (even the last) breaks any starvation streak.
-            Vitals(..v, starvation: False),
+            v,
             ["the meat has run out"],
             True,
           )
@@ -791,6 +792,23 @@ pub fn should_trigger_setpiece(exp: Expedition, tile: Tile) -> Bool {
   }
 }
 
+/// Whether the ground under the player is open country — `doSpace`'s last
+/// branch, the only one that eats, drinks and risks a fight. The village,
+/// the battleship and any landmark not yet dealt with this trip are not
+/// (an outpost, used or not, never is); a visited landmark (`markVisited`'s
+/// `!`) is ordinary ground again.
+pub fn open_ground(exp: Expedition) -> Bool {
+  case tile_at(exp.map, exp.pos.0, exp.pos.1) {
+    Ok(Village) | Ok(Executioner) -> False
+    Ok(tile) ->
+      case setpiece_scene(tile) {
+        Ok(_) -> set.contains(exp.visited, exp.pos)
+        Error(_) -> True
+      }
+    Error(_) -> True
+  }
+}
+
 /// Mark the landmark under the player visited, so it won't fire again this trip
 /// (`World.markVisited`).
 pub fn mark_visited(exp: Expedition) -> Expedition {
@@ -1020,12 +1038,14 @@ pub fn move(s: State, exp: Expedition, dir: Dir) -> Step {
         Ok(old_tile), Ok(new_tile) -> narrate_move(old_tile, new_tile)
         _, _ -> []
       }
-      // Stepping home to the village costs no supplies and never kills — the JS
-      // `doSpace` runs `useSupplies` only off the village, so a safe return is
-      // always genuinely safe (and so can't, e.g., wrongly forfeit mine credit).
-      case tile_at(exp.map, pos.0, pos.1) {
-        Ok(Village) -> Step(s, moved, narration, True)
-        _ -> {
+      // Only open ground costs supplies — the JS `doSpace` runs
+      // `useSupplies` in its last branch alone. Stepping home is always safe
+      // (so it can't, e.g., wrongly forfeit mine credit), and a landmark's
+      // doorstep is free: its setpiece opens first, and an outpost's water
+      // can't come too late.
+      case open_ground(moved) {
+        False -> Step(s, moved, narration, True)
+        True -> {
           let supplies = use_supplies(s, exp.vitals)
           Step(
             supplies.state,

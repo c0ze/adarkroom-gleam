@@ -4,10 +4,8 @@ on:
   push:
     tags: ["v*"]
 
-permissions:
-  contents: write
-  pages: write
-  id-token: write
+# Nothing by default; each job asks only for what it uses.
+permissions: {}
 
 concurrency:
   group: pages
@@ -16,6 +14,9 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      # The GitHub release.
+      contents: write
     steps:
       - uses: actions/checkout@v4
       - uses: erlef/setup-beam@v1
@@ -25,7 +26,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
+          cache: npm
       - run: gleam deps download
+      - run: gleam format --check src test
       - run: gleam test
       - run: npm ci
       - run: npm run build
@@ -39,6 +42,9 @@ jobs:
   deploy:
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

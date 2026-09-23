@@ -75,7 +75,7 @@ pub fn a_collision_costs_hull_and_bursts_the_rock_test() {
   let a = space.Asteroid(chara: "#", x: 348.0, spawned_at: 0, duration: 1000)
   let flight =
     space.Flight(..space.begin(thrusters(1)), hull: 2, y: 375.0, asteroids: [a])
-  let after = space.collide(flight, 500)
+  let after = space.collide(flight, 500, 500)
   after.hull |> should.equal(1)
   after.asteroids |> should.equal([])
 }
@@ -84,7 +84,7 @@ pub fn a_miss_keeps_falling_test() {
   let a = space.Asteroid(chara: "#", x: 100.0, spawned_at: 0, duration: 1000)
   let flight =
     space.Flight(..space.begin(thrusters(1)), hull: 2, asteroids: [a])
-  let after = space.collide(flight, 500)
+  let after = space.collide(flight, 500, 500)
   after.hull |> should.equal(2)
   after.asteroids |> list.length |> should.equal(1)
 }
@@ -92,7 +92,7 @@ pub fn a_miss_keeps_falling_test() {
 pub fn landed_rocks_vanish_test() {
   let a = space.Asteroid(chara: "#", x: 100.0, spawned_at: 0, duration: 1000)
   let flight = space.Flight(..space.begin(thrusters(1)), asteroids: [a])
-  space.collide(flight, 1500).asteroids |> should.equal([])
+  space.collide(flight, 1500, 1500).asteroids |> should.equal([])
 }
 
 pub fn the_heavens_harden_with_altitude_test() {
@@ -125,4 +125,25 @@ pub fn the_air_thins_by_name_test() {
   space.atmosphere(44) |> should.equal("Thermosphere")
   space.atmosphere(59) |> should.equal("Exosphere")
   space.atmosphere(60) |> should.equal("Space")
+}
+
+pub fn a_fast_rock_cannot_skip_over_the_ship_test() {
+  // A 525ms fall (the fastest roll) moves ~1.4px a millisecond: across a
+  // 120ms gap between looks it is wholly above the ship at the first and
+  // wholly below at the second — yet it passed straight through.
+  let a = space.Asteroid(chara: "#", x: 345.0, spawned_at: 0, duration: 525)
+  let flight =
+    space.Flight(..space.begin(thrusters(1)), hull: 2, y: 350.0, asteroids: [a])
+  { space.asteroid_y(a, 180) +. space.asteroid_height <. 350.0 }
+  |> should.be_true
+  { space.asteroid_y(a, 300) >. 350.0 } |> should.be_true
+  space.collide(flight, 180, 300).hull |> should.equal(1)
+}
+
+pub fn a_wide_glyph_is_a_wide_target_test() {
+  // '%' spans 27px: a ship 20px right of its left edge is struck.
+  let a = space.Asteroid(chara: "%", x: 330.0, spawned_at: 0, duration: 1000)
+  let flight =
+    space.Flight(..space.begin(thrusters(1)), hull: 2, y: 375.0, asteroids: [a])
+  space.collide(flight, 500, 500).hull |> should.equal(1)
 }

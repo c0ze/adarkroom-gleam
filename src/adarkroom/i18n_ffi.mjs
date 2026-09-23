@@ -23,18 +23,27 @@ export function lookup(msgid) {
   return typeof hit === "string" && hit !== "" ? hit : msgid;
 }
 
+// A language code the catalogs could be filed under (and a safe path piece).
+const validCode = (lang) => typeof lang === "string" && /^[a-zA-Z_]+$/.test(lang);
+
 // Which language the page wants: the `?lang=` query parameter wins and is
 // remembered (the original `Engine.saveLanguage`), else the remembered choice.
+// Only a well-formed code is remembered: a mistyped `?lang=pt-BR` would
+// otherwise stick, and be refused on every later visit.
 function detectLanguage() {
   let lang = null;
   const match = /[?&]lang=([^&;#]+)/.exec(window.location.search);
   if (match) {
-    lang = decodeURIComponent(match[1].replace(/\+/g, "%20"));
+    try {
+      lang = decodeURIComponent(match[1].replace(/\+/g, "%20"));
+    } catch {
+      lang = null;
+    }
   }
   try {
-    if (lang) {
+    if (validCode(lang)) {
       localStorage.lang = lang;
-    } else if (localStorage.lang) {
+    } else if (validCode(localStorage.lang)) {
       lang = localStorage.lang;
     }
   } catch {
@@ -49,7 +58,7 @@ function detectLanguage() {
 // (CJK/Thai font fixes and the like), as the original index.html does.
 export async function initLanguage() {
   const lang = detectLanguage();
-  if (!lang || lang === "en" || !/^[a-zA-Z_]+$/.test(lang)) return;
+  if (!validCode(lang) || lang === "en") return;
   try {
     const response = await fetch(`/lang/${lang}/strings.json`);
     if (!response.ok) return;
@@ -67,9 +76,9 @@ export async function initLanguage() {
 // original `Engine.switchLanguage`. The boot loader persists the choice.
 export function switchLanguage(code) {
   const href = window.document.location.href;
-  if (/[?&]lang=[a-zA-Z_]+/.test(href)) {
+  if (/[?&]lang=/.test(href)) {
     window.document.location.href = href.replace(
-      /([?&]lang=)([a-zA-Z_]+)/gi,
+      /([?&]lang=)([^&#]*)/gi,
       "$1" + code,
     );
   } else {

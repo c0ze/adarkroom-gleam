@@ -14,6 +14,7 @@ import adarkroom/executioner
 import adarkroom/fabricator
 import adarkroom/i18n
 import adarkroom/journal
+import adarkroom/menu
 import adarkroom/notifications.{type Notifications}
 import adarkroom/outside
 import adarkroom/path
@@ -35,6 +36,7 @@ import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/result
 import gleam/set.{type Set}
+import gleam/string
 import lustre/effect.{type Effect}
 
 /// The screens the player can be on.
@@ -111,8 +113,9 @@ pub type Msg {
   StrikeEnemy(weapon: String)
   /// Apply the player's swing (the roll is its hit chance).
   ResolveStrike(weapon: String, roll: Float)
-  /// The enemy takes its turn; rolls then resolves.
-  EnemyTurn
+  /// Timer: the enemy takes its turn; rolls then resolves. Every fight clock
+  /// carries the fight it was armed for (`fight_run`).
+  EnemyTurn(run: Int)
   /// Apply the enemy's blow (the roll is its hit chance).
   ResolveEnemyTurn(roll: Float)
   /// Gather the defeated enemy's loot from the supplied rolls (two per drop).
@@ -128,18 +131,22 @@ pub type Msg {
   /// Run a scene's random `onLoad` (a disaster's toll) with the supplied roll.
   SceneRng(roll: Float)
   /// Timer: a boss special comes due (by index in the fight's specials).
-  SpecialFire(index: Int)
+  SpecialFire(run: Int, index: Int)
   /// Apply a rotation special's pick (the roll chooses among the options).
   ResolveSpecial(index: Int, roll: Float)
   /// Timer: a timed enemy status (enrage, meditation) runs out.
-  StatusExpire
+  StatusExpire(run: Int)
+  /// Timer: a bolas or disruptor stun wears off.
+  StunExpire(run: Int)
+  /// Timer: the stim's boost wears off.
+  BoostExpire(run: Int)
   /// Timer: armed poison drips on the player.
-  DotTick
+  DotTick(run: Int)
   /// Apply scavenged surface maps (one reveal roll per map).
   MapsScavenged(rolls: List(Float))
   /// Timer: the felled enemy detonates — take the blast, then the win or the
   /// grave.
-  ExplosionResolve
+  ExplosionResolve(run: Int)
   /// Plate the starship's hull with an alien alloy.
   ReinforceHull
   /// Tune the starship's engine with an alien alloy.
@@ -194,6 +201,22 @@ pub type Msg {
   OpenStore(url: String)
   /// The menu's language list: reload the page speaking the chosen tongue.
   SwitchLanguage(code: String)
+  /// The menu's sound toggle (`toggleVolume`).
+  ToggleSound
+  /// The menu's lights toggle (`turnLightsOff`).
+  ToggleLights
+  /// Put a menu dialog up (save., restart.).
+  OpenDialog(dialog: menu.Dialog)
+  /// Take the menu dialog down.
+  CloseDialog
+  /// The sound prompt's answer.
+  ChooseSound(on: Bool)
+  /// Timer: three seconds after boot, ask about sound once (`notifyAboutSound`).
+  SoundPromptDue
+  /// The import box's text as typed.
+  ImportDraft(text: String)
+  /// Load the pasted save code; a code that won't read is refused.
+  ImportSave
   /// Timer: flash the page title "*** EVENT ***" (every 3s while blinking).
   BlinkOn
   /// Timer: restore the page title (1.5s after each flash).
@@ -239,6 +262,14 @@ pub type Model {
     flight_last_move: Int,
     /// Which ascent this is — stale timers from earlier runs are ignored.
     flight_run: Int,
+    /// Which fight this is — a finished fight's clocks (its attack timer,
+    /// specials, statuses, poison) must not reach the next one.
+    fight_run: Int,
+    /// The `world.*` discoveries as they stood at embark. The original keeps
+    /// a trip's finds (the ship, the executioner and its wings) on a
+    /// throwaway `World.state` that death discards; here they are written
+    /// straight away, so death rolls them back to this. Runtime-only.
+    trip_flags: Dict(String, Int),
     /// The ending, once the ascent is survived. Runtime-only — the game is
     /// over.
     ending: Option(Ending),
@@ -260,6 +291,11 @@ pub type Model {
     paused: Bool,
     /// The wall clock when the pause began, for shifting deadlines on resume.
     paused_at: Int,
+    /// This game is over — won, or wiped for a restart. Nothing may change
+    /// (or be saved) any more; only the ending's own clock and links run.
+    retired: Bool,
+    /// The menu dialog on screen, if any. Runtime-only.
+    dialog: Option(menu.Dialog),
   )
 }
 
@@ -295,6 +331,8 @@ pub fn init() -> Model {
     space: None,
     flight_last_move: 0,
     flight_run: 0,
+    fight_run: 0,
+    trip_flags: dict.new(),
     ending: None,
     loot: [],
     drop_for: None,
@@ -303,6 +341,8 @@ pub fn init() -> Model {
     keys_armed: False,
     paused: False,
     paused_at: 0,
+    retired: False,
+    dialog: None,
   )
 }
 
@@ -336,9 +376,17 @@ fn start_cooldown(model: Model, id: String, duration: Int) -> Model {
 
 /// State transition, paired with any effects to run.
 pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
-  case model.paused {
-    True -> update_paused(model, msg)
-    False -> step_world(model, msg)
+  case model.retired, msg {
+    // A finished game only plays out its ending (`endGame` clears every
+    // timer; here the stragglers are ignored).
+    True, OutroStep | True, EndingWait | True, RestartGame | True, OpenStore(..)
+    -> step_world(model, msg)
+    True, _ -> #(model, effect.none())
+    False, _ ->
+      case model.paused {
+        True -> update_paused(model, msg)
+        False -> step_world(model, msg)
+      }
   }
 }
 
@@ -362,6 +410,7 @@ fn update_paused(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
     BuilderProgress -> #(model, delayed(1000, msg))
     UnlockForest -> #(model, delayed(1000, msg))
     PopulationIncreased(_) -> #(model, delayed(1000, msg))
+    SoundPromptDue -> #(model, delayed(1000, msg))
     // A double-tap of the pause while already asleep changes nothing.
     Paused(_) -> #(model, effect.none())
     // Everything else — heartbeats included — passes the paused world by.
@@ -400,6 +449,7 @@ pub fn can_pause(model: Model) -> Bool {
   case model.location {
     Room | Outside | Path ->
       model.active_event == None
+      && model.dialog == None
       && model.combat == None
       && model.expedition == None
       && model.space == None
@@ -436,6 +486,14 @@ fn step_world(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
       #(notify_room(ticked, messages), effect.none())
     }
 
+    // Out in the world or up in the sky the header is gone (the original
+    // slides it away with #outerSlider): walking home and landing are the
+    // only ways back, so a stray tab click can't strand the expedition.
+    Navigate(..) if model.expedition != None || model.space != None -> #(
+      model,
+      effect.none(),
+    )
+
     Navigate(to: location) -> {
       let navigated =
         Model(
@@ -453,6 +511,8 @@ fn step_world(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
       let arrived = case location {
         Room -> apply_room(navigated, room.become_helper(navigated.state))
         Outside -> apply_outside(navigated, outside.see_forest(navigated.state))
+        // The pack can't hold what the village has since spent.
+        Path -> Model(..navigated, state: path.settle(navigated.state))
         // First sight of the old wreck.
         Ship -> apply_at(navigated, "ship", ship.see_ship(navigated.state))
         // The hum of real tools.
@@ -487,7 +547,8 @@ fn step_world(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
               sound(audio.lift_off),
               flight_frame_timer(run),
               delayed(1000, ClimbTick(run)),
-              delayed(space.wave_delay_ms(0), WaveTick(run)),
+              // The first rock falls at once (`onArrival`'s createAsteroid).
+              delayed(0, WaveTick(run)),
               delayed(space.ascent_ms, AscentComplete(run)),
             ]),
           )
@@ -506,8 +567,13 @@ fn step_world(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
           // Ten seconds before the next try — a refusal clears it at once
           // (`Button.clearCooldown` on the not-enough-wood path), so only a
           // fire that caught arms it.
+          // The stoke button takes over mid-cooldown (`updateButton`
+          // cools it when the light button was cooling).
           let model = case lit {
-            True -> start_cooldown(model, "lightButton", room.stoke_cooldown_ms)
+            True ->
+              model
+              |> start_cooldown("lightButton", room.stoke_cooldown_ms)
+              |> start_cooldown("stokeButton", room.stoke_cooldown_ms)
             False -> model
           }
           // The room's title brightens with it (`setTitle` on `onFireChange`).
@@ -552,6 +618,16 @@ fn step_world(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
         _ -> []
       }
       let cooled = apply_room(Model(..model, now:), #(tended, heard))
+      // A fire that dies while the stoke button cools hands the cooldown to
+      // the light button (`updateButton`).
+      let cooled = case
+        room.fire(tended) == room.Dead
+        && room.fire(model.state) != room.Dead
+        && on_cooldown(cooled, "stokeButton")
+      {
+        True -> start_cooldown(cooled, "lightButton", room.stoke_cooldown_ms)
+        False -> cooled
+      }
       // Pending delayed returns (the wanderers' carts) count down on the same
       // heartbeat, announcing in the room when they arrive.
       let delivered = apply_room(cooled, events.tick_delays(cooled.state))
@@ -565,10 +641,17 @@ fn step_world(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
         room_music_after(#(checked, event_schedule_effect(checked)))
       #(checked, effect.batch([music, title_if_calm(checked)]))
     }
-    AdjustTemp -> #(
-      apply_room(model, room.adjust_temp(model.state)),
-      effect.none(),
-    )
+    // The room's warmth is noQueue too (`adjustTemp`'s `notify(Room, …,
+    // true)`): heard in the room, dropped elsewhere — a long trip doesn't
+    // come home to a flood of temperature news.
+    AdjustTemp -> {
+      let #(adjusted, messages) = room.adjust_temp(model.state)
+      let heard = case model.location {
+        Room -> messages
+        _ -> []
+      }
+      #(apply_room(model, #(adjusted, heard)), effect.none())
+    }
 
     BuilderProgress -> {
       let arriving = room.builder_level(model.state) == 0
@@ -674,6 +757,10 @@ fn step_world(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
       schedule_population(),
     )
 
+    // The village earns nothing while the ship climbs (`collectIncome`
+    // skips the Space module).
+    CollectIncome if model.location == Space -> #(model, effect.none())
+
     CollectIncome -> {
       let #(new_state, buffer) =
         outside.collect_income(model.state, model.income_buffer)
@@ -702,10 +789,13 @@ fn step_world(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
 
     // Only embark from the path, and only when not already exploring — guards
     // against a double-click or a replayed effect re-deducting supplies.
+    // Nothing sets out from behind an open menu dialog.
+    Embark | CheckLiftoff if model.dialog != None -> #(model, effect.none())
+
     Embark ->
-      case model.location, model.expedition {
-        Path, None -> #(model, roll_seed())
-        _, _ -> #(model, effect.none())
+      case model.location, model.expedition, on_cooldown(model, "embark") {
+        Path, None, False -> #(model, roll_seed())
+        _, _, _ -> #(model, effect.none())
       }
 
     Embarked(seed: seed, cache: cache) ->
@@ -714,8 +804,9 @@ fn step_world(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
           // Take the packed supplies out of the village and set out. Reaching
           // the world unlocks the events that only the well-travelled can draw
           // (the Scout, the Master).
+          let packed = path.settle(model.state)
           let stocked =
-            list.fold(state.outfit_list(model.state), model.state, fn(s, item) {
+            list.fold(state.outfit_list(packed), packed, fn(s, item) {
               state.add_store(s, item.0, -item.1)
             })
             |> state.set_feature("location.world", True)
@@ -740,11 +831,22 @@ fn step_world(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
                 location: World,
                 prev_location: model.location,
                 expedition: Some(exp),
+                trip_flags: world_flags(stocked),
                 fight_move: 0,
                 combat: None,
               ),
             )
-          #(embarked, effect.batch([sound(audio.embark), keys]))
+          // The world's own theme and title (`World.onArrival`).
+          let #(embarked, music) = tune_music(embarked)
+          #(
+            embarked,
+            effect.batch([
+              sound(audio.embark),
+              keys,
+              music,
+              restore_title(embarked),
+            ]),
+          )
         }
         _, _ -> #(model, effect.none())
       }
@@ -762,11 +864,17 @@ fn step_world(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
     TriggerEvent(pick: pick, delay: delay) -> {
       let available =
         events.available_events(event_pool(model.location), model.state)
-      case model.active_event, available {
+      // A world fight sits on the JS event stack too (`triggerFight` starts
+      // it as an event), so it counts as one already on screen.
+      let busy =
+        model.active_event != None
+        || model.combat != None
+        || model.dialog != None
+      case busy, available {
         // An event is already on screen, or none qualify: just reschedule.
-        Some(_), _ -> #(reschedule(model, delay, 1.0), effect.none())
-        None, [] -> #(reschedule(model, delay, 0.5), effect.none())
-        None, avail -> {
+        True, _ -> #(reschedule(model, delay, 1.0), effect.none())
+        False, [] -> #(reschedule(model, delay, 0.5), effect.none())
+        False, avail -> {
           let model = reschedule(model, delay, 1.0)
           case events.pick(avail, pick) {
             Error(_) -> #(model, effect.none())
@@ -789,21 +897,33 @@ fn step_world(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
         True, Some(_), Some(exp) -> encounter_music(world.distance(exp.pos))
         _, _, _ -> effect.none()
       }
-      #(model, effect.batch([enemy_timer(model.combat), music]))
+      #(model, effect.batch([enemy_timer(model), music]))
     }
 
     StrikeEnemy(weapon: weapon) ->
-      case on_cooldown(model, "attack_" <> weapon) {
+      case on_cooldown(model, "attack_" <> weapon), combat.get_weapon(weapon) {
         // Still recovering from the last swing — ignore the click.
-        True -> #(model, effect.none())
-        False -> #(
-          start_cooldown(
-            model,
-            "attack_" <> weapon,
-            strike_cooldown_ms(model, weapon),
-          ),
-          roll_strike(weapon),
-        )
+        True, _ | _, Error(_) -> #(model, effect.none())
+        False, Ok(w) ->
+          // The swing spends its ammo up front; an empty pouch refuses it.
+          case combat.spend_ammo(w, model.state) {
+            Error(_) -> #(model, effect.none())
+            Ok(paid) -> {
+              // Every punch thrown counts toward the fist perks.
+              let #(paid, learned) = case w.kind {
+                combat.Unarmed -> combat.count_punch(paid)
+                _ -> #(paid, [])
+              }
+              #(
+                start_cooldown(
+                  notify_world(Model(..model, state: paid), learned),
+                  "attack_" <> weapon,
+                  strike_cooldown_ms(model, weapon),
+                ),
+                roll_strike(weapon),
+              )
+            }
+          }
       }
 
     ResolveStrike(weapon: weapon, roll: roll) -> {
@@ -815,7 +935,18 @@ fn step_world(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
       #(struck, effect.batch([fx, snd]))
     }
 
-    EnemyTurn -> #(model, roll_enemy_turn())
+    // A finished fight's stragglers are dropped (`endFight` clears them).
+    EnemyTurn(run:)
+      | SpecialFire(run:, ..)
+      | StatusExpire(run:)
+      | StunExpire(run:)
+      | BoostExpire(run:)
+      | DotTick(run:)
+      | ExplosionResolve(run:)
+      if run != model.fight_run
+    -> #(model, effect.none())
+
+    EnemyTurn(..) -> #(model, roll_enemy_turn())
 
     ResolveEnemyTurn(roll: roll) -> {
       let dot_before = current_dot(model)
@@ -843,14 +974,14 @@ fn step_world(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
       // A venomous blow that just landed arms the poison drip (one chain; a
       // later blow only changes its strength).
       let dot_armed = case dot_before == 0 && current_dot(model) > 0 {
-        True -> delayed(combat.dot_tick_ms, DotTick)
+        True -> delayed(combat.dot_tick_ms, DotTick(model.fight_run))
         False -> effect.none()
       }
       // The enemy keeps attacking on its delay until the fight ends.
       #(
         model,
         effect.batch([
-          enemy_timer(model.combat),
+          enemy_timer(model),
           dot_armed,
           death_fx,
           strike_snd,
@@ -897,7 +1028,11 @@ fn step_world(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
               let dead = die(model)
               #(dead, die_fx(dead))
             }
-            False -> #(model, effect.none())
+            // The boost holds for `BOOST_DURATION`.
+            False -> #(
+              model,
+              delayed(combat.boost_duration_ms, BoostExpire(model.fight_run)),
+            )
           }
         }
         _, _ -> #(model, effect.none())
@@ -920,18 +1055,40 @@ fn step_world(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
 
     SceneRng(roll: roll) -> #(run_scene_rng(model, roll), effect.none())
 
-    SpecialFire(index: index) -> fire_special(model, index)
+    SpecialFire(index: index, ..) -> fire_special(model, index)
 
     ResolveSpecial(index: index, roll: roll) ->
       resolve_special(model, index, roll)
 
-    StatusExpire -> #(set_enemy_status(model, combat.NoStatus), effect.none())
+    StatusExpire(..) -> #(
+      set_enemy_status(model, combat.NoStatus),
+      effect.none(),
+    )
 
-    DotTick -> dot_tick(model)
+    StunExpire(..) -> #(
+      map_combat(model, fn(cs) {
+        combat.CombatState(..cs, enemy_stunned: False)
+      }),
+      effect.none(),
+    )
+
+    // The boost wears off; a shield raised since stays up.
+    BoostExpire(..) -> #(
+      map_combat(model, fn(cs) {
+        case cs.player_status {
+          combat.Boost ->
+            combat.CombatState(..cs, player_status: combat.NoStatus)
+          _ -> cs
+        }
+      }),
+      effect.none(),
+    )
+
+    DotTick(..) -> dot_tick(model)
 
     MapsScavenged(rolls: rolls) -> #(scavenge_maps(model, rolls), effect.none())
 
-    ExplosionResolve -> resolve_explosion(model)
+    ExplosionResolve(..) -> resolve_explosion(model)
 
     ReinforceHull -> {
       let applied = apply_at(model, "ship", ship.reinforce_hull(model.state))
@@ -1109,7 +1266,7 @@ fn step_world(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
     )
 
     RestartGame -> #(
-      model,
+      Model(..model, retired: True),
       effect.from(fn(_) {
         save.wipe()
         browser.reload()
@@ -1124,6 +1281,100 @@ fn step_world(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
       model,
       effect.from(fn(_) { i18n.switch_language(code) }),
     )
+
+    ToggleSound -> {
+      let s = menu.set_sound(model.state, !menu.sound_on(model.state))
+      #(Model(..model, state: s), apply_volume(s))
+    }
+
+    ToggleLights -> {
+      let s = menu.set_lights_off(model.state, !menu.lights_off(model.state))
+      #(Model(..model, state: s), apply_lights(s))
+    }
+
+    // The save and restart dialogs wait for home: a fight, a walk or the
+    // ascent would run on unseen behind them.
+    OpenDialog(..)
+      if model.combat != None
+      || model.expedition != None
+      || model.location == Space
+    -> #(model, effect.none())
+
+    OpenDialog(dialog: menu.SaveExport(..)) -> #(
+      Model(
+        ..model,
+        dialog: Some(menu.SaveExport(save.export_save(model.state))),
+      ),
+      effect.none(),
+    )
+
+    OpenDialog(dialog: dialog) -> #(
+      Model(..model, dialog: Some(dialog)),
+      effect.none(),
+    )
+
+    CloseDialog -> #(Model(..model, dialog: None), effect.none())
+
+    ChooseSound(on: on) -> {
+      let s = menu.set_sound(model.state, on)
+      #(Model(..model, state: s, dialog: None), apply_volume(s))
+    }
+
+    SoundPromptDue ->
+      case menu.sound_prompt_due(model.state) {
+        False -> #(model, effect.none())
+        True ->
+          case
+            model.active_event == None
+            && model.combat == None
+            && model.dialog == None
+            && model.expedition == None
+            && model.location != Space
+          {
+            // Something else holds the stage — or the player is out walking
+            // or flying; ask again shortly.
+            False -> #(model, delayed(3000, SoundPromptDue))
+            True -> #(
+              Model(
+                ..model,
+                state: menu.mark_sound_prompted(model.state),
+                dialog: Some(menu.SoundPrompt),
+              ),
+              effect.none(),
+            )
+          }
+      }
+
+    ImportDraft(text: text) ->
+      case model.dialog {
+        Some(menu.SaveImport(..)) -> #(
+          Model(..model, dialog: Some(menu.SaveImport(text, False))),
+          effect.none(),
+        )
+        _ -> #(model, effect.none())
+      }
+
+    // A code that reads replaces the save and the page reloads into it
+    // (`import64`); one that doesn't is refused, where the original would
+    // have wiped the game.
+    ImportSave ->
+      case model.dialog {
+        Some(menu.SaveImport(draft: draft, ..)) ->
+          case save.import_save(strip_whitespace(draft)) {
+            Ok(imported) -> #(
+              Model(..model, retired: True, dialog: None),
+              effect.from(fn(_) {
+                save.save(imported)
+                browser.reload()
+              }),
+            )
+            Error(_) -> #(
+              Model(..model, dialog: Some(menu.SaveImport(draft, True))),
+              effect.none(),
+            )
+          }
+        _ -> #(model, effect.none())
+      }
 
     BlinkOn ->
       case model.blinking {
@@ -1151,9 +1402,13 @@ fn step_world(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
 fn game_won(model: Model, rolls: List(Float)) -> #(Model, Effect(Msg)) {
   let this_score = scoring.calculate_score(model.state)
   let total = scoring.total_score() + this_score
+  // The game is over: its save goes (`Engine.deleteSave(true)` keeps only
+  // the prestige slot), and nothing may write it back.
+  let model = Model(..model, retired: True)
   let persist =
     effect.from(fn(_) {
       scoring.save(model.state, rolls)
+      save.wipe()
       // The ending has its own theme, at full volume again.
       audio.set_background_volume(1.0, 1.0)
       audio.play_background_music(audio.music_ending)
@@ -1194,10 +1449,14 @@ fn flight_frame(model: Model, now: Int) -> #(Model, Effect(Msg)) {
         0 -> space.frame_ms
         last -> now - last
       }
+      let since = case model.flight_last_move {
+        0 -> now
+        last -> last
+      }
       let flown =
         flight
         |> space.move(model.state, dt)
-        |> space.collide(now)
+        |> space.collide(since, now)
       // Each rock that connected rings its altitude's clang.
       let clangs =
         effect.batch(list.repeat(
@@ -1386,7 +1645,10 @@ fn start_fight(
       exp.vitals.health,
       world.max_health(model.state),
     )
-  notify_world(Model(..model, combat: Some(cs)), [encounter.notification])
+  notify_world(
+    Model(..model, combat: Some(cs), fight_run: model.fight_run + 1),
+    [encounter.notification],
+  )
 }
 
 /// Resolve a player's swing. Winning the fight rolls the enemy's loot.
@@ -1399,10 +1661,16 @@ fn resolve_strike(
     Some(before), Ok(weapon) -> {
       let cs = combat.player_strike(before, weapon, model.state, roll)
       let model = Model(..model, combat: Some(cs))
+      // A landed stun wears off on its own clock (`STUN_DURATION`).
+      let stun = case combat.player_attack(weapon, model.state, roll) {
+        combat.StunHit ->
+          delayed(combat.stun_duration_ms, StunExpire(model.fight_run))
+        _ -> effect.none()
+      }
       // An atHealth trigger may have taken hold mid-blow; timed statuses
       // (enrage, meditation) need their expiry clock started.
       let expiry = case cs.enemy_status != before.enemy_status {
-        True -> status_expiry(cs.enemy_status)
+        True -> status_expiry(model, cs.enemy_status)
         False -> effect.none()
       }
       case cs.won, cs.exploding {
@@ -1411,12 +1679,15 @@ fn resolve_strike(
         True, Some(_) -> #(
           model,
           effect.batch([
-            delayed(combat.explosion_duration_ms, ExplosionResolve),
+            delayed(
+              combat.explosion_duration_ms,
+              ExplosionResolve(model.fight_run),
+            ),
             expiry,
           ]),
         )
         True, None -> #(model, effect.batch([roll_loot(cs.enemy), expiry]))
-        False, _ -> #(model, expiry)
+        False, _ -> #(model, effect.batch([expiry, stun]))
       }
     }
     _, _ -> #(model, effect.none())
@@ -1436,10 +1707,13 @@ fn resolve_explosion(model: Model) -> #(Model, Effect(Msg)) {
               let dead = die(model)
               #(dead, die_fx(dead))
             }
+            // The blast is spent; the loot screen can open.
             False -> #(
               Model(
                 ..model,
-                combat: Some(combat.CombatState(..cs, player_hp: hp)),
+                combat: Some(
+                  combat.CombatState(..cs, player_hp: hp, exploding: None),
+                ),
               ),
               roll_loot(cs.enemy),
             )
@@ -1597,6 +1871,13 @@ fn take_everything(model: Model) -> #(Model, Effect(Msg)) {
 /// Whether every pending row would fit in the pack at once (`setTakeAll`'s
 /// running tally) — the difference between "take everything" and "take all
 /// you can".
+/// Whether at least one of anything waiting would fit (`setTakeAll`'s
+/// `canTakeSomething`, which disables the take-everything button).
+pub fn loot_can_take_something(model: Model) -> Bool {
+  let free = path.free_space(model.state)
+  list.any(model.loot, fn(row) { row.1 > 0 && path.weight(row.0) <=. free })
+}
+
 pub fn loot_fits_entirely(model: Model) -> Bool {
   let needed =
     list.fold(model.loot, 0.0, fn(acc, row) {
@@ -1658,6 +1939,9 @@ fn grow_row(
 /// spend cooling.
 pub const leave_cooldown_ms = 1000
 
+/// `World.DEATH_COOLDOWN` — how long the embark button rests after a death.
+pub const death_cooldown_ms = 120_000
+
 /// Use a healing item mid-fight: spend one from the outfit and mend the player,
 /// once its cooldown is up. Cured meat is the gastronome-boosted `meat_heal`;
 /// medicine and hypos mend a fixed amount.
@@ -1665,11 +1949,13 @@ fn heal_in_combat(model: Model, item: String) -> Model {
   let #(cd_id, cd_ms) = heal_cooldown(item)
   let have = state.get_outfit(model.state, item) > 0
   case model.combat {
-    Some(cs) if have ->
+    Some(cs) if have -> {
       // The loot screen rebuilds its heal buttons without cooldowns
       // (`createEatMeatButton(0)` in winFight), so a won fight's heals are
-      // instant and ungated.
-      case !cs.won && on_cooldown(model, cd_id) {
+      // instant and ungated — once it's up: a dying blast's fuse still
+      // holds the fight screen, cooldowns and all.
+      let looting = cs.won && cs.exploding == None
+      case !looting && on_cooldown(model, cd_id) {
         True -> model
         False -> {
           let amount = heal_amount(model.state, item)
@@ -1684,12 +1970,13 @@ fn heal_in_combat(model: Model, item: String) -> Model {
               ),
               combat: Some(combat.CombatState(..cs, player_hp: healed)),
             )
-          case cs.won {
+          case looting {
             True -> model
             False -> start_cooldown(model, cd_id, cd_ms)
           }
         }
       }
+    }
     _ -> model
   }
 }
@@ -1714,10 +2001,15 @@ fn heal_cooldown(item: String) -> #(String, Int) {
   }
 }
 
-/// How long (ms) a weapon takes to recover between swings.
-fn weapon_cooldown_ms(weapon: String) -> Int {
+/// How long (ms) a weapon takes to recover between swings; an unarmed
+/// master's fists recover twice as fast (`createAttackButton`).
+fn weapon_cooldown_ms(s: State, weapon: String) -> Int {
   case combat.get_weapon(weapon) {
-    Ok(w) -> w.cooldown * 1000
+    Ok(w) ->
+      case w.kind == combat.Unarmed && state.has_perk(s, "unarmed master") {
+        True -> w.cooldown * 500
+        False -> w.cooldown * 1000
+      }
     Error(_) -> 0
   }
 }
@@ -1725,7 +2017,7 @@ fn weapon_cooldown_ms(weapon: String) -> Int {
 /// A swing's cooldown right now: halved while the stim's boost holds
 /// (`Button.cooldown`'s `boosted` check). The view's bars read it too.
 pub fn strike_cooldown_ms(model: Model, weapon: String) -> Int {
-  let ms = weapon_cooldown_ms(weapon)
+  let ms = weapon_cooldown_ms(model.state, weapon)
   case model.combat {
     Some(cs) if cs.player_status == combat.Boost -> ms / 2
     _ -> ms
@@ -1749,8 +2041,8 @@ fn roll_enemy_turn() -> Effect(Msg) {
 
 /// Schedule the enemy's next attack while a fight is on; nothing once it ends.
 /// Re-armed after each enemy turn, so the timer naturally stops on win or death.
-fn enemy_timer(combat: Option(combat.CombatState)) -> Effect(Msg) {
-  case combat {
+fn enemy_timer(model: Model) -> Effect(Msg) {
+  case model.combat {
     // A felled enemy's timer stays down (the explosion window).
     Some(cs) ->
       case cs.won {
@@ -1758,7 +2050,7 @@ fn enemy_timer(combat: Option(combat.CombatState)) -> Effect(Msg) {
         False ->
           delayed(
             float.round(combat.effective_attack_delay(cs) *. 1000.0),
-            EnemyTurn,
+            EnemyTurn(model.fight_run),
           )
       }
     None -> effect.none()
@@ -1774,7 +2066,10 @@ fn fire_special(model: Model, index: Int) -> #(Model, Effect(Msg)) {
     Error(_) -> #(model, effect.none())
     Ok(combat.SetStatusEvery(delay: delay, status: status)) -> #(
       set_enemy_status(model, status),
-      effect.batch([status_expiry(status), special_timer(index, delay)]),
+      effect.batch([
+        status_expiry(model, status),
+        special_timer(model, index, delay),
+      ]),
     )
     Ok(combat.RotateStatusEvery(..)) -> #(
       model,
@@ -1794,13 +2089,16 @@ fn resolve_special(
     Ok(combat.RotateStatusEvery(delay: delay, options: options)), Some(cs) -> {
       let possible = list.filter(options, fn(o) { o != cs.last_special })
       case events.pick(possible, roll) {
-        Error(_) -> #(model, special_timer(index, delay))
+        Error(_) -> #(model, special_timer(model, index, delay))
         Ok(status) -> {
           let cs =
             combat.CombatState(..cs, enemy_status: status, last_special: status)
           #(
             Model(..model, combat: Some(cs)),
-            effect.batch([status_expiry(status), special_timer(index, delay)]),
+            effect.batch([
+              status_expiry(model, status),
+              special_timer(model, index, delay),
+            ]),
           )
         }
       }
@@ -1822,21 +2120,32 @@ fn active_special(model: Model, index: Int) -> Result(combat.Special, Nil) {
 }
 
 /// Re-arm a special's timer.
-fn special_timer(index: Int, delay: Float) -> Effect(Msg) {
-  delayed(float.round(delay *. 1000.0), SpecialFire(index))
+fn special_timer(model: Model, index: Int, delay: Float) -> Effect(Msg) {
+  delayed(float.round(delay *. 1000.0), SpecialFire(model.fight_run, index))
 }
 
 /// Arm a fight's boss-special timers, one per special.
-fn specials_timers(specials: List(combat.Special)) -> Effect(Msg) {
+fn specials_timers(model: Model, specials: List(combat.Special)) -> Effect(Msg) {
   specials
   |> list.index_map(fn(special, index) {
     case special {
       combat.SetStatusEvery(delay: delay, ..)
       | combat.RotateStatusEvery(delay: delay, ..) ->
-        special_timer(index, delay)
+        special_timer(model, index, delay)
     }
   })
   |> effect.batch
+}
+
+/// Change the fight in progress, if there is one.
+fn map_combat(
+  model: Model,
+  f: fn(combat.CombatState) -> combat.CombatState,
+) -> Model {
+  case model.combat {
+    Some(cs) -> Model(..model, combat: Some(f(cs)))
+    None -> model
+  }
 }
 
 /// Put a status on the live enemy.
@@ -1853,10 +2162,12 @@ fn set_enemy_status(model: Model, status: combat.Status) -> Model {
 
 /// Enrage and meditation run out on their clocks (the JS setTimeout sets
 /// 'none' unconditionally); shields and the one-hit buffs spend themselves.
-fn status_expiry(status: combat.Status) -> Effect(Msg) {
+fn status_expiry(model: Model, status: combat.Status) -> Effect(Msg) {
   case status {
-    combat.Enraged -> delayed(combat.enrage_duration_ms, StatusExpire)
-    combat.Meditation -> delayed(combat.meditate_duration_ms, StatusExpire)
+    combat.Enraged ->
+      delayed(combat.enrage_duration_ms, StatusExpire(model.fight_run))
+    combat.Meditation ->
+      delayed(combat.meditate_duration_ms, StatusExpire(model.fight_run))
     _ -> effect.none()
   }
 }
@@ -1879,7 +2190,7 @@ fn dot_tick(model: Model) -> #(Model, Effect(Msg)) {
                 ..model,
                 combat: Some(combat.CombatState(..cs, player_hp: hp)),
               ),
-              delayed(combat.dot_tick_ms, DotTick),
+              delayed(combat.dot_tick_ms, DotTick(model.fight_run)),
             )
           }
         }
@@ -1925,10 +2236,12 @@ fn step(model: Model, dir: world.Dir) -> #(Model, Effect(Msg)) {
           #(dead, effect.batch([die_fx(dead), steps]))
         }
         // The last step's fog rides home with the commit.
-        True, True -> #(
-          go_home(Model(..model, expedition: Some(s.expedition))),
-          steps,
-        )
+        True, True -> {
+          let home = go_home(Model(..model, expedition: Some(s.expedition)))
+          // The path's theme and title (`Path.onArrival`).
+          let #(home, music) = tune_music(home)
+          #(home, effect.batch([steps, music, restore_title(home)]))
+        }
         True, False -> {
           // Past the armour's depth, the warning; back under it, the relief
           // (`checkDanger` after the step).
@@ -1946,7 +2259,12 @@ fn step(model: Model, dir: world.Dir) -> #(Model, Effect(Msg)) {
           // may instead spring an encounter.
           let #(model, fx) = case setpiece_at(watched, s.state) {
             Ok(event) -> start_event(model, event)
-            Error(_) -> #(model, roll_fight())
+            Error(_) ->
+              case world.open_ground(watched) {
+                True -> #(model, roll_fight())
+                // A used outpost is a quiet place: no fight springs there.
+                False -> #(model, effect.none())
+              }
           }
           #(model, effect.batch([fx, steps]))
         }
@@ -2012,17 +2330,18 @@ fn go_home(model: Model) -> Model {
   let #(s, unlock_messages) = unlock_returns(s)
   let #(s, blueprint_messages) = world.redeem_blueprints(s)
   let s = return_outfit(s)
+  // Back on the path (`goHome` travels to Path, not the Room).
   let home =
     Model(
-      ..notify_world(model, ["a haze falls over the village"]),
+      ..model,
       state: s,
-      location: Room,
+      location: Path,
       prev_location: model.location,
       expedition: None,
       combat: None,
     )
-  // Announced once home, where the player now stands.
-  notify_room(home, list.append(unlock_messages, blueprint_messages))
+  // Announced where the player now stands.
+  notify_at(home, "path", list.append(unlock_messages, blueprint_messages))
 }
 
 /// A safe return commissions what was found out there: the crashed ship opens
@@ -2103,24 +2422,49 @@ fn leave_at_home(item: String) -> Bool {
 /// Die in the wilds: the supplies are lost and the player wakes in the room.
 /// Death's audio: the knell, and whatever event or battle music was up fades.
 fn die_fx(model: Model) -> Effect(Msg) {
-  effect.batch([event_closed_fx(model), sound(audio.death)])
+  let track = model.playing
+  effect.batch([
+    event_closed_fx(model),
+    sound(audio.death),
+    effect.from(fn(_) { audio.play_background_music(track) }),
+  ])
 }
 
 fn die(model: Model) -> Model {
   let model = notify_world(model, ["the world fades"])
-  Model(
-    ..model,
-    state: state.State(..model.state, outfit: dict.new()),
-    location: Room,
-    prev_location: model.location,
-    expedition: None,
-    combat: None,
-    // A setpiece modal closes with the death — there's no scene to return to.
-    active_event: None,
-    loot: [],
-    drop_for: None,
-    blinking: False,
-  )
+  // The trip's discoveries die with it; the embark button rests.
+  let s = restore_world_flags(model.state, model.trip_flags)
+  let dead =
+    Model(
+      ..start_cooldown(model, "embark", death_cooldown_ms),
+      state: state.State(..s, outfit: dict.new()),
+      location: Room,
+      prev_location: model.location,
+      expedition: None,
+      combat: None,
+      // A setpiece modal closes with the death — there's no scene to return to.
+      active_event: None,
+      loot: [],
+      drop_for: None,
+      blinking: False,
+    )
+  // Home to the room (`Room.onArrival`): a sleeping builder wakes to help,
+  // and the fire's own music takes over (`die_fx` plays it).
+  let dead = apply_room(dead, room.become_helper(dead.state))
+  Model(..dead, playing: location_track(dead))
+}
+
+/// The trip-scoped discoveries (`World.state`'s ship, executioner and wing
+/// marks), as `game.world.*` keys.
+fn world_flags(s: State) -> Dict(String, Int) {
+  dict.filter(s.game, fn(key, _) { string.starts_with(key, "world.") })
+}
+
+/// Put the trip-scoped discoveries back as they were at embark.
+fn restore_world_flags(s: State, flags: Dict(String, Int)) -> State {
+  let kept =
+    dict.filter(s.game, fn(key, _) { !string.starts_with(key, "world.") })
+  state.State(..s, game: dict.merge(kept, flags))
 }
 
 /// An effect that rolls a map seed and dispatches `Embarked`.
@@ -2154,7 +2498,11 @@ fn event_pool(location: Location) -> List(events.Event) {
         events.outside_events(),
         events.marketing_events(),
       ])
-    _ -> []
+    // The cross-promo asks no `activeModule` and dreams anywhere — on the
+    // path, out walking, aboard the wreck. (Not mid-ascent: a modal over the
+    // asteroid field would be a death sentence the original never meant.)
+    Path | World | Ship | Fabricator -> events.marketing_events()
+    Space -> []
   }
 }
 
@@ -2225,6 +2573,38 @@ fn play_track(model: Model, track: String) -> #(Model, Effect(Msg)) {
   }
 }
 
+/// A pasted code without its line breaks and spaces (`import64`'s
+/// `replace(/\s/g, '')`) — a copy from a text file ends in a newline.
+fn strip_whitespace(text: String) -> String {
+  ["\r", "\n", "\t", " "]
+  |> list.fold(text, fn(acc, ws) { string.replace(acc, ws, "") })
+}
+
+/// Set the master volume the sound setting calls for.
+fn apply_volume(s: State) -> Effect(Msg) {
+  let volume = menu.volume(s)
+  effect.from(fn(_) { audio.set_master_volume(volume, 0.0) })
+}
+
+/// Put the dark stylesheet on or off, as the lights setting says.
+fn apply_lights(s: State) -> Effect(Msg) {
+  let off = menu.lights_off(s)
+  effect.from(fn(_) { browser.set_lights_off(off) })
+}
+
+/// The settings a booting game puts back (`Engine.init`): the lights, the
+/// volume, and — once — the question about sound, three seconds in.
+pub fn boot_settings(model: Model) -> Effect(Msg) {
+  effect.batch([
+    apply_lights(model.state),
+    apply_volume(model.state),
+    case menu.sound_prompt_due(model.state) {
+      True -> delayed(3000, SoundPromptDue)
+      False -> effect.none()
+    },
+  ])
+}
+
 /// The first track of a freshly-loaded game, for the app's init.
 pub fn startup_music(model: Model) -> #(Model, Effect(Msg)) {
   tune_music(model)
@@ -2234,6 +2614,18 @@ pub fn startup_music(model: Model) -> #(Model, Effect(Msg)) {
 /// restore).
 /// What every boot announces (`Room.init`): the room's temperature, then the
 /// fire — so the fire reads first in the newest-first log.
+/// A game coming up (`Room.init` then `travelTo(Room)`): the clock is read at
+/// once — cooldowns started in the first second must not be measured from
+/// 1970 — the fire gets a fresh five minutes rather than the saved deadline,
+/// the room and fire are announced, and a builder left sleeping by the fire
+/// wakes to help (`Room.onArrival`).
+pub fn boot(model: Model, now: Int) -> Model {
+  let model =
+    Model(..model, now:, state: room.reset_cool(model.state))
+    |> boot_announcements
+  apply_room(model, room.become_helper(model.state))
+}
+
 pub fn boot_announcements(model: Model) -> Model {
   let temperature = i18n.t(room.temp_text(room.temperature(model.state)))
   let fire = i18n.t(room.fire_text(room.fire(model.state)))
@@ -2611,12 +3003,13 @@ fn load_scene(
           )
         None -> cs
       }
-      let model = Model(..model, combat: Some(cs))
+      let model =
+        Model(..model, combat: Some(cs), fight_run: model.fight_run + 1)
       #(
         model,
         effect.batch([
-          enemy_timer(model.combat),
-          specials_timers(cs.specials),
+          enemy_timer(model),
+          specials_timers(model, cs.specials),
           blink_fx,
         ]),
       )

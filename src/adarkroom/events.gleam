@@ -561,6 +561,16 @@ fn give(
 /// A button that grants a perk (`onChoose: addPerk`) and then ends the event,
 /// shown only while the player lacks the perk.
 fn learn(text: String, cost: List(#(String, Int)), perk: String) -> SceneButton {
+  SceneButton(..learn_here(text, cost, perk), next: End)
+}
+
+/// A perk button that keeps the scene up (no `nextScene`): the Scout's
+/// lesson greys out, and the map can still be bought in the same visit.
+fn learn_here(
+  text: String,
+  cost: List(#(String, Int)),
+  perk: String,
+) -> SceneButton {
   SceneButton(
     text:,
     cost:,
@@ -572,7 +582,7 @@ fn learn(text: String, cost: List(#(String, Int)), perk: String) -> SceneButton 
     }),
     link: option.None,
     effect: option.None,
-    next: End,
+    next: Stay,
   )
 }
 
@@ -1538,7 +1548,7 @@ fn scout() -> Event {
             ),
             #(
               "learn",
-              learn(
+              learn_here(
                 "learn scouting",
                 [#("fur", 1000), #("scales", 50), #("teeth", 20)],
                 "scout",

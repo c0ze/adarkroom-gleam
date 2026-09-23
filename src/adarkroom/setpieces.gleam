@@ -241,7 +241,11 @@ fn cave() -> Event {
             "the cave narrows a few feet in.",
             "the walls are moist and moss-covered",
           ]),
-          buttons: continue_or_leave([#(0.5, "b2"), #(1.0, "b3")]),
+          // Where the cave narrows, you squeeze on (`_('squeeze')`).
+          buttons: [
+            #("continue", branch("squeeze", [#(0.5, "b2"), #(1.0, "b3")])),
+            #("leave", leave("leave cave")),
+          ],
         ),
       ),
       #(

@@ -18,8 +18,10 @@ pub type Kind {
   Weapon
 }
 
-/// Everything that can be packed for the path, with its kind. (Fabricator
-/// weapons are added with that milestone.)
+/// Everything that can be packed for the path, with its kind: the loose goods
+/// `updateOutfitting` lists, plus every tool and weapon the workshop and the
+/// fabricator make (its `$.extend` of `Room.Craftables` and
+/// `Fabricator.Craftables`).
 fn carryable_items() -> List(#(String, Kind)) {
   [
     #("cured meat", Tool),
@@ -36,6 +38,13 @@ fn carryable_items() -> List(#(String, Kind)) {
     #("iron sword", Weapon),
     #("steel sword", Weapon),
     #("rifle", Weapon),
+    #("laser rifle", Weapon),
+    #("energy blade", Weapon),
+    #("disruptor", Weapon),
+    #("plasma rifle", Weapon),
+    #("hypo", Tool),
+    #("stim", Tool),
+    #("glowstone", Tool),
   ]
 }
 
@@ -117,6 +126,19 @@ pub fn increase_supply(s: State, item: String, n: Int) -> State {
     }
     False -> s
   }
+}
+
+/// Trim every packed amount to what the stores still hold — supplies packed
+/// and then spent at home can't ride out (`updateOutfitting`'s
+/// `if (have < num) num = have`).
+pub fn settle(s: State) -> State {
+  list.fold(state.outfit_list(s), s, fn(acc, entry) {
+    let have = state.get_store(acc, entry.0)
+    case entry.1 > have {
+      True -> state.set_outfit(acc, entry.0, have)
+      False -> acc
+    }
+  })
 }
 
 /// Unpack up to `n` of an item (never below zero).

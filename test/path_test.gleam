@@ -110,3 +110,23 @@ pub fn armour_reflects_the_best_owned_test() {
   )
   |> should.equal("steel")
 }
+
+pub fn the_fabricators_gear_can_be_packed_test() {
+  let s =
+    ["laser rifle", "energy blade", "disruptor", "plasma rifle", "hypo", "stim"]
+    |> list.fold(state.new(), fn(acc, item) { state.set_store(acc, item, 1) })
+    |> state.set_store("glowstone", 1)
+  path.carryable(s) |> list.length |> should.equal(7)
+}
+
+pub fn settle_trims_the_pack_to_the_stores_test() {
+  let s =
+    state.new()
+    |> state.set_store("alien alloy", 2)
+    |> state.set_outfit("alien alloy", 5)
+    |> state.set_store("cured meat", 9)
+    |> state.set_outfit("cured meat", 4)
+    |> path.settle
+  state.get_outfit(s, "alien alloy") |> should.equal(2)
+  state.get_outfit(s, "cured meat") |> should.equal(4)
+}

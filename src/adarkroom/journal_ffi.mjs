@@ -2,8 +2,12 @@
 // notification, for parity debugging. Best-effort everywhere.
 const KEY = "adrJournal";
 const CAP = 5000;
+// Writes are batched: serializing the whole buffer on every message cost a
+// half-megabyte stringify per line of news.
+const FLUSH_MS = 2000;
 
 let buffer = null;
+let flushTimer = null;
 
 function load() {
   if (buffer) return buffer;
@@ -15,16 +19,23 @@ function load() {
   return buffer;
 }
 
-export function record(location, message) {
+function flush() {
+  flushTimer = null;
   try {
-    const log = load();
-    log.push(`${new Date().toISOString()} [${location}] ${message}`);
-    if (log.length > CAP) {
-      log.splice(0, log.length - CAP);
-    }
-    localStorage.setItem(KEY, JSON.stringify(log));
+    localStorage.setItem(KEY, JSON.stringify(buffer));
   } catch {
     // Storage full or absent — the journal is a luxury.
+  }
+}
+
+export function record(location, message) {
+  const log = load();
+  log.push(`${new Date().toISOString()} [${location}] ${message}`);
+  if (log.length > CAP) {
+    log.splice(0, log.length - CAP);
+  }
+  if (flushTimer === null && typeof setTimeout === "function") {
+    flushTimer = setTimeout(flush, FLUSH_MS);
   }
 }
 
@@ -38,4 +49,11 @@ if (typeof window !== "undefined") {
       // Nothing to clear.
     }
   };
+  // Don't lose the last batch to a closed tab.
+  window.addEventListener("pagehide", () => {
+    if (flushTimer !== null) {
+      clearTimeout(flushTimer);
+      flush();
+    }
+  });
 }

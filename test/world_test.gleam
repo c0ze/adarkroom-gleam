@@ -532,3 +532,28 @@ pub fn the_map_labels_its_landmarks_test() {
   world.map_cell(exp, world.radius, world.radius)
   |> should.equal(world.Wanderer)
 }
+
+pub fn the_last_meat_does_not_break_starvation_test() {
+  let s = state.new() |> state.set_outfit("cured meat", 1)
+  let v = world.Vitals(..fresh(), food_move: 1, starvation: True)
+  let r = world.use_supplies(s, v)
+  state.get_outfit(r.state, "cured meat") |> should.equal(0)
+  r.vitals.starvation |> should.equal(True)
+}
+
+pub fn a_landmarks_doorstep_costs_no_supplies_test() {
+  let s = state.new() |> state.set_outfit("cured meat", 5)
+  let begun = world.begin(world.generate_map(rng.seed(1)), s)
+  let exp =
+    world.Expedition(
+      ..begun,
+      map: dict.insert(begun.map, #(31, 30), world.House),
+    )
+  let step = world.move(s, exp, world.East)
+  step.expedition.vitals.water |> should.equal(10)
+  // Once dealt with, the house is ordinary ground again.
+  let visited =
+    world.Expedition(..exp, visited: set.insert(exp.visited, #(31, 30)))
+  world.move(s, visited, world.East).expedition.vitals.water
+  |> should.equal(9)
+}
