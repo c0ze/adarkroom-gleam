@@ -14,6 +14,7 @@ import adarkroom/executioner
 import adarkroom/fabricator
 import adarkroom/i18n
 import adarkroom/journal
+import adarkroom/menu
 import adarkroom/notifications.{type Notifications}
 import adarkroom/outside
 import adarkroom/path
@@ -200,6 +201,22 @@ pub type Msg {
   OpenStore(url: String)
   /// The menu's language list: reload the page speaking the chosen tongue.
   SwitchLanguage(code: String)
+  /// The menu's sound toggle (`toggleVolume`).
+  ToggleSound
+  /// The menu's lights toggle (`turnLightsOff`).
+  ToggleLights
+  /// Put a menu dialog up (save., restart.).
+  OpenDialog(dialog: menu.Dialog)
+  /// Take the menu dialog down.
+  CloseDialog
+  /// The sound prompt's answer.
+  ChooseSound(on: Bool)
+  /// Timer: three seconds after boot, ask about sound once (`notifyAboutSound`).
+  SoundPromptDue
+  /// The import box's text as typed.
+  ImportDraft(text: String)
+  /// Load the pasted save code; a code that won't read is refused.
+  ImportSave
   /// Timer: flash the page title "*** EVENT ***" (every 3s while blinking).
   BlinkOn
   /// Timer: restore the page title (1.5s after each flash).
@@ -277,6 +294,8 @@ pub type Model {
     /// This game is over — won, or wiped for a restart. Nothing may change
     /// (or be saved) any more; only the ending's own clock and links run.
     retired: Bool,
+    /// The menu dialog on screen, if any. Runtime-only.
+    dialog: Option(menu.Dialog),
   )
 }
 
@@ -323,6 +342,7 @@ pub fn init() -> Model {
     paused: False,
     paused_at: 0,
     retired: False,
+    dialog: None,
   )
 }
 
@@ -390,6 +410,7 @@ fn update_paused(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
     BuilderProgress -> #(model, delayed(1000, msg))
     UnlockForest -> #(model, delayed(1000, msg))
     PopulationIncreased(_) -> #(model, delayed(1000, msg))
+    SoundPromptDue -> #(model, delayed(1000, msg))
     // A double-tap of the pause while already asleep changes nothing.
     Paused(_) -> #(model, effect.none())
     // Everything else — heartbeats included — passes the paused world by.
@@ -428,6 +449,7 @@ pub fn can_pause(model: Model) -> Bool {
   case model.location {
     Room | Outside | Path ->
       model.active_event == None
+      && model.dialog == None
       && model.combat == None
       && model.expedition == None
       && model.space == None
@@ -841,7 +863,10 @@ fn step_world(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
         events.available_events(event_pool(model.location), model.state)
       // A world fight sits on the JS event stack too (`triggerFight` starts
       // it as an event), so it counts as one already on screen.
-      let busy = model.active_event != None || model.combat != None
+      let busy =
+        model.active_event != None
+        || model.combat != None
+        || model.dialog != None
       case busy, available {
         // An event is already on screen, or none qualify: just reschedule.
         True, _ -> #(reschedule(model, delay, 1.0), effect.none())
@@ -1253,6 +1278,96 @@ fn step_world(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
       model,
       effect.from(fn(_) { i18n.switch_language(code) }),
     )
+
+    ToggleSound -> {
+      let s = menu.set_sound(model.state, !menu.sound_on(model.state))
+      #(Model(..model, state: s), apply_volume(s))
+    }
+
+    ToggleLights -> {
+      let s = menu.set_lights_off(model.state, !menu.lights_off(model.state))
+      #(Model(..model, state: s), apply_lights(s))
+    }
+
+    // The save and restart dialogs wait out a fight or the ascent, whose
+    // clocks would run on unseen behind them.
+    OpenDialog(..) if model.combat != None || model.location == Space -> #(
+      model,
+      effect.none(),
+    )
+
+    OpenDialog(dialog: menu.SaveExport(..)) -> #(
+      Model(
+        ..model,
+        dialog: Some(menu.SaveExport(save.export_save(model.state))),
+      ),
+      effect.none(),
+    )
+
+    OpenDialog(dialog: dialog) -> #(
+      Model(..model, dialog: Some(dialog)),
+      effect.none(),
+    )
+
+    CloseDialog -> #(Model(..model, dialog: None), effect.none())
+
+    ChooseSound(on: on) -> {
+      let s = menu.set_sound(model.state, on)
+      #(Model(..model, state: s, dialog: None), apply_volume(s))
+    }
+
+    SoundPromptDue ->
+      case menu.sound_prompt_due(model.state) {
+        False -> #(model, effect.none())
+        True ->
+          case
+            model.active_event == None
+            && model.combat == None
+            && model.dialog == None
+          {
+            // Something else holds the stage; ask again shortly.
+            False -> #(model, delayed(3000, SoundPromptDue))
+            True -> #(
+              Model(
+                ..model,
+                state: menu.mark_sound_prompted(model.state),
+                dialog: Some(menu.SoundPrompt),
+              ),
+              effect.none(),
+            )
+          }
+      }
+
+    ImportDraft(text: text) ->
+      case model.dialog {
+        Some(menu.SaveImport(..)) -> #(
+          Model(..model, dialog: Some(menu.SaveImport(text, False))),
+          effect.none(),
+        )
+        _ -> #(model, effect.none())
+      }
+
+    // A code that reads replaces the save and the page reloads into it
+    // (`import64`); one that doesn't is refused, where the original would
+    // have wiped the game.
+    ImportSave ->
+      case model.dialog {
+        Some(menu.SaveImport(draft: draft, ..)) ->
+          case save.import_save(string.replace(draft, " ", "")) {
+            Ok(imported) -> #(
+              Model(..model, retired: True, dialog: None),
+              effect.from(fn(_) {
+                save.save(imported)
+                browser.reload()
+              }),
+            )
+            Error(_) -> #(
+              Model(..model, dialog: Some(menu.SaveImport(draft, True))),
+              effect.none(),
+            )
+          }
+        _ -> #(model, effect.none())
+      }
 
     BlinkOn ->
       case model.blinking {
@@ -2439,6 +2554,31 @@ fn play_track(model: Model, track: String) -> #(Model, Effect(Msg)) {
       effect.from(fn(_) { audio.play_background_music(track) }),
     )
   }
+}
+
+/// Set the master volume the sound setting calls for.
+fn apply_volume(s: State) -> Effect(Msg) {
+  let volume = menu.volume(s)
+  effect.from(fn(_) { audio.set_master_volume(volume, 0.0) })
+}
+
+/// Put the dark stylesheet on or off, as the lights setting says.
+fn apply_lights(s: State) -> Effect(Msg) {
+  let off = menu.lights_off(s)
+  effect.from(fn(_) { browser.set_lights_off(off) })
+}
+
+/// The settings a booting game puts back (`Engine.init`): the lights, the
+/// volume, and — once — the question about sound, three seconds in.
+pub fn boot_settings(model: Model) -> Effect(Msg) {
+  effect.batch([
+    apply_lights(model.state),
+    apply_volume(model.state),
+    case menu.sound_prompt_due(model.state) {
+      True -> delayed(3000, SoundPromptDue)
+      False -> effect.none()
+    },
+  ])
 }
 
 /// The first track of a freshly-loaded game, for the app's init.

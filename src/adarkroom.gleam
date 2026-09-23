@@ -12,6 +12,7 @@ import adarkroom/events
 import adarkroom/fabricator
 import adarkroom/i18n.{t, t1, t2}
 import adarkroom/i18n/languages
+import adarkroom/menu
 import adarkroom/model.{
   type Model, type Msg, AdjustTemp, Build, BuilderProgress, Buy, CheckLiftoff,
   CheckTraps, ChooseEvent, CollectIncome, CoolCheck, DecreaseSupply,
@@ -71,6 +72,7 @@ fn init(_flags) -> #(Model, Effect(Msg)) {
   #(
     loaded,
     effect.batch([
+      model.boot_settings(loaded),
       music,
       interval(tick_interval_ms, Tick),
       time_interval(cool_check_ms, CoolCheck),
@@ -286,8 +288,10 @@ fn game_view(m: Model) -> Element(Msg) {
       list.flatten([
         // The event modal or, out in the world, the combat screen floats
         // above everything when active (at most one at a time).
-        event_overlay(m),
-        combat_overlay(m),
+        case m.dialog {
+          Some(_) -> dialog_overlay(m)
+          None -> list.append(event_overlay(m), combat_overlay(m))
+        },
         [menu_corner(m)],
         pause_overlay(m),
       ]),
@@ -295,27 +299,170 @@ fn game_view(m: Model) -> Element(Msg) {
   )
 }
 
-/// The original's bottom-right menu: the language selector, plus the port's
-/// pause control (an addition — the original has no global pause), the latter
-/// offered only when nothing is afoot.
+/// The original's bottom-right menu (`Engine.init`), rightmost first: the
+/// language selector, sound, lights, restart and save — plus the port's pause
+/// control (an addition; the original has no global pause), offered only
+/// when nothing is afoot. Restart and save wait out a fight or the ascent.
 fn menu_corner(m: Model) -> Element(Msg) {
-  let pause = case model.can_pause(m) && !m.paused {
+  let item = fn(label, msg) {
+    html.button([attribute.type_("button"), event.on_click(msg)], [
+      element.text(t(label)),
+    ])
+  }
+  let sound = case menu.sound_on(m.state) {
+    True -> item("sound off.", model.ToggleSound)
+    False -> item("sound on.", model.ToggleSound)
+  }
+  let lights = case menu.lights_off(m.state) {
+    True -> item("lights on.", model.ToggleLights)
+    False -> item("lights off.", model.ToggleLights)
+  }
+  let quiet = m.combat == None && m.location != model.Space
+  let game_items = case quiet {
     True -> [
-      html.button(
-        [attribute.type_("button"), event.on_click(model.TogglePause)],
-        [
-          element.text("pause."),
-        ],
-      ),
+      item("restart.", model.OpenDialog(menu.RestartPrompt)),
+      item("save.", model.OpenDialog(menu.SaveStart)),
     ]
     False -> []
   }
-  html.div([attribute.class("menu")], [language_select(), ..pause])
+  let pause = case model.can_pause(m) && !m.paused {
+    True -> [item("pause.", model.TogglePause)]
+    False -> []
+  }
+  html.div(
+    [attribute.class("menu")],
+    list.flatten([[language_select(), sound, lights], game_items, pause]),
+  )
+}
+
+/// A menu dialog (`Events.startEvent` for the menu's own questions), in the
+/// event panel's clothes.
+fn dialog_overlay(m: Model) -> List(Element(Msg)) {
+  let button = fn(label, msg) {
+    html.button(
+      [
+        attribute.type_("button"),
+        attribute.class("button"),
+        event.on_click(msg),
+      ],
+      [element.text(t(label))],
+    )
+  }
+  let panel = fn(title, lines, extra, buttons) {
+    [
+      html.div(
+        [
+          attribute.id("event"),
+          attribute.class("eventPanel"),
+          attribute.role("dialog"),
+          attribute.attribute("aria-label", t(title)),
+        ],
+        [
+          html.div([attribute.class("eventTitle")], [element.text(t(title))]),
+          html.div(
+            [attribute.id("description")],
+            list.append(
+              list.map(lines, fn(line) { html.div([], [element.text(t(line))]) }),
+              extra,
+            ),
+          ),
+          html.div([attribute.id("buttons")], buttons),
+        ],
+      ),
+    ]
+  }
+  case m.dialog {
+    None -> []
+    Some(menu.SoundPrompt) ->
+      panel(
+        "Sound Available!",
+        ["ears flooded with new sensations.", "perhaps silence is safer?"],
+        [],
+        [
+          button("enable audio", model.ChooseSound(True)),
+          button("disable audio", model.ChooseSound(False)),
+        ],
+      )
+    Some(menu.RestartPrompt) ->
+      panel("Restart?", ["restart the game?"], [], [
+        button("yes", model.RestartGame),
+        button("no", model.CloseDialog),
+      ])
+    Some(menu.SaveStart) ->
+      panel(
+        "Export / Import",
+        ["export or import save data, for backing up", "or migrating computers"],
+        [],
+        [
+          button("export", model.OpenDialog(menu.SaveExport(""))),
+          button("import", model.OpenDialog(menu.SaveConfirm)),
+          button("cancel", model.CloseDialog),
+        ],
+      )
+    Some(menu.SaveExport(code)) ->
+      panel(
+        "Export / Import",
+        ["save this."],
+        [
+          html.textarea(
+            [
+              attribute.id("description-textarea"),
+              attribute.readonly(True),
+              attribute.attribute("onfocus", "this.select()"),
+              attribute.style("width", "100%"),
+              attribute.style("height", "120px"),
+            ],
+            code,
+          ),
+        ],
+        [button("got it", model.CloseDialog)],
+      )
+    Some(menu.SaveConfirm) ->
+      panel(
+        "Export / Import",
+        [
+          "are you sure?",
+          "if the code is invalid, all data will be lost.",
+          "this is irreversible.",
+        ],
+        [],
+        [
+          button("yes", model.OpenDialog(menu.SaveImport("", False))),
+          button("no", model.OpenDialog(menu.SaveStart)),
+        ],
+      )
+    Some(menu.SaveImport(draft: draft, rejected: rejected)) ->
+      panel(
+        "Export / Import",
+        case rejected {
+          // The port refuses a code it can't read rather than lose the game.
+          True -> ["put the save code here.", "that code can't be read."]
+          False -> ["put the save code here."]
+        },
+        [
+          html.textarea(
+            [
+              attribute.id("description-textarea"),
+              attribute.style("width", "100%"),
+              attribute.style("height", "120px"),
+              event.on_input(model.ImportDraft),
+            ],
+            draft,
+          ),
+        ],
+        [
+          button("import", model.ImportSave),
+          button("cancel", model.CloseDialog),
+        ],
+      )
+  }
 }
 
 /// The language menu (`Engine.init`'s customSelect): a hover-expanded list of
 /// every language the pipeline converted, headed by an inert "language." row.
-/// Picking one reloads the page with `?lang=` set, as the original does.
+/// Picking one reloads the page with `?lang=` set, as the original does. Each
+/// choice is a real button, so the list also opens to the keyboard (the
+/// `:focus-within` rule in index.html).
 fn language_select() -> Element(Msg) {
   html.span([attribute.class("customSelect menuBtn")], [
     html.span([attribute.class("customSelectOptions")], [
@@ -323,13 +470,16 @@ fn language_select() -> Element(Msg) {
         html.li([], [element.text("language.")]),
         ..list.map(languages.languages, fn(lang) {
           let #(code, name) = lang
-          html.li(
-            [
-              attribute.attribute("data-language", code),
-              event.on_click(model.SwitchLanguage(code)),
-            ],
-            [element.text(name)],
-          )
+          html.li([attribute.attribute("data-language", code)], [
+            html.button(
+              [
+                attribute.type_("button"),
+                attribute.lang(code),
+                event.on_click(model.SwitchLanguage(code)),
+              ],
+              [element.text(name)],
+            ),
+          ])
         })
       ]),
     ]),

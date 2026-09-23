@@ -2,6 +2,7 @@ import adarkroom/combat
 import adarkroom/craft
 import adarkroom/events
 import adarkroom/executioner
+import adarkroom/menu
 import adarkroom/model.{
   CollectLoot, MaybeFight, Navigate, ResolveEnemyTurn, ResolveEvent,
   ResolveStrike, ScheduleEvent, Tick, TriggerEvent,
@@ -10,6 +11,7 @@ import adarkroom/notifications
 import adarkroom/outside
 import adarkroom/rng
 import adarkroom/room
+import adarkroom/save
 import adarkroom/ship
 import adarkroom/space
 import adarkroom/state
@@ -2482,4 +2484,65 @@ pub fn a_world_fight_holds_off_the_next_event_test() {
   let m = model.Model(..fighting, now: 1000)
   let after = run(m, TriggerEvent(0.0, 0.0))
   after.active_event |> should.equal(option.None)
+}
+
+// --- the corner menu -----------------------------------------------------------
+
+pub fn the_game_starts_silent_until_asked_test() {
+  let m = model.init()
+  menu.sound_on(m.state) |> should.be_false
+  let asked = run(m, model.SoundPromptDue)
+  asked.dialog |> should.equal(option.Some(menu.SoundPrompt))
+  // Asked once: a later boot doesn't ask again.
+  menu.sound_prompt_due(asked.state) |> should.be_false
+  let answered = run(asked, model.ChooseSound(True))
+  menu.sound_on(answered.state) |> should.be_true
+  answered.dialog |> should.equal(option.None)
+  run(answered, model.ToggleSound).state |> menu.sound_on |> should.be_false
+}
+
+pub fn the_sound_prompt_waits_for_an_event_to_close_test() {
+  let busy = run(room_with_fur(100, 1000), TriggerEvent(0.0, 0.0))
+  option.is_some(busy.active_event) |> should.be_true
+  let later = run(busy, model.SoundPromptDue)
+  later.dialog |> should.equal(option.None)
+  menu.sound_prompt_due(later.state) |> should.be_true
+}
+
+pub fn the_lights_go_out_and_come_back_test() {
+  let dark = run(model.init(), model.ToggleLights)
+  menu.lights_off(dark.state) |> should.be_true
+  run(dark, model.ToggleLights).state |> menu.lights_off |> should.be_false
+}
+
+pub fn exporting_shows_the_current_save_as_a_code_test() {
+  let base = model.init()
+  let m = model.Model(..base, state: state.set_store(base.state, "wood", 42))
+  let shown = run(m, model.OpenDialog(menu.SaveExport("")))
+  let assert option.Some(menu.SaveExport(code)) = shown.dialog
+  save.import_save(code) |> should.equal(Ok(m.state))
+}
+
+pub fn an_unreadable_import_is_refused_not_obeyed_test() {
+  let m =
+    run(model.init(), model.OpenDialog(menu.SaveImport("", False)))
+    |> run(model.ImportDraft("not a save"))
+  let after = run(m, model.ImportSave)
+  after.retired |> should.be_false
+  after.dialog |> should.equal(option.Some(menu.SaveImport("not a save", True)))
+}
+
+pub fn a_readable_import_retires_this_game_test() {
+  let code = save.export_save(state.set_store(state.new(), "wood", 9))
+  let after =
+    run(model.init(), model.OpenDialog(menu.SaveImport("", False)))
+    |> run(model.ImportDraft(code))
+    |> run(model.ImportSave)
+  after.retired |> should.be_true
+}
+
+pub fn no_save_dialog_mid_fight_test() {
+  let fighting = run(world_model(10), MaybeFight(0.0, 0.0))
+  run(fighting, model.OpenDialog(menu.SaveStart)).dialog
+  |> should.equal(option.None)
 }

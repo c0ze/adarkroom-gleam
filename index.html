@@ -111,6 +111,45 @@
         text-decoration: underline;
       }
 
+      /* The language list opens to the keyboard as well as the mouse; its
+         choices are buttons, which must not float like the menu's own. */
+      .customSelectOptions > ul:focus-within {
+        max-height: 600px;
+      }
+      .customSelectOptions > ul > li > button {
+        float: none;
+        margin-left: 0;
+        cursor: pointer;
+      }
+      .customSelectOptions > ul > li > button:hover {
+        text-decoration: underline;
+      }
+
+      /* Lights off: css/dark.css does the page; its div-qualified button
+         rules are restated for the port's <button>s. */
+      body.lightsOff button.headerButton {
+        border-left-color: #EEE;
+      }
+      body.lightsOff button.button {
+        border-color: #EEE;
+      }
+      body.lightsOff button.button.disabled,
+      body.lightsOff button.button.disabled:hover {
+        border-color: #444;
+        color: #444;
+      }
+      /* main.css's pale cooldown bar would swallow the light label. */
+      body.lightsOff button.button div.cooldown {
+        background-color: #444;
+      }
+      body.lightsOff #pauseOverlay {
+        background: rgba(39, 40, 35, 0.96);
+      }
+      body.lightsOff textarea {
+        background: #272823;
+        color: #EEE;
+      }
+
       /* The end screen's options sit inline between their <br>s, as the
          original's spans did (space.css). */
       button.endGameOption {
