@@ -325,6 +325,7 @@
  "no": "nej",
  "no more room for huts.": "inte tillräckligt med platser att bygga hyddor",
  "none": "ingen",
+ "not enough": "inte tillräckligt med skinn",
  "not enough ": "inte tillräckligt med skinn",
  "not enough alien alloy": "inte tillräckligt med främmande legering",
  "not enough cloth": "inte tillräckligt med typ",
@@ -442,6 +443,7 @@
  "the body of a wanderer lies in a small cavern.": "kroppen av en vandrare ligger i ett litet hålrum.",
  "the cask holds enough water for longer expeditions": "flaskan hǻller nog med vatten för längre expositioner ",
  "the cave narrows a few feet in.": "grottan blir smalare några steg in.",
+ "the compass points": "kompassen pekar",
  "the compass points ": "kompassen pekar",
  "the compass points east": "kompassen pekar österut",
  "the compass points north": "kompassen pekar norrut",
@@ -521,6 +523,7 @@
  "the town lies abandoned, its citizens long dead": "staden ligger övergiven, befolkningen död sedan länge",
  "the town's booming. word does get around.": "samhället växer. ryktet går.",
  "the tracks disappear after just a few minutes.": "spåren försvinner efter några få minuter.",
+ "the traps contain": "fällorna innehåller",
  "the traps contain ": "fällorna innehåller",
  "the trees are gone. parched earth and blowing dust are poor replacements.": "träden är borta. uttorkad jord och blåsande damm är dåliga ersättare.",
  "the trees yield to dry grass. the yellowed brush rustles in the wind.": "träden ger efter till torrt gräs. de gula buskarna rasslar i vinden.",
@@ -584,5 +587,6 @@
  "workshop": "verkstad",
  "workshop's finally ready. builder's excited to get to it": "verkstaden är äntligen klar, byggaren är uppspelt att börja",
  "yes": "ja",
+ "your are connected to dropbox with account / email": "du är kopplad till dropbox med konto / epost",
  "your are connected to dropbox with account / email ": "du är kopplad till dropbox med konto / epost"
 }

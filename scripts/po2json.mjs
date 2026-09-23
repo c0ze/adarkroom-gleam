@@ -87,12 +87,31 @@ export function parsePo(text) {
   return entries;
 }
 
-// The runtime table, filtered exactly as tools/po2js.py filters.
-function toTable(entries) {
+// The {0}-style placeholders a string carries, as a sorted signature.
+function placeholders(s) {
+  return (s.match(/\{\d+\}/g) ?? []).sort().join();
+}
+
+// The runtime table, filtered as tools/po2js.py filters — plus two repairs
+// the original never made:
+//  - a translation whose placeholders don't match its msgid's is dropped
+//    (lt_LT writes "(0) per (1)s", and loses the score's {0}), so the
+//    English shows with its numbers rather than the translation without;
+//  - a msgid with stray edge whitespace (setpieces.js's "…dust and ash. ")
+//    is also filed under its trimmed form, the literal the port looks up.
+function toTable(entries, dropped) {
   const table = {};
   for (const { msgid, msgstr } of entries) {
     if (msgstr === "" || msgstr === msgid) continue;
+    if (placeholders(msgid) !== placeholders(msgstr)) {
+      dropped.push(msgid);
+      continue;
+    }
     table[msgid] = msgstr;
+    const trimmed = msgid.trim();
+    if (trimmed !== msgid && !(trimmed in table)) {
+      table[trimmed] = msgstr.trim();
+    }
   }
   return table;
 }
@@ -123,7 +142,11 @@ function convertLanguages() {
   for (const code of fs.readdirSync(langRoot).sort()) {
     const poPath = path.join(langRoot, code, "strings.po");
     if (!fs.existsSync(poPath)) continue;
-    const table = toTable(parsePo(fs.readFileSync(poPath, "utf8")));
+    const dropped = [];
+    const table = toTable(parsePo(fs.readFileSync(poPath, "utf8")), dropped);
+    for (const msgid of dropped) {
+      console.warn(`po2json: ${code}: placeholders differ, kept English: ${msgid}`);
+    }
     const sorted = Object.fromEntries(
       Object.entries(table).sort(([a], [b]) => (a < b ? -1 : 1)),
     );
@@ -139,7 +162,11 @@ function convertLanguages() {
     // the originals' div-qualified selectors are retargeted on the way over.
     const cssPath = path.join(langRoot, code, "main.css");
     const css = fs.existsSync(cssPath)
-      ? fs.readFileSync(cssPath, "utf8").replaceAll("div.button", "button.button")
+      ? fs
+          .readFileSync(cssPath, "utf8")
+          // Some originals are stored with CRLF; the committed copy is LF.
+          .replace(/\r\n/g, "\n")
+          .replaceAll("div.button", "button.button")
       : "";
     fs.writeFileSync(path.join(outDir, "main.css"), css);
     converted.push({ code, entries: Object.keys(sorted).length });

@@ -11,6 +11,7 @@ import gleam/dynamic/decode
 import gleam/json
 import gleam/list
 import gleam/set
+import gleam/string
 import gleeunit/should
 
 @external(javascript, "./i18n_pipeline_ffi.mjs", "readFile")
@@ -69,4 +70,41 @@ pub fn a_generated_catalog_loads_and_translates_test() {
   i18n.t1("the room is {0}", i18n.t("mild")) |> should.equal("oda ılık")
   i18n.clear()
   i18n.t("wood") |> should.equal("wood")
+}
+
+/// The `{n}` placeholders of a string, sorted.
+fn placeholders(s: String) -> List(String) {
+  ["{0}", "{1}", "{2}"]
+  |> list.filter(fn(p) { string.contains(s, p) })
+}
+
+/// A translation that drops or mangles a placeholder shows a score with no
+/// number (lt_LT's "(0) per (1)s"); the pipeline keeps English for those.
+pub fn every_translation_keeps_its_placeholders_test() {
+  languages.languages
+  |> list.filter(fn(lang) { lang.0 != "en" })
+  |> list.each(fn(lang) {
+    let assert Ok(table) =
+      json.parse(
+        read_file("public/lang/" <> lang.0 <> "/strings.json"),
+        decode.dict(decode.string, decode.string),
+      )
+    table
+    |> dict.filter(fn(msgid, msgstr) {
+      placeholders(msgid) != placeholders(msgstr)
+    })
+    |> dict.keys
+    |> should.equal([])
+  })
+}
+
+pub fn a_msgid_with_a_stray_space_still_translates_test() {
+  i18n.load(read_file("public/lang/de/strings.json"))
+  i18n.t(
+    "the familiar curves of a wanderer vessel rise up out of the dust and ash.",
+  )
+  |> should.not_equal(
+    "the familiar curves of a wanderer vessel rise up out of the dust and ash.",
+  )
+  i18n.clear()
 }
