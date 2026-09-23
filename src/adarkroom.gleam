@@ -64,8 +64,8 @@ fn init(_flags) -> #(Model, Effect(Msg)) {
     None -> model.init()
   }
   // Every boot announces the room and the fire (`Room.init`'s two notify
-  // lines), newest atop.
-  let loaded = model.boot_announcements(loaded)
+  // lines, newest atop), and arrives in the Room.
+  let loaded = model.boot(loaded, float.round(clock.now()))
   // The room's music starts with the app (sounding once the browser allows).
   let #(loaded, music) = model.startup_music(loaded)
   #(
@@ -1337,12 +1337,21 @@ fn village_view(s: state.State) -> Element(Msg) {
 
 /// The Room panel. For now: the fire control (light when dead, otherwise stoke).
 fn room_panel(m: Model) -> Element(Msg) {
+  // The fire's price shows on hover — unless there's no wood store yet, when
+  // tending it is free (`updateButton`'s `free` class hides the tooltip).
+  let fire_cost = fn(wood) {
+    case state.has_store(m.state, "wood") {
+      True -> [#("wood", wood)]
+      False -> []
+    }
+  }
   let fire_button = case room.fire(m.state) {
     room.Dead ->
       button.button(
         button.Config(
           ..button.new("light fire", LightFire),
           id: "lightButton",
+          cost: fire_cost(5),
           cooldown: model.cooldown_fraction(
             m,
             "lightButton",
@@ -1356,6 +1365,7 @@ fn room_panel(m: Model) -> Element(Msg) {
         button.Config(
           ..button.new("stoke fire", StokeFire),
           id: "stokeButton",
+          cost: fire_cost(1),
           cooldown: model.cooldown_fraction(
             m,
             "stokeButton",

@@ -179,7 +179,18 @@ pub fn build(s: State, name: String) -> #(State, List(String)) {
             False ->
               case cost.pay(s, c.cost(s)) {
                 Error(missing) -> #(s, ["not enough " <> missing])
-                Ok(paid) -> #(increment(paid, c, name), [c.build_msg])
+                Ok(paid) -> {
+                  let built = increment(paid, c, name)
+                  // The one that fills the quota says so as its button
+                  // greys out (`updateBuildButtons`'s maxMsg).
+                  let full = case
+                    c.max_msg != "" && at_maximum(c, count(built, c, name))
+                  {
+                    True -> [c.max_msg]
+                    False -> []
+                  }
+                  #(built, [c.build_msg, ..full])
+                }
               }
           }
       }

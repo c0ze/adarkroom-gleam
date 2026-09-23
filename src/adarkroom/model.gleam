@@ -545,8 +545,13 @@ fn step_world(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
           // Ten seconds before the next try — a refusal clears it at once
           // (`Button.clearCooldown` on the not-enough-wood path), so only a
           // fire that caught arms it.
+          // The stoke button takes over mid-cooldown (`updateButton`
+          // cools it when the light button was cooling).
           let model = case lit {
-            True -> start_cooldown(model, "lightButton", room.stoke_cooldown_ms)
+            True ->
+              model
+              |> start_cooldown("lightButton", room.stoke_cooldown_ms)
+              |> start_cooldown("stokeButton", room.stoke_cooldown_ms)
             False -> model
           }
           // The room's title brightens with it (`setTitle` on `onFireChange`).
@@ -591,6 +596,16 @@ fn step_world(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
         _ -> []
       }
       let cooled = apply_room(Model(..model, now:), #(tended, heard))
+      // A fire that dies while the stoke button cools hands the cooldown to
+      // the light button (`updateButton`).
+      let cooled = case
+        room.fire(tended) == room.Dead
+        && room.fire(model.state) != room.Dead
+        && on_cooldown(cooled, "stokeButton")
+      {
+        True -> start_cooldown(cooled, "lightButton", room.stoke_cooldown_ms)
+        False -> cooled
+      }
       // Pending delayed returns (the wanderers' carts) count down on the same
       // heartbeat, announcing in the room when they arrive.
       let delivered = apply_room(cooled, events.tick_delays(cooled.state))
@@ -604,10 +619,17 @@ fn step_world(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
         room_music_after(#(checked, event_schedule_effect(checked)))
       #(checked, effect.batch([music, title_if_calm(checked)]))
     }
-    AdjustTemp -> #(
-      apply_room(model, room.adjust_temp(model.state)),
-      effect.none(),
-    )
+    // The room's warmth is noQueue too (`adjustTemp`'s `notify(Room, …,
+    // true)`): heard in the room, dropped elsewhere — a long trip doesn't
+    // come home to a flood of temperature news.
+    AdjustTemp -> {
+      let #(adjusted, messages) = room.adjust_temp(model.state)
+      let heard = case model.location {
+        Room -> messages
+        _ -> []
+      }
+      #(apply_room(model, #(adjusted, heard)), effect.none())
+    }
 
     BuilderProgress -> {
       let arriving = room.builder_level(model.state) == 0
@@ -2421,6 +2443,18 @@ pub fn startup_music(model: Model) -> #(Model, Effect(Msg)) {
 /// restore).
 /// What every boot announces (`Room.init`): the room's temperature, then the
 /// fire — so the fire reads first in the newest-first log.
+/// A game coming up (`Room.init` then `travelTo(Room)`): the clock is read at
+/// once — cooldowns started in the first second must not be measured from
+/// 1970 — the fire gets a fresh five minutes rather than the saved deadline,
+/// the room and fire are announced, and a builder left sleeping by the fire
+/// wakes to help (`Room.onArrival`).
+pub fn boot(model: Model, now: Int) -> Model {
+  let model =
+    Model(..model, now:, state: room.reset_cool(model.state))
+    |> boot_announcements
+  apply_room(model, room.become_helper(model.state))
+}
+
 pub fn boot_announcements(model: Model) -> Model {
   let temperature = i18n.t(room.temp_text(room.temperature(model.state)))
   let fire = i18n.t(room.fire_text(room.fire(model.state)))

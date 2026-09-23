@@ -2412,3 +2412,60 @@ pub fn a_trips_discoveries_die_with_it_test() {
   let dead = run(fighting, ResolveEnemyTurn(0.0))
   state.get_game(dead.state, "world.ship") |> should.equal(0)
 }
+
+// --- the room's small courtesies -------------------------------------------------
+
+pub fn lighting_the_fire_cools_the_stoke_button_too_test() {
+  let base = model.init()
+  let m =
+    model.Model(
+      ..base,
+      now: 1000,
+      state: state.set_store(base.state, "wood", 10),
+    )
+  let lit = run(m, model.LightFire)
+  model.on_cooldown(lit, "stokeButton") |> should.be_true
+}
+
+pub fn the_last_trap_says_no_more_will_help_test() {
+  let base = model.init()
+  let m =
+    model.Model(
+      ..base,
+      state: base.state
+        |> state.set_game("building.trap", 9)
+        |> state.set_game("builder", 4)
+        |> state.set_game("temperature", 4)
+        |> state.set_store("wood", 500),
+    )
+  let built = run(m, model.Build("trap"))
+  notifications.messages(built.notifications)
+  |> list.contains("more traps won't help now.")
+  |> should.be_true
+}
+
+pub fn temperature_news_is_not_queued_away_from_the_room_test() {
+  let base = model.init()
+  let m =
+    model.Model(
+      ..base,
+      location: model.Outside,
+      state: base.state
+        |> state.set_game("fire", 4)
+        |> state.set_game("temperature", 0),
+    )
+  let adjusted = run(m, model.AdjustTemp)
+  run(adjusted, Navigate(to: model.Room)).notifications
+  |> notifications.messages
+  |> list.any(fn(msg) { string.starts_with(msg, "the room is") })
+  |> should.be_false
+}
+
+pub fn booting_wakes_a_sleeping_builder_and_reads_the_clock_test() {
+  let base = model.init()
+  let m =
+    model.Model(..base, state: state.set_game(base.state, "builder", 3))
+    |> model.boot(1_000_000)
+  m.now |> should.equal(1_000_000)
+  state.get_game(m.state, "builder") |> should.equal(4)
+}
