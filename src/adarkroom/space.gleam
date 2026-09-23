@@ -25,12 +25,20 @@ pub const frame_ms = 33
 /// fall from 0 to 740.
 pub const field_floor = 740.0
 
-/// An asteroid's glyph box. The JS measures the rendered character's div;
-/// these match the original 12px monospace glyph closely enough to keep the
-/// same feel without a DOM measurement.
-pub const asteroid_width = 10.0
+/// An asteroid's glyph box. The JS measures the rendered character's div
+/// (`a.width()`, `a.height()`): space.css sets `.asteroid` in 32px Times, a
+/// 37px-tall line whose width depends on the glyph.
+pub const asteroid_height = 37.0
 
-pub const asteroid_height = 15.0
+/// The width of an asteroid's glyph at 32px Times.
+pub fn asteroid_width(chara: String) -> Float {
+  case chara {
+    "%" -> 27.0
+    "&" -> 25.0
+    "H" -> 23.0
+    _ -> 16.0
+  }
+}
 
 /// A held direction.
 pub type Dir {
@@ -134,16 +142,18 @@ pub fn asteroid_y(asteroid: Asteroid, now: Int) -> Float {
   *. field_floor
 }
 
-/// One collision-and-pruning pass over the field: every asteroid overlapping
-/// the ship takes a point of hull and bursts; ones past the floor vanish.
-pub fn collide(flight: Flight, now: Int) -> Flight {
+/// One collision-and-pruning pass over the field: every asteroid that
+/// overlapped the ship at any moment since the last frame (`since`) takes a
+/// point of hull and bursts; ones past the floor vanish. The JS checks on
+/// every jQuery animation step; sweeping the fall between frames keeps a
+/// fast rock from stepping clean over the ship between two 33ms looks.
+pub fn collide(flight: Flight, since: Int, now: Int) -> Flight {
   let #(hits, rest) =
     list.partition(flight.asteroids, fn(a) {
-      let y = asteroid_y(a, now)
       a.x <=. flight.x
-      && a.x +. asteroid_width >=. flight.x
-      && y <=. flight.y
-      && y +. asteroid_height >=. flight.y
+      && a.x +. asteroid_width(a.chara) >=. flight.x
+      && asteroid_y(a, since) <=. flight.y
+      && asteroid_y(a, now) +. asteroid_height >=. flight.y
     })
   let falling = list.filter(rest, fn(a) { asteroid_y(a, now) <=. field_floor })
   Flight(..flight, hull: flight.hull - list.length(hits), asteroids: falling)

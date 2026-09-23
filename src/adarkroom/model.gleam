@@ -525,7 +525,8 @@ fn step_world(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
               sound(audio.lift_off),
               flight_frame_timer(run),
               delayed(1000, ClimbTick(run)),
-              delayed(space.wave_delay_ms(0), WaveTick(run)),
+              // The first rock falls at once (`onArrival`'s createAsteroid).
+              delayed(0, WaveTick(run)),
               delayed(space.ascent_ms, AscentComplete(run)),
             ]),
           )
@@ -1301,10 +1302,14 @@ fn flight_frame(model: Model, now: Int) -> #(Model, Effect(Msg)) {
         0 -> space.frame_ms
         last -> now - last
       }
+      let since = case model.flight_last_move {
+        0 -> now
+        last -> last
+      }
       let flown =
         flight
         |> space.move(model.state, dt)
-        |> space.collide(now)
+        |> space.collide(since, now)
       // Each rock that connected rings its altitude's clang.
       let clangs =
         effect.batch(list.repeat(
