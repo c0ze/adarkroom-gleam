@@ -10,7 +10,10 @@
 //
 // The build (vite.config.js) fills PRECACHE and stamps VERSION with a hash of
 // the shell, so every release installs a fresh cache and drops the old one.
+// Audio never changes under its name and is large, so it keeps a cache of its
+// own that outlives releases.
 const VERSION = "adr-dev";
+const AUDIO = "adr-audio";
 const PRECACHE = [];
 const SHELL = "/";
 
@@ -28,7 +31,11 @@ self.addEventListener("activate", (event) => {
     caches
       .keys()
       .then((keys) =>
-        Promise.all(keys.filter((k) => k !== VERSION).map((k) => caches.delete(k))),
+        Promise.all(
+          keys
+            .filter((k) => k !== VERSION && k !== AUDIO)
+            .map((k) => caches.delete(k)),
+        ),
       )
       .then(() => self.clients.claim()),
   );
@@ -57,8 +64,8 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  const immutable =
-    url.pathname.startsWith("/assets/") || url.pathname.startsWith("/audio/");
+  const audio = url.pathname.startsWith("/audio/");
+  const immutable = audio || url.pathname.startsWith("/assets/");
 
   event.respondWith(
     caches.match(request).then((hit) => {
@@ -69,7 +76,9 @@ self.addEventListener("fetch", (event) => {
       const fetched = fetch(request).then((response) => {
         if (response.ok) {
           const copy = response.clone();
-          caches.open(VERSION).then((cache) => cache.put(request, copy));
+          caches
+            .open(audio ? AUDIO : VERSION)
+            .then((cache) => cache.put(request, copy));
         }
         return response;
       });

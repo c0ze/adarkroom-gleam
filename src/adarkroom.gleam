@@ -336,7 +336,7 @@ fn outer_slide(m: Model) -> List(attribute.Attribute(Msg)) {
 /// The original's bottom-right menu (`Engine.init`), rightmost first: the
 /// language selector, sound, lights, restart and save — plus the port's pause
 /// control (an addition; the original has no global pause), offered only
-/// when nothing is afoot. Restart and save wait out a fight or the ascent.
+/// when nothing is afoot. Restart and save wait for home: not mid-walk, mid-fight or mid-ascent.
 fn menu_corner(m: Model) -> Element(Msg) {
   let item = fn(label, msg) {
     html.button([attribute.type_("button"), event.on_click(msg)], [
@@ -351,7 +351,8 @@ fn menu_corner(m: Model) -> Element(Msg) {
     True -> item("lights on.", model.ToggleLights)
     False -> item("lights off.", model.ToggleLights)
   }
-  let quiet = m.combat == None && m.location != model.Space
+  let quiet =
+    m.combat == None && m.expedition == None && m.location != model.Space
   let game_items = case quiet {
     True -> [
       item("restart.", model.OpenDialog(menu.RestartPrompt)),

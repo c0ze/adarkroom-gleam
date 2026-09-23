@@ -789,6 +789,9 @@ fn step_world(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
 
     // Only embark from the path, and only when not already exploring — guards
     // against a double-click or a replayed effect re-deducting supplies.
+    // Nothing sets out from behind an open menu dialog.
+    Embark | CheckLiftoff if model.dialog != None -> #(model, effect.none())
+
     Embark ->
       case model.location, model.expedition, on_cooldown(model, "embark") {
         Path, None, False -> #(model, roll_seed())
@@ -1289,12 +1292,13 @@ fn step_world(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
       #(Model(..model, state: s), apply_lights(s))
     }
 
-    // The save and restart dialogs wait out a fight or the ascent, whose
-    // clocks would run on unseen behind them.
-    OpenDialog(..) if model.combat != None || model.location == Space -> #(
-      model,
-      effect.none(),
-    )
+    // The save and restart dialogs wait for home: a fight, a walk or the
+    // ascent would run on unseen behind them.
+    OpenDialog(..)
+      if model.combat != None
+      || model.expedition != None
+      || model.location == Space
+    -> #(model, effect.none())
 
     OpenDialog(dialog: menu.SaveExport(..)) -> #(
       Model(
@@ -1353,7 +1357,7 @@ fn step_world(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
     ImportSave ->
       case model.dialog {
         Some(menu.SaveImport(draft: draft, ..)) ->
-          case save.import_save(string.replace(draft, " ", "")) {
+          case save.import_save(strip_whitespace(draft)) {
             Ok(imported) -> #(
               Model(..model, retired: True, dialog: None),
               effect.from(fn(_) {
@@ -1942,11 +1946,13 @@ fn heal_in_combat(model: Model, item: String) -> Model {
   let #(cd_id, cd_ms) = heal_cooldown(item)
   let have = state.get_outfit(model.state, item) > 0
   case model.combat {
-    Some(cs) if have ->
+    Some(cs) if have -> {
       // The loot screen rebuilds its heal buttons without cooldowns
       // (`createEatMeatButton(0)` in winFight), so a won fight's heals are
-      // instant and ungated.
-      case !cs.won && on_cooldown(model, cd_id) {
+      // instant and ungated — once it's up: a dying blast's fuse still
+      // holds the fight screen, cooldowns and all.
+      let looting = cs.won && cs.exploding == None
+      case !looting && on_cooldown(model, cd_id) {
         True -> model
         False -> {
           let amount = heal_amount(model.state, item)
@@ -1961,12 +1967,13 @@ fn heal_in_combat(model: Model, item: String) -> Model {
               ),
               combat: Some(combat.CombatState(..cs, player_hp: healed)),
             )
-          case cs.won {
+          case looting {
             True -> model
             False -> start_cooldown(model, cd_id, cd_ms)
           }
         }
       }
+    }
     _ -> model
   }
 }
@@ -2561,6 +2568,13 @@ fn play_track(model: Model, track: String) -> #(Model, Effect(Msg)) {
       effect.from(fn(_) { audio.play_background_music(track) }),
     )
   }
+}
+
+/// A pasted code without its line breaks and spaces (`import64`'s
+/// `replace(/\s/g, '')`) — a copy from a text file ends in a newline.
+fn strip_whitespace(text: String) -> String {
+  ["\r", "\n", "\t", " "]
+  |> list.fold(text, fn(acc, ws) { string.replace(acc, ws, "") })
 }
 
 /// Set the master volume the sound setting calls for.

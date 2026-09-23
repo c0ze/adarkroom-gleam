@@ -2560,3 +2560,46 @@ pub fn a_full_pack_can_take_nothing_test() {
     model.Model(..m, state: state.set_outfit(m.state, "cured meat", 9))
   model.loot_can_take_something(roomy) |> should.be_true
 }
+
+pub fn no_menu_dialog_out_walking_test() {
+  let base = model.init()
+  let m =
+    model.Model(
+      ..base,
+      location: model.Path,
+      state: state.set_outfit(base.state, "cured meat", 5)
+        |> state.set_store("cured meat", 5),
+    )
+  let out = run(m, model.Embarked(seed: 1, cache: False))
+  run(out, model.OpenDialog(menu.SaveStart)).dialog |> should.equal(option.None)
+}
+
+pub fn nothing_sets_out_from_behind_a_dialog_test() {
+  let base = model.init()
+  let m =
+    model.Model(
+      ..base,
+      location: model.Path,
+      state: state.set_outfit(base.state, "cured meat", 5),
+      dialog: option.Some(menu.SaveStart),
+    )
+  let #(_, fx) = model.update(m, model.Embark)
+  fx |> should.equal(effect.none())
+}
+
+pub fn a_pasted_code_may_carry_line_breaks_test() {
+  let code = save.export_save(state.set_store(state.new(), "wood", 9))
+  let after =
+    run(model.init(), model.OpenDialog(menu.SaveImport("", False)))
+    |> run(model.ImportDraft(" " <> code <> "\n"))
+    |> run(model.ImportSave)
+  after.retired |> should.be_true
+}
+
+pub fn heals_keep_their_cooldown_while_the_fuse_burns_test() {
+  let m = exploding_fight(50)
+  let m = model.Model(..m, state: state.set_outfit(m.state, "cured meat", 3))
+  let once = run(m, model.Heal("cured meat"))
+  let twice = run(once, model.Heal("cured meat"))
+  state.get_outfit(twice.state, "cured meat") |> should.equal(2)
+}
