@@ -1864,6 +1864,13 @@ fn take_everything(model: Model) -> #(Model, Effect(Msg)) {
 /// Whether every pending row would fit in the pack at once (`setTakeAll`'s
 /// running tally) — the difference between "take everything" and "take all
 /// you can".
+/// Whether at least one of anything waiting would fit (`setTakeAll`'s
+/// `canTakeSomething`, which disables the take-everything button).
+pub fn loot_can_take_something(model: Model) -> Bool {
+  let free = path.free_space(model.state)
+  list.any(model.loot, fn(row) { row.1 > 0 && path.weight(row.0) <=. free })
+}
+
 pub fn loot_fits_entirely(model: Model) -> Bool {
   let needed =
     list.fold(model.loot, 0.0, fn(acc, row) {

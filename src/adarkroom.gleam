@@ -727,7 +727,8 @@ fn take_everything_row(m: Model) -> Element(Msg) {
       text: label,
       on_click: model.TakeEverything,
       cost: [],
-      disabled: False,
+      // Nothing fits, nothing to take (`setTakeAll`): drop something first.
+      disabled: !model.loot_can_take_something(m),
       cooldown: model.cooldown_fraction(
         m,
         "loot_take_et",

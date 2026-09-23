@@ -2546,3 +2546,17 @@ pub fn no_save_dialog_mid_fight_test() {
   run(fighting, model.OpenDialog(menu.SaveStart)).dialog
   |> should.equal(option.None)
 }
+
+pub fn a_full_pack_can_take_nothing_test() {
+  let base = world_model(10)
+  let m =
+    model.Model(
+      ..base,
+      state: state.set_outfit(base.state, "cured meat", 10),
+      loot: [#("medicine", 1)],
+    )
+  model.loot_can_take_something(m) |> should.be_false
+  let roomy =
+    model.Model(..m, state: state.set_outfit(m.state, "cured meat", 9))
+  model.loot_can_take_something(roomy) |> should.be_true
+}
