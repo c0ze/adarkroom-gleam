@@ -440,6 +440,20 @@ pub fn reaching_the_village_ends_the_expedition_test() {
   option.is_none(home.expedition) |> should.equal(True)
 }
 
+pub fn the_header_cannot_strand_an_expedition_test() {
+  let base = model.init()
+  let m =
+    model.Model(
+      ..base,
+      location: model.Path,
+      state: state.set_outfit(state.new(), "cured meat", 5),
+    )
+  let embarked = run(m, model.Embarked(seed: 1, cache: False))
+  let clicked = run(embarked, Navigate(to: model.Room))
+  clicked.location |> should.equal(model.World)
+  clicked.expedition |> should.equal(embarked.expedition)
+}
+
 pub fn dying_returns_to_the_room_and_drops_the_supplies_test() {
   let base = model.init()
   let s = state.set_outfit(state.new(), "cured meat", 5)
@@ -1821,8 +1835,10 @@ pub fn surviving_the_fade_wins_test() {
 pub fn a_crashed_runs_stragglers_cannot_touch_the_next_flight_test() {
   // Lift off twice (run 2); run 1's leftover 60s fade and climb must do
   // nothing to the new flight.
+  // The hull gives out: the flight is gone and the ship takes the player back.
+  let crashed = model.Model(..lifting_off(), space: option.None)
   let second =
-    lifting_off()
+    crashed
     |> run(model.Navigate(to: model.Ship))
     |> run(model.Navigate(to: model.Space))
   second.flight_run |> should.equal(2)

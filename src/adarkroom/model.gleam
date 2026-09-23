@@ -436,6 +436,14 @@ fn step_world(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
       #(notify_room(ticked, messages), effect.none())
     }
 
+    // Out in the world or up in the sky the header is gone (the original
+    // slides it away with #outerSlider): walking home and landing are the
+    // only ways back, so a stray tab click can't strand the expedition.
+    Navigate(..) if model.expedition != None || model.space != None -> #(
+      model,
+      effect.none(),
+    )
+
     Navigate(to: location) -> {
       let navigated =
         Model(

@@ -839,9 +839,15 @@ fn event_button(m: Model, pair: #(String, events.SceneButton)) -> Element(Msg) {
 /// Real `<button role="tab">`s in a tablist: each sits in the Tab order and
 /// answers Enter/Space, and `aria-selected` names the current location.
 fn header(m: Model) -> Element(Msg) {
+  // The world and the ascent live on the outer slider, past the header: no
+  // tabs there (the model refuses the navigation too).
+  let tabs = case m.location {
+    model.World | model.Space -> []
+    _ -> model.unlocked_locations(m)
+  }
   html.div(
     [attribute.id("header"), attribute.role("tablist")],
-    list.map(model.unlocked_locations(m), fn(loc) {
+    list.map(tabs, fn(loc) {
       let selected = loc == m.location
       let class = case selected {
         True -> "headerButton selected"
