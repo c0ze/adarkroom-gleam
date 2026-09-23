@@ -260,6 +260,9 @@ pub type Model {
     paused: Bool,
     /// The wall clock when the pause began, for shifting deadlines on resume.
     paused_at: Int,
+    /// This game is over — won, or wiped for a restart. Nothing may change
+    /// (or be saved) any more; only the ending's own clock and links run.
+    retired: Bool,
   )
 }
 
@@ -303,6 +306,7 @@ pub fn init() -> Model {
     keys_armed: False,
     paused: False,
     paused_at: 0,
+    retired: False,
   )
 }
 
@@ -336,9 +340,17 @@ fn start_cooldown(model: Model, id: String, duration: Int) -> Model {
 
 /// State transition, paired with any effects to run.
 pub fn update(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
-  case model.paused {
-    True -> update_paused(model, msg)
-    False -> step_world(model, msg)
+  case model.retired, msg {
+    // A finished game only plays out its ending (`endGame` clears every
+    // timer; here the stragglers are ignored).
+    True, OutroStep | True, EndingWait | True, RestartGame | True, OpenStore(..)
+    -> step_world(model, msg)
+    True, _ -> #(model, effect.none())
+    False, _ ->
+      case model.paused {
+        True -> update_paused(model, msg)
+        False -> step_world(model, msg)
+      }
   }
 }
 
@@ -683,6 +695,10 @@ fn step_world(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
       // Keep the village growing: schedule the next arrival.
       schedule_population(),
     )
+
+    // The village earns nothing while the ship climbs (`collectIncome`
+    // skips the Space module).
+    CollectIncome if model.location == Space -> #(model, effect.none())
 
     CollectIncome -> {
       let #(new_state, buffer) =
@@ -1120,7 +1136,7 @@ fn step_world(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
     )
 
     RestartGame -> #(
-      model,
+      Model(..model, retired: True),
       effect.from(fn(_) {
         save.wipe()
         browser.reload()
@@ -1162,9 +1178,13 @@ fn step_world(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
 fn game_won(model: Model, rolls: List(Float)) -> #(Model, Effect(Msg)) {
   let this_score = scoring.calculate_score(model.state)
   let total = scoring.total_score() + this_score
+  // The game is over: its save goes (`Engine.deleteSave(true)` keeps only
+  // the prestige slot), and nothing may write it back.
+  let model = Model(..model, retired: True)
   let persist =
     effect.from(fn(_) {
       scoring.save(model.state, rolls)
+      save.wipe()
       // The ending has its own theme, at full volume again.
       audio.set_background_volume(1.0, 1.0)
       audio.play_background_music(audio.music_ending)

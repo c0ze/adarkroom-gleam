@@ -136,8 +136,9 @@ fn resume_builder(m: Model) -> Effect(Msg) {
 fn update(m: Model, msg: Msg) -> #(Model, Effect(Msg)) {
   let #(new, eff) = model.update(m, msg)
   // Persist whenever the saved state actually changes (not on UI-only messages
-  // like Tick or Navigate).
-  case new.state == m.state {
+  // like Tick or Navigate) — and never once the game is over, so a won or
+  // restarted game stays wiped.
+  case new.state == m.state || new.retired {
     True -> #(new, eff)
     False -> #(new, effect.batch([eff, save_effect(new.state)]))
   }

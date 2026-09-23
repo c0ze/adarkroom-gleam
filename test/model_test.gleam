@@ -2257,3 +2257,35 @@ pub fn supplies_spent_after_packing_cannot_be_duplicated_test() {
   state.get_outfit(after.state, "alien alloy") |> should.equal(0)
   state.get_store(after.state, "alien alloy") |> should.equal(0)
 }
+
+pub fn a_won_game_is_retired_and_stops_changing_test() {
+  let base = lifting_off()
+  let won =
+    model.Model(
+      ..base,
+      state: base.state
+        |> state.set_store("fleet beacon", 1)
+        |> state.set_game("population", 5),
+    )
+    |> run(model.GameWon([0.5]))
+  won.retired |> should.be_true
+  // The village's clocks keep ticking in the page, but change nothing.
+  let later = won |> run(model.CollectIncome) |> run(model.AdjustTemp)
+  later.state |> should.equal(won.state)
+  // The ending itself still plays out.
+  run(later, model.OutroStep).ending |> should.not_equal(later.ending)
+}
+
+pub fn no_income_is_collected_during_the_ascent_test() {
+  let flying = lifting_off()
+  let m =
+    model.Model(
+      ..flying,
+      state: flying.state
+        |> state.set_game("population", 5),
+    )
+  run(m, model.CollectIncome).state |> should.equal(m.state)
+  // The same village at home does earn.
+  run(model.Model(..m, location: model.Room), model.CollectIncome).state
+  |> should.not_equal(m.state)
+}
