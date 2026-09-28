@@ -1,9 +1,9 @@
 # CodeRabbit configuration — https://docs.coderabbit.ai/guides/configure-coderabbit
-# The port lives on `master`; the reference JS sits in adarkroom-js/.
+# The port lives on `main`; the reference JS sits in adarkroom-js/.
 language: en-US
 reviews:
   profile: chill
   auto_review:
     enabled: true
     base_branches:
-      - master
+      - main
