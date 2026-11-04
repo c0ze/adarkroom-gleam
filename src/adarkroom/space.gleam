@@ -216,8 +216,6 @@ fn glyph(roll: Float) -> String {
   }
 }
 
-/// A second of climb; the clock tops out past 60km (the win is the fade
-/// completing, not the altitude).
 /// The air's name at this altitude (`Space.setTitle`), shown as the
 /// document title through the ascent.
 pub fn atmosphere(altitude: Int) -> String {
@@ -231,6 +229,54 @@ pub fn atmosphere(altitude: Int) -> String {
   }
 }
 
+/// A second of climb; the clock tops out past 60km (the win is the fade
+/// completing, not the altitude).
 pub fn climb(flight: Flight) -> Flight {
   Flight(..flight, altitude: flight.altitude + 1)
+}
+
+// --- the star field ---------------------------------------------------------
+
+/// `STAR_WIDTH` / `STAR_HEIGHT` — each star tile is a 3000px square.
+pub const star_tile = 3000
+
+/// `NUM_STARS` — `drawStarAsync` draws stars 0 through 200, so 201 per tile.
+pub const num_stars = 200
+
+/// `STAR_SPEED` — the front layer falls one tile in a minute; the back layer
+/// (`starsBack`, at half opacity) takes twice as long.
+pub const star_speed_ms = 60_000
+
+/// `drawStarAsync`'s pace: one more star every 100ms.
+pub const star_delay_ms = 100
+
+/// A star's place in its tile, as `(top, left)` pixels.
+pub type Star {
+  Star(top: Int, left: Int)
+}
+
+/// The stars of one layer, in the order they appear. The original rolls
+/// `Math.random` for each (cosmetic, never seeded), so any spread will do:
+/// a small linear congruential generator keyed by `seed` keeps a flight's
+/// sky the same from frame to frame without carrying it in the model.
+pub fn stars(seed: Int) -> List(Star) {
+  let #(_, acc) =
+    list.fold(list.repeat(Nil, num_stars + 1), #(lcg(seed), []), fn(state, _) {
+      let #(x, acc) = state
+      let y = lcg(x)
+      let next = lcg(y)
+      #(next, [Star(top: x % star_tile, left: y % star_tile), ..acc])
+    })
+  list.reverse(acc)
+}
+
+/// One step of the Park–Miller generator (the multiplier 48271, mod 2^31-1),
+/// which stays inside the JavaScript number's exact integers.
+fn lcg(x: Int) -> Int {
+  let m = 2_147_483_647
+  let x = case int.absolute_value(x) % m {
+    0 -> 1
+    v -> v
+  }
+  x * 48_271 % m
 }

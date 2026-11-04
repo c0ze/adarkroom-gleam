@@ -183,6 +183,30 @@
         0%, 50% { color: #000; }
         50.8%, 100% { color: #FFF; }
       }
+      /* The star field (`drawStars`): space.css sizes the layers and tiles
+         and dark.css inks the stars; jQuery's endless bottom: 0 → -3000px
+         laps (STAR_SPEED, twice as slow behind) become CSS loops, and
+         drawStarAsync's one star per 100ms becomes each star's own delay
+         (set inline). */
+      #wrapper.ascent #stars,
+      #wrapper.ascent #starsBack {
+        bottom: 0;
+        animation: starsFall 60000ms linear infinite;
+      }
+      #wrapper.ascent #starsBack {
+        animation-duration: 120000ms;
+      }
+      @keyframes starsFall {
+        from { bottom: 0; }
+        to { bottom: -3000px; }
+      }
+      #wrapper.ascent .star {
+        opacity: 0;
+        animation: starAppear 1ms linear forwards;
+      }
+      @keyframes starAppear {
+        to { opacity: 1; }
+      }
       /* The notification column's fade is painted in the page colour. */
       #wrapper.ascent #notifyGradient {
         display: none;

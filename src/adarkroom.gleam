@@ -289,7 +289,7 @@ fn game_view(m: Model) -> Element(Msg) {
     [attribute.id("wrapper"), ..ascent],
     list.append(
       [
-        html.div([attribute.id("sky")], []),
+        html.div([attribute.id("sky")], star_field(m)),
         html.div([attribute.id("content")], [
           // Lift-off slides the village down out of sight and brings the
           // sky (#spacePanel, parked 700px up) into view (`liftOff`'s
@@ -321,6 +321,49 @@ fn game_view(m: Model) -> Element(Msg) {
       ]),
     ),
   )
+}
+
+/// The ascent's star field (`drawStars`): two layers falling behind the ship,
+/// the back one at half the speed and half the opacity. Each layer stacks
+/// two identical 3000px tiles and slides one tile down per lap, so the loop
+/// is seamless; its stars come in one every 100ms. space.css and dark.css
+/// colour them; the motion is CSS (index.html). The stars never change in a
+/// flight, so the subtree is built once per lift-off, not every frame.
+fn star_field(m: Model) -> List(Element(Msg)) {
+  case m.location, m.space {
+    model.Space, Some(_) -> {
+      let seed = m.star_seed
+      [
+        element.memo([element.ref(seed)], fn() {
+          html.div([attribute.id("starsContainer")], [
+            star_layer("stars", seed),
+            star_layer("starsBack", seed + 1),
+          ])
+        }),
+      ]
+    }
+    _, _ -> []
+  }
+}
+
+fn star_layer(id: String, seed: Int) -> Element(Msg) {
+  let stars =
+    list.index_map(space.stars(seed), fn(star, i) {
+      html.div(
+        [
+          attribute.class("star"),
+          attribute.style("top", int.to_string(star.top) <> "px"),
+          attribute.style("left", int.to_string(star.left) <> "px"),
+          attribute.style(
+            "animation-delay",
+            int.to_string(i * space.star_delay_ms) <> "ms",
+          ),
+        ],
+        [element.text(".")],
+      )
+    })
+  let tile = html.div([], stars)
+  html.div([attribute.id(id)], [tile, tile])
 }
 
 fn outer_slide(m: Model) -> List(attribute.Attribute(Msg)) {

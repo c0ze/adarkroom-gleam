@@ -140,8 +140,7 @@ Kept small and clearly marked in code; everything else is bug-for-bug:
 - Mid-trip world changes live in the running page only; a reload returns
   the wanderer home with the outfit intact (matches the original).
 - Button cooldowns don't persist across reloads (the original saves some).
-- The corner menu has no `hyper.`, `share.`, `get the app.` or `github.`;
-  the ascent has no star field.
+- The corner menu has no `hyper.`, `share.`, `get the app.` or `github.`.
 - The forest-unlock reload window resumes instead of softlocking (the
   original's resume check is dead code).
 - During the location slide, each panel carries its own stores column

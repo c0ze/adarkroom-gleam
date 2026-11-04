@@ -262,6 +262,9 @@ pub type Model {
     flight_last_move: Int,
     /// Which ascent this is — stale timers from earlier runs are ignored.
     flight_run: Int,
+    /// The ascent's star field, rolled at lift-off so each flight has its own
+    /// sky (`drawStars`). Runtime-only.
+    star_seed: Int,
     /// Which fight this is — a finished fight's clocks (its attack timer,
     /// specials, statuses, poison) must not reach the next one.
     fight_run: Int,
@@ -331,6 +334,7 @@ pub fn init() -> Model {
     space: None,
     flight_last_move: 0,
     flight_run: 0,
+    star_seed: 0,
     fight_run: 0,
     trip_flags: dict.new(),
     ending: None,
@@ -537,6 +541,7 @@ fn step_world(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
               space: Some(space.begin(arrived.state)),
               flight_last_move: 0,
               flight_run: run,
+              star_seed: arrived.now + run,
             )
           let #(flying, keys) = arm_keys(flying)
           #(
