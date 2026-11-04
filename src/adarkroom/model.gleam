@@ -378,6 +378,62 @@ fn start_cooldown(model: Model, id: String, duration: Int) -> Model {
     ..model,
     cooldowns: dict.insert(model.cooldowns, id, model.now + duration),
   )
+  |> save_cooldown(id)
+}
+
+/// The buttons whose cooldowns survive a reload, with their full lengths
+/// (`Button.saveCooldown`: every button built outside an event writes what
+/// is left of its cooldown to `cooldown.<id>`, and picks it up again when
+/// it is built on load, never past its full length). The ones built in
+/// events, fights and the world never outlive the page anyway.
+const saved_cooldowns = [
+  #("lightButton", room.stoke_cooldown_ms),
+  #("stokeButton", room.stoke_cooldown_ms),
+  #("gather", outside.gather_cooldown_ms),
+  #("traps", outside.traps_cooldown_ms),
+  #("embark", death_cooldown_ms),
+  #("liftoff", ship.liftoff_cooldown_ms),
+]
+
+fn cooldown_key(id: String) -> String {
+  "cooldown." <> id
+}
+
+/// Write what is left of a saved button's cooldown into the save, in
+/// game-time ms (the original counts it down every half second); a spent
+/// one leaves nothing behind.
+fn save_cooldown(model: Model, id: String) -> Model {
+  case list.key_find(saved_cooldowns, id) {
+    Error(Nil) -> model
+    Ok(_) -> {
+      let key = cooldown_key(id)
+      let s = case dict.get(model.cooldowns, id) {
+        Ok(deadline) if deadline > model.now ->
+          state.set_game(model.state, key, deadline - model.now)
+        _ -> state.remove_game(model.state, key)
+      }
+      Model(..model, state: s)
+    }
+  }
+}
+
+/// Count the saved cooldowns down (each heartbeat).
+fn save_cooldowns(model: Model) -> Model {
+  list.fold(saved_cooldowns, model, fn(m, entry) { save_cooldown(m, entry.0) })
+}
+
+/// Resume the saved cooldowns at boot (`Button.cooldown(el, 'state')`).
+fn restore_cooldowns(model: Model) -> Model {
+  let cooldowns =
+    list.fold(saved_cooldowns, model.cooldowns, fn(acc, entry) {
+      let #(id, full) = entry
+      case state.get_game(model.state, cooldown_key(id)) {
+        left if left > 0 ->
+          dict.insert(acc, id, model.now + int.min(left, full))
+        _ -> acc
+      }
+    })
+  Model(..model, cooldowns:)
 }
 
 /// State transition, paired with any effects to run.
@@ -624,7 +680,9 @@ fn step_world(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
         Room -> fire_messages
         _ -> []
       }
-      let cooled = apply_room(Model(..model, now:), #(tended, heard))
+      // The saved cooldowns count down on the same beat.
+      let cooled =
+        apply_room(Model(..model, now:), #(tended, heard)) |> save_cooldowns
       // A fire that dies while the stoke button cools hands the cooldown to
       // the light button (`updateButton`).
       let cooled = case
@@ -2644,6 +2702,7 @@ pub fn startup_music(model: Model) -> #(Model, Effect(Msg)) {
 pub fn boot(model: Model, now: Int) -> Model {
   let model =
     Model(..model, now:, state: room.reset_cool(model.state))
+    |> restore_cooldowns
     |> boot_announcements
   apply_room(model, room.become_helper(model.state))
 }

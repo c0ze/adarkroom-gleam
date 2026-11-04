@@ -139,7 +139,6 @@ Kept small and clearly marked in code; everything else is bug-for-bug:
 
 - Mid-trip world changes live in the running page only; a reload returns
   the wanderer home with the outfit intact (matches the original).
-- Button cooldowns don't persist across reloads (the original saves some).
 - The corner menu has no `share.`, `get the app.` or `github.`.
 - Hyper mode (`hyper.` / `classic.`) sits with restart and save, so like
   them it waits for home. As in the original it doubles what the game times

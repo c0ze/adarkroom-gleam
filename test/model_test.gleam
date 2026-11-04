@@ -2635,3 +2635,40 @@ pub fn the_sound_prompt_waits_out_a_trip_test() {
   later.dialog |> should.equal(option.None)
   menu.sound_prompt_due(later.state) |> should.be_true
 }
+
+pub fn a_reload_picks_up_a_saved_cooldown_test() {
+  // Gathering's minute, half spent when the page went away.
+  let saved = state.set_game(state.new(), "cooldown.gather", 30_000)
+  let m = model.boot(model.Model(..model.init(), state: saved), 1_000_000)
+  model.on_cooldown(m, "gather") |> should.be_true
+  model.cooldown_fraction(m, "gather", outside.gather_cooldown_ms)
+  |> should.equal(0.5)
+}
+
+pub fn a_saved_cooldown_never_outlasts_its_button_test() {
+  let saved = state.set_game(state.new(), "cooldown.stokeButton", 999_999)
+  let m = model.boot(model.Model(..model.init(), state: saved), 1_000_000)
+  dict.get(m.cooldowns, "stokeButton")
+  |> should.equal(Ok(1_000_000 + room.stoke_cooldown_ms))
+}
+
+pub fn the_heartbeat_counts_a_saved_cooldown_down_and_clears_it_test() {
+  let base = model.Model(..model.init(), now: 1_000_000)
+  let m =
+    model.Model(
+      ..base,
+      cooldowns: dict.from_list([
+        #("traps", 1_090_000),
+        // A fight's cooldown never rides in the save.
+        #("loot_leave", 1_090_000),
+      ]),
+    )
+  let later = run(m, model.CoolCheck(at: 1_030_000))
+  state.get_game(later.state, "cooldown.traps") |> should.equal(60_000)
+  dict.has_key(later.state.game, "cooldown.loot_leave") |> should.be_false
+  // The save carries it through a reload.
+  let assert Ok(loaded) = save.decode(save.encode(later.state))
+  state.get_game(loaded, "cooldown.traps") |> should.equal(60_000)
+  let spent = run(later, model.CoolCheck(at: 1_100_000))
+  dict.has_key(spent.state.game, "cooldown.traps") |> should.be_false
+}

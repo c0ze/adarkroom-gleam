@@ -129,6 +129,11 @@ pub fn set_game(state: State, key: String, value: Int) -> State {
   State(..state, game: dict.insert(state.game, key, value))
 }
 
+/// Drop a `game` value; reading it again gives the default.
+pub fn remove_game(state: State, key: String) -> State {
+  State(..state, game: dict.delete(state.game, key))
+}
+
 // --- character --------------------------------------------------------------
 
 /// Read a `character` value (perks, personal stats), defaulting to `0`.
