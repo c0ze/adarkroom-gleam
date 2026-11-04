@@ -8,6 +8,11 @@ pub fn set_and_clear_timeout_test() {
   timer.clear_timeout(id)
 }
 
+pub fn set_and_clear_raw_timeout_test() {
+  let id = timer.set_timeout_raw(fn() { Nil }, 100_000)
+  timer.clear_timeout(id)
+}
+
 pub fn set_and_clear_interval_test() {
   let id = timer.set_interval(fn() { Nil }, 100_000)
   timer.clear_interval(id)

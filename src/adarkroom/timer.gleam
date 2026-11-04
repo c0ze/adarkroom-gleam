@@ -1,11 +1,19 @@
 //// Thin wrappers over the browser timer APIs. These drive the game loop and
 //// button cooldowns from the MVU runtime (wired up in M1).
+////
+//// `set_timeout` and `set_interval` are game timers (`Engine.setTimeout` /
+//// `Engine.setInterval`): hyper mode halves them. `set_timeout_raw` is a
+//// plain browser timer, for what the original never speeds up.
 
 /// An opaque handle identifying a scheduled timer or animation frame.
 pub type TimerId
 
 @external(javascript, "./timer_ffi.mjs", "setTimeout")
 pub fn set_timeout(callback: fn() -> Nil, delay_ms: Int) -> TimerId
+
+/// A browser timeout that ignores the game's speed.
+@external(javascript, "./timer_ffi.mjs", "setTimeoutRaw")
+pub fn set_timeout_raw(callback: fn() -> Nil, delay_ms: Int) -> TimerId
 
 @external(javascript, "./timer_ffi.mjs", "clearTimeout")
 pub fn clear_timeout(id: TimerId) -> Nil

@@ -1,4 +1,14 @@
+import { getSpeed } from "./clock_ffi.mjs";
+
+// Game timers run on the game clock (`Engine.setTimeout` / `setInterval`):
+// their delays shrink with the speed. The raw ones are the original's plain
+// browser timers, which hyper mode never touches.
+
 export function setTimeout(callback, delayMs) {
+  return globalThis.setTimeout(() => callback(), delayMs / getSpeed());
+}
+
+export function setTimeoutRaw(callback, delayMs) {
   return globalThis.setTimeout(() => callback(), delayMs);
 }
 
@@ -7,12 +17,25 @@ export function clearTimeout(id) {
   return undefined;
 }
 
+// A game interval re-arms itself one timeout at a time, reading the speed
+// afresh each lap, so switching hyper mode on or off takes hold at the next
+// beat instead of at the next page load.
 export function setInterval(callback, intervalMs) {
-  return globalThis.setInterval(() => callback(), intervalMs);
+  const handle = { id: null, stopped: false };
+  const arm = () => {
+    handle.id = globalThis.setTimeout(() => {
+      if (handle.stopped) return;
+      arm();
+      callback();
+    }, intervalMs / getSpeed());
+  };
+  arm();
+  return handle;
 }
 
-export function clearInterval(id) {
-  globalThis.clearInterval(id);
+export function clearInterval(handle) {
+  handle.stopped = true;
+  globalThis.clearTimeout(handle.id);
   return undefined;
 }
 

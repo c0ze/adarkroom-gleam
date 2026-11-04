@@ -2515,6 +2515,32 @@ pub fn the_lights_go_out_and_come_back_test() {
   run(dark, model.ToggleLights).state |> menu.lights_off |> should.be_false
 }
 
+pub fn going_hyper_asks_first_then_runs_twice_as_fast_test() {
+  let asked = run(model.init(), model.OpenDialog(menu.HyperPrompt))
+  asked.dialog |> should.equal(option.Some(menu.HyperPrompt))
+  menu.hyper(asked.state) |> should.be_false
+  let hyper = run(asked, model.SetHyper(True))
+  hyper.dialog |> should.equal(option.None)
+  menu.hyper(hyper.state) |> should.be_true
+  menu.speed(hyper.state) |> should.equal(2)
+}
+
+pub fn declining_hyper_changes_nothing_test() {
+  let declined =
+    run(model.init(), model.OpenDialog(menu.HyperPrompt))
+    |> run(model.CloseDialog)
+  menu.hyper(declined.state) |> should.be_false
+  menu.speed(declined.state) |> should.equal(1)
+}
+
+pub fn classic_slows_back_down_and_the_setting_is_saved_test() {
+  let hyper = run(model.init(), model.SetHyper(True))
+  // `config.hyperMode` rides in the save, so a reload stays hyper.
+  let assert Ok(loaded) = save.decode(save.encode(hyper.state))
+  menu.hyper(loaded) |> should.be_true
+  run(hyper, model.SetHyper(False)).state |> menu.hyper |> should.be_false
+}
+
 pub fn exporting_shows_the_current_save_as_a_code_test() {
   let base = model.init()
   let m = model.Model(..base, state: state.set_store(base.state, "wood", 42))

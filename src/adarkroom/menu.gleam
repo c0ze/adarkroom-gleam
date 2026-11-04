@@ -1,5 +1,5 @@
 //// The corner menu's settings and dialogs (`Engine.init`'s menu): sound,
-//// lights, save export/import and restart. The settings live in the save's
+//// lights, hyper mode, save export/import and restart. The settings live in the save's
 //// `game` category, as the original keeps them under `config.*` — a restart
 //// wipes them with everything else.
 
@@ -11,6 +11,8 @@ import adarkroom/state.{type State}
 pub type Dialog {
   /// `notifyAboutSound`: the first boot asks whether to turn the sound on.
   SoundPrompt
+  /// `confirmHyperMode`: go hyper? (Going back to classic asks nothing.)
+  HyperPrompt
   /// `confirmDelete`: restart the game?
   RestartPrompt
   /// `exportImport`'s first scene: export, import or cancel.
@@ -30,6 +32,8 @@ const lights_key = "config.lightsOff"
 
 const sound_asked_key = "config.audioAlertShown"
 
+const hyper_key = "config.hyperMode"
+
 /// Whether the sound is on. The original starts silent until the player opts
 /// in (`toggleVolume(Boolean($SM.get('config.soundOn')))`).
 pub fn sound_on(s: State) -> Bool {
@@ -47,6 +51,24 @@ pub fn lights_off(s: State) -> Bool {
 
 pub fn set_lights_off(s: State, off: Bool) -> State {
   state.set_game(s, lights_key, flag(off))
+}
+
+/// Whether hyper mode is on (`Engine.options.doubleTime`, saved as
+/// `config.hyperMode`): the game runs at twice the speed.
+pub fn hyper(s: State) -> Bool {
+  state.get_game(s, hyper_key) == 1
+}
+
+pub fn set_hyper(s: State, on: Bool) -> State {
+  state.set_game(s, hyper_key, flag(on))
+}
+
+/// How many times faster than the wall clock the game runs.
+pub fn speed(s: State) -> Int {
+  case hyper(s) {
+    True -> 2
+    False -> 1
+  }
 }
 
 /// Whether the sound prompt has yet to be shown (`playStats.audioAlertShown`).
