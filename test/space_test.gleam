@@ -147,3 +147,32 @@ pub fn a_wide_glyph_is_a_wide_target_test() {
     space.Flight(..space.begin(thrusters(1)), hull: 2, y: 375.0, asteroids: [a])
   space.collide(flight, 500, 500).hull |> should.equal(1)
 }
+
+pub fn each_star_tile_holds_201_stars_test() {
+  space.stars(12_345) |> list.length |> should.equal(201)
+}
+
+pub fn the_stars_fall_inside_their_3000px_tile_test() {
+  list.each([0, 1, 42, 1_793_818_468_084, -7], fn(seed) {
+    space.stars(seed)
+    |> list.all(fn(star) {
+      star.top >= 0 && star.top < 3000 && star.left >= 0 && star.left < 3000
+    })
+    |> should.be_true
+  })
+}
+
+pub fn a_flight_keeps_its_sky_and_the_next_gets_another_test() {
+  space.stars(99) |> should.equal(space.stars(99))
+  { space.stars(99) == space.stars(100) } |> should.be_false
+}
+
+pub fn the_stars_spread_across_the_tile_test() {
+  // Not all bunched in one corner: a quarter of the tile holds some but not
+  // nearly all of them.
+  let in_corner =
+    space.stars(2026)
+    |> list.filter(fn(star) { star.top < 1500 && star.left < 1500 })
+    |> list.length
+  { in_corner > 20 && in_corner < 100 } |> should.be_true
+}

@@ -205,6 +205,8 @@ pub type Msg {
   ToggleSound
   /// The menu's lights toggle (`turnLightsOff`).
   ToggleLights
+  /// Hyper mode on or off (`triggerHyperMode`); going hyper asks first.
+  SetHyper(on: Bool)
   /// Put a menu dialog up (save., restart.).
   OpenDialog(dialog: menu.Dialog)
   /// Take the menu dialog down.
@@ -262,6 +264,9 @@ pub type Model {
     flight_last_move: Int,
     /// Which ascent this is — stale timers from earlier runs are ignored.
     flight_run: Int,
+    /// The ascent's star field, rolled at lift-off so each flight has its own
+    /// sky (`drawStars`). Runtime-only.
+    star_seed: Int,
     /// Which fight this is — a finished fight's clocks (its attack timer,
     /// specials, statuses, poison) must not reach the next one.
     fight_run: Int,
@@ -331,6 +336,7 @@ pub fn init() -> Model {
     space: None,
     flight_last_move: 0,
     flight_run: 0,
+    star_seed: 0,
     fight_run: 0,
     trip_flags: dict.new(),
     ending: None,
@@ -372,6 +378,62 @@ fn start_cooldown(model: Model, id: String, duration: Int) -> Model {
     ..model,
     cooldowns: dict.insert(model.cooldowns, id, model.now + duration),
   )
+  |> save_cooldown(id)
+}
+
+/// The buttons whose cooldowns survive a reload, with their full lengths
+/// (`Button.saveCooldown`: every button built outside an event writes what
+/// is left of its cooldown to `cooldown.<id>`, and picks it up again when
+/// it is built on load, never past its full length). The ones built in
+/// events, fights and the world never outlive the page anyway.
+const saved_cooldowns = [
+  #("lightButton", room.stoke_cooldown_ms),
+  #("stokeButton", room.stoke_cooldown_ms),
+  #("gather", outside.gather_cooldown_ms),
+  #("traps", outside.traps_cooldown_ms),
+  #("embark", death_cooldown_ms),
+  #("liftoff", ship.liftoff_cooldown_ms),
+]
+
+fn cooldown_key(id: String) -> String {
+  "cooldown." <> id
+}
+
+/// Write what is left of a saved button's cooldown into the save, in
+/// game-time ms (the original counts it down every half second); a spent
+/// one leaves nothing behind.
+fn save_cooldown(model: Model, id: String) -> Model {
+  case list.key_find(saved_cooldowns, id) {
+    Error(Nil) -> model
+    Ok(_) -> {
+      let key = cooldown_key(id)
+      let s = case dict.get(model.cooldowns, id) {
+        Ok(deadline) if deadline > model.now ->
+          state.set_game(model.state, key, deadline - model.now)
+        _ -> state.remove_game(model.state, key)
+      }
+      Model(..model, state: s)
+    }
+  }
+}
+
+/// Count the saved cooldowns down (each heartbeat).
+fn save_cooldowns(model: Model) -> Model {
+  list.fold(saved_cooldowns, model, fn(m, entry) { save_cooldown(m, entry.0) })
+}
+
+/// Resume the saved cooldowns at boot (`Button.cooldown(el, 'state')`).
+fn restore_cooldowns(model: Model) -> Model {
+  let cooldowns =
+    list.fold(saved_cooldowns, model.cooldowns, fn(acc, entry) {
+      let #(id, full) = entry
+      case state.get_game(model.state, cooldown_key(id)) {
+        left if left > 0 ->
+          dict.insert(acc, id, model.now + int.min(left, full))
+        _ -> acc
+      }
+    })
+  Model(..model, cooldowns:)
 }
 
 /// State transition, paired with any effects to run.
@@ -537,6 +599,7 @@ fn step_world(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
               space: Some(space.begin(arrived.state)),
               flight_last_move: 0,
               flight_run: run,
+              star_seed: arrived.now + run,
             )
           let #(flying, keys) = arm_keys(flying)
           #(
@@ -546,10 +609,10 @@ fn step_world(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
               keys,
               sound(audio.lift_off),
               flight_frame_timer(run),
-              delayed(1000, ClimbTick(run)),
+              delayed_raw(1000, ClimbTick(run)),
               // The first rock falls at once (`onArrival`'s createAsteroid).
-              delayed(0, WaveTick(run)),
-              delayed(space.ascent_ms, AscentComplete(run)),
+              delayed_raw(0, WaveTick(run)),
+              delayed_raw(space.ascent_ms, AscentComplete(run)),
             ]),
           )
         }
@@ -617,7 +680,9 @@ fn step_world(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
         Room -> fire_messages
         _ -> []
       }
-      let cooled = apply_room(Model(..model, now:), #(tended, heard))
+      // The saved cooldowns count down on the same beat.
+      let cooled =
+        apply_room(Model(..model, now:), #(tended, heard)) |> save_cooldowns
       // A fire that dies while the stoke button cools hands the cooldown to
       // the light button (`updateButton`).
       let cooled = case
@@ -974,7 +1039,7 @@ fn step_world(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
       // A venomous blow that just landed arms the poison drip (one chain; a
       // later blow only changes its strength).
       let dot_armed = case dot_before == 0 && current_dot(model) > 0 {
-        True -> delayed(combat.dot_tick_ms, DotTick(model.fight_run))
+        True -> delayed_raw(combat.dot_tick_ms, DotTick(model.fight_run))
         False -> effect.none()
       }
       // The enemy keeps attacking on its delay until the fight ends.
@@ -1031,7 +1096,10 @@ fn step_world(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
             // The boost holds for `BOOST_DURATION`.
             False -> #(
               model,
-              delayed(combat.boost_duration_ms, BoostExpire(model.fight_run)),
+              delayed_raw(
+                combat.boost_duration_ms,
+                BoostExpire(model.fight_run),
+              ),
             )
           }
         }
@@ -1145,7 +1213,7 @@ fn step_world(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
                 #(
                   climbing,
                   effect.batch([
-                    delayed(1000, ClimbTick(run)),
+                    delayed_raw(1000, ClimbTick(run)),
                     effect.from(fn(_) {
                       audio.set_background_volume(volume, 0.3)
                     }),
@@ -1170,9 +1238,9 @@ fn step_world(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
                 fn(_) { rng.random() },
               )
             let _ =
-              timer.set_timeout(
+              timer.set_timeout_raw(
                 fn() {
-                  dispatch(SpawnWave(run, float.round(clock.now()), rolls))
+                  dispatch(SpawnWave(run, float.round(clock.wall_now()), rolls))
                 },
                 0,
               )
@@ -1186,7 +1254,7 @@ fn step_world(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
       case current_flight(model, run) {
         Ok(flight) -> #(
           Model(..model, space: Some(space.spawn(flight, now, rolls))),
-          delayed(space.wave_delay_ms(flight.altitude), WaveTick(run)),
+          delayed_raw(space.wave_delay_ms(flight.altitude), WaveTick(run)),
         )
         Error(_) -> #(model, effect.none())
       }
@@ -1229,7 +1297,7 @@ fn step_world(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
         Some(Outro(paragraphs: n, this_score: this, total_score: total)) -> {
           let shown = n + 1
           let next = case shown < 5 {
-            True -> delayed(outro_gap_ms(shown + 1), OutroStep)
+            True -> delayed_raw(outro_gap_ms(shown + 1), OutroStep)
             False -> effect.none()
           }
           #(Model(..model, ending: Some(Outro(shown, this, total))), next)
@@ -1292,6 +1360,11 @@ fn step_world(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
       #(Model(..model, state: s), apply_lights(s))
     }
 
+    SetHyper(on: on) -> {
+      let s = menu.set_hyper(model.state, on)
+      #(Model(..model, state: s, dialog: None), apply_speed(s))
+    }
+
     // The save and restart dialogs wait for home: a fight, a walk or the
     // ascent would run on unseen behind them.
     OpenDialog(..)
@@ -1333,7 +1406,7 @@ fn step_world(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
           {
             // Something else holds the stage — or the player is out walking
             // or flying; ask again shortly.
-            False -> #(model, delayed(3000, SoundPromptDue))
+            False -> #(model, delayed_raw(3000, SoundPromptDue))
             True -> #(
               Model(
                 ..model,
@@ -1383,8 +1456,8 @@ fn step_world(model: Model, msg: Msg) -> #(Model, Effect(Msg)) {
           model,
           effect.batch([
             effect.from(fn(_) { browser.set_title("*** EVENT ***") }),
-            delayed(1500, BlinkOff),
-            delayed(3000, BlinkOn),
+            delayed_raw(1500, BlinkOff),
+            delayed_raw(3000, BlinkOn),
           ]),
         )
         False -> #(model, effect.none())
@@ -1416,7 +1489,7 @@ fn game_won(model: Model, rolls: List(Float)) -> #(Model, Effect(Msg)) {
   case state.get_store(model.state, "fleet beacon") > 0 {
     True -> #(
       Model(..model, ending: Some(Outro(0, this_score, total))),
-      effect.batch([persist, delayed(outro_gap_ms(1), OutroStep)]),
+      effect.batch([persist, delayed_raw(outro_gap_ms(1), OutroStep)]),
     )
     False -> #(
       Model(..model, ending: Some(EndOptions(this_score, total))),
@@ -1485,8 +1558,8 @@ fn flight_frame(model: Model, now: Int) -> #(Model, Effect(Msg)) {
 fn flight_frame_timer(run: Int) -> Effect(Msg) {
   effect.from(fn(dispatch) {
     let _ =
-      timer.set_timeout(
-        fn() { dispatch(FlightFrame(run, float.round(clock.now()))) },
+      timer.set_timeout_raw(
+        fn() { dispatch(FlightFrame(run, float.round(clock.wall_now()))) },
         space.frame_ms,
       )
     Nil
@@ -1664,7 +1737,7 @@ fn resolve_strike(
       // A landed stun wears off on its own clock (`STUN_DURATION`).
       let stun = case combat.player_attack(weapon, model.state, roll) {
         combat.StunHit ->
-          delayed(combat.stun_duration_ms, StunExpire(model.fight_run))
+          delayed_raw(combat.stun_duration_ms, StunExpire(model.fight_run))
         _ -> effect.none()
       }
       // An atHealth trigger may have taken hold mid-blow; timed statuses
@@ -1679,7 +1752,7 @@ fn resolve_strike(
         True, Some(_) -> #(
           model,
           effect.batch([
-            delayed(
+            delayed_raw(
               combat.explosion_duration_ms,
               ExplosionResolve(model.fight_run),
             ),
@@ -2165,9 +2238,9 @@ fn set_enemy_status(model: Model, status: combat.Status) -> Model {
 fn status_expiry(model: Model, status: combat.Status) -> Effect(Msg) {
   case status {
     combat.Enraged ->
-      delayed(combat.enrage_duration_ms, StatusExpire(model.fight_run))
+      delayed_raw(combat.enrage_duration_ms, StatusExpire(model.fight_run))
     combat.Meditation ->
-      delayed(combat.meditate_duration_ms, StatusExpire(model.fight_run))
+      delayed_raw(combat.meditate_duration_ms, StatusExpire(model.fight_run))
     _ -> effect.none()
   }
 }
@@ -2190,7 +2263,7 @@ fn dot_tick(model: Model) -> #(Model, Effect(Msg)) {
                 ..model,
                 combat: Some(combat.CombatState(..cs, player_hp: hp)),
               ),
-              delayed(combat.dot_tick_ms, DotTick(model.fight_run)),
+              delayed_raw(combat.dot_tick_ms, DotTick(model.fight_run)),
             )
           }
         }
@@ -2586,6 +2659,12 @@ fn apply_volume(s: State) -> Effect(Msg) {
   effect.from(fn(_) { audio.set_master_volume(volume, 0.0) })
 }
 
+/// Run the game clock at the speed the hyper setting calls for.
+fn apply_speed(s: State) -> Effect(Msg) {
+  let speed = menu.speed(s)
+  effect.from(fn(_) { clock.set_speed(speed) })
+}
+
 /// Put the dark stylesheet on or off, as the lights setting says.
 fn apply_lights(s: State) -> Effect(Msg) {
   let off = menu.lights_off(s)
@@ -2596,10 +2675,11 @@ fn apply_lights(s: State) -> Effect(Msg) {
 /// volume, and — once — the question about sound, three seconds in.
 pub fn boot_settings(model: Model) -> Effect(Msg) {
   effect.batch([
+    apply_speed(model.state),
     apply_lights(model.state),
     apply_volume(model.state),
     case menu.sound_prompt_due(model.state) {
-      True -> delayed(3000, SoundPromptDue)
+      True -> delayed_raw(3000, SoundPromptDue)
       False -> effect.none()
     },
   ])
@@ -2622,6 +2702,7 @@ pub fn startup_music(model: Model) -> #(Model, Effect(Msg)) {
 pub fn boot(model: Model, now: Int) -> Model {
   let model =
     Model(..model, now:, state: room.reset_cool(model.state))
+    |> restore_cooldowns
     |> boot_announcements
   apply_room(model, room.become_helper(model.state))
 }
@@ -2967,7 +3048,7 @@ fn load_scene(
     False -> model
   }
   let blink_fx = case scene.blink {
-    True -> delayed(3000, BlinkOn)
+    True -> delayed_raw(3000, BlinkOn)
     False -> effect.none()
   }
   let #(model, world_messages) = apply_world_effect(model, scene)
@@ -3246,10 +3327,23 @@ fn fire_action(
   #(after_builder, eff)
 }
 
-/// An effect that dispatches `msg` once after `ms` milliseconds.
+/// An effect that dispatches `msg` once after `ms` milliseconds of game time
+/// (`Engine.setTimeout`: half as long in hyper mode).
 fn delayed(ms: Int, msg: Msg) -> Effect(Msg) {
   effect.from(fn(dispatch) {
     let _ = timer.set_timeout(fn() { dispatch(msg) }, ms)
+    Nil
+  })
+}
+
+/// An effect that dispatches `msg` once after `ms` milliseconds of wall time,
+/// for what the original times with a plain `setTimeout` or a jQuery
+/// animation, which hyper mode leaves alone: the ascent, poison and stuns,
+/// the fighters' statuses, the blast, the title's blink, the sound prompt and
+/// the ending.
+fn delayed_raw(ms: Int, msg: Msg) -> Effect(Msg) {
+  effect.from(fn(dispatch) {
+    let _ = timer.set_timeout_raw(fn() { dispatch(msg) }, ms)
     Nil
   })
 }

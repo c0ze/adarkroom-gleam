@@ -139,9 +139,15 @@ Kept small and clearly marked in code; everything else is bug-for-bug:
 
 - Mid-trip world changes live in the running page only; a reload returns
   the wanderer home with the outfit intact (matches the original).
-- Button cooldowns don't persist across reloads (the original saves some).
-- The corner menu has no `hyper.`, `share.`, `get the app.` or `github.`;
-  the ascent has no star field.
+- The corner menu has no `share.`, `get the app.` or `github.`.
+- Hyper mode (`hyper.` / `classic.`) sits with restart and save, so like
+  them it waits for home. As in the original it doubles what the game times
+  with `Engine.setTimeout` / `setInterval` (cooldowns, the fire, the room's
+  warmth, income, events, villagers, the builder, enemy attacks and boss
+  specials) and leaves alone what it times raw (the ascent, poison, stuns,
+  enrage, meditation, boosts, the blast, the title's blink, the ending).
+  The port runs a game clock at twice the wall clock rather than halving
+  each timer; a switch takes hold at the next beat.
 - The forest-unlock reload window resumes instead of softlocking (the
   original's resume check is dead code).
 - During the location slide, each panel carries its own stores column

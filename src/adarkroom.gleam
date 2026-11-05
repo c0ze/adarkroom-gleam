@@ -289,7 +289,7 @@ fn game_view(m: Model) -> Element(Msg) {
     [attribute.id("wrapper"), ..ascent],
     list.append(
       [
-        html.div([attribute.id("sky")], []),
+        html.div([attribute.id("sky")], star_field(m)),
         html.div([attribute.id("content")], [
           // Lift-off slides the village down out of sight and brings the
           // sky (#spacePanel, parked 700px up) into view (`liftOff`'s
@@ -321,6 +321,54 @@ fn game_view(m: Model) -> Element(Msg) {
       ]),
     ),
   )
+}
+
+/// A game-time span as the wall clock sees it: a cooldown bar's CSS clock
+/// runs on the page, so in hyper mode it runs half as long.
+fn wall_ms(m: Model, ms: Int) -> Int {
+  ms / menu.speed(m.state)
+}
+
+/// The ascent's star field (`drawStars`): two layers falling behind the ship,
+/// the back one at half the speed and half the opacity. Each layer stacks
+/// two identical 3000px tiles and slides one tile down per lap, so the loop
+/// is seamless; its stars come in one every 100ms. space.css and dark.css
+/// colour them; the motion is CSS (index.html). The stars never change in a
+/// flight, so the subtree is built once per lift-off, not every frame.
+fn star_field(m: Model) -> List(Element(Msg)) {
+  case m.location, m.space {
+    model.Space, Some(_) -> {
+      let seed = m.star_seed
+      // drawStarAsync's pace is an Engine.setTimeout: twice as quick in hyper.
+      let pace = wall_ms(m, space.star_delay_ms)
+      [
+        element.memo([element.ref(seed), element.ref(pace)], fn() {
+          html.div([attribute.id("starsContainer")], [
+            star_layer("stars", seed, pace),
+            star_layer("starsBack", seed + 1, pace),
+          ])
+        }),
+      ]
+    }
+    _, _ -> []
+  }
+}
+
+fn star_layer(id: String, seed: Int, pace: Int) -> Element(Msg) {
+  let stars =
+    list.index_map(space.stars(seed), fn(star, i) {
+      html.div(
+        [
+          attribute.class("star"),
+          attribute.style("top", int.to_string(star.top) <> "px"),
+          attribute.style("left", int.to_string(star.left) <> "px"),
+          attribute.style("animation-delay", int.to_string(i * pace) <> "ms"),
+        ],
+        [element.text(".")],
+      )
+    })
+  let tile = html.div([], stars)
+  html.div([attribute.id(id)], [tile, tile])
 }
 
 fn outer_slide(m: Model) -> List(attribute.Attribute(Msg)) {
@@ -355,6 +403,11 @@ fn menu_corner(m: Model) -> Element(Msg) {
     m.combat == None && m.expedition == None && m.location != model.Space
   let game_items = case quiet {
     True -> [
+      // `hyper.` asks first; `classic.` just slows back down.
+      case menu.hyper(m.state) {
+        True -> item("classic.", model.SetHyper(False))
+        False -> item("hyper.", model.OpenDialog(menu.HyperPrompt))
+      },
       item("restart.", model.OpenDialog(menu.RestartPrompt)),
       item("save.", model.OpenDialog(menu.SaveStart)),
     ]
@@ -416,6 +469,18 @@ fn dialog_overlay(m: Model) -> List(Element(Msg)) {
         [
           button("enable audio", model.ChooseSound(True)),
           button("disable audio", model.ChooseSound(False)),
+        ],
+      )
+    Some(menu.HyperPrompt) ->
+      panel(
+        "Go Hyper?",
+        [
+          "turning hyper mode speeds up the game to x2 speed. do you want to do that?",
+        ],
+        [],
+        [
+          button("yes", model.SetHyper(True)),
+          button("no", model.CloseDialog),
         ],
       )
     Some(menu.RestartPrompt) ->
@@ -735,7 +800,7 @@ fn take_everything_row(m: Model) -> Element(Msg) {
         "loot_take_et",
         model.leave_cooldown_ms,
       ),
-      cooldown_ms: model.leave_cooldown_ms,
+      cooldown_ms: wall_ms(m, model.leave_cooldown_ms),
       id: "loot_takeEverything",
     )),
   ])
@@ -761,7 +826,7 @@ fn loot_exit_buttons(m: Model) -> List(Element(Msg)) {
           "loot_leave",
           model.leave_cooldown_ms,
         ),
-        cooldown_ms: model.leave_cooldown_ms,
+        cooldown_ms: wall_ms(m, model.leave_cooldown_ms),
         id: "loot_leave",
       )),
     ]
@@ -805,7 +870,7 @@ fn heal_buttons(m: Model) -> List(Element(Msg)) {
             cost: [],
             disabled: !can_heal(m),
             cooldown: model.cooldown_fraction(m, cooldown_id, cooldown_ms),
-            cooldown_ms: cooldown_ms,
+            cooldown_ms: wall_ms(m, cooldown_ms),
             id: cooldown_id,
           )),
         )
@@ -839,7 +904,7 @@ fn live_aid_buttons(m: Model) -> List(Element(Msg)) {
           "use-stim",
           combat.stim_cooldown_ms,
         ),
-        cooldown_ms: combat.stim_cooldown_ms,
+        cooldown_ms: wall_ms(m, combat.stim_cooldown_ms),
         id: "use-stim",
       )),
     ]
@@ -853,7 +918,7 @@ fn live_aid_buttons(m: Model) -> List(Element(Msg)) {
         cost: [],
         disabled: False,
         cooldown: model.cooldown_fraction(m, "shld", combat.shield_cooldown_ms),
-        cooldown_ms: combat.shield_cooldown_ms,
+        cooldown_ms: wall_ms(m, combat.shield_cooldown_ms),
         id: "shld",
       )),
     ]
@@ -964,7 +1029,7 @@ fn attack_button(m: Model, name: String, weapon: combat.Weapon) -> Element(Msg) 
     cost: weapon.cost,
     disabled: !combat.can_use(weapon, m.state),
     cooldown: model.cooldown_fraction(m, "attack_" <> name, cooldown_ms),
-    cooldown_ms: cooldown_ms,
+    cooldown_ms: wall_ms(m, cooldown_ms),
     id: "attack_" <> name,
   ))
 }
@@ -1150,7 +1215,7 @@ fn outside_panel(m: Model) -> Element(Msg) {
       cost: [],
       disabled: model.on_cooldown(m, "gather"),
       cooldown: model.cooldown_fraction(m, "gather", outside.gather_cooldown_ms),
-      cooldown_ms: outside.gather_cooldown_ms,
+      cooldown_ms: wall_ms(m, outside.gather_cooldown_ms),
       id: "gatherButton",
     ))
   let traps = case craft.building_count(m.state, "trap") > 0 {
@@ -1162,7 +1227,7 @@ fn outside_panel(m: Model) -> Element(Msg) {
         cost: [],
         disabled: model.on_cooldown(m, "traps"),
         cooldown: model.cooldown_fraction(m, "traps", outside.traps_cooldown_ms),
-        cooldown_ms: outside.traps_cooldown_ms,
+        cooldown_ms: wall_ms(m, outside.traps_cooldown_ms),
         id: "trapsButton",
       ))
   }
@@ -1342,7 +1407,7 @@ fn path_panel(m: Model) -> Element(Msg) {
       disabled: state.get_outfit(s, "cured meat") <= 0,
       // A death rests the button for two minutes (`DEATH_COOLDOWN`).
       cooldown: model.cooldown_fraction(m, "embark", model.death_cooldown_ms),
-      cooldown_ms: model.death_cooldown_ms,
+      cooldown_ms: wall_ms(m, model.death_cooldown_ms),
       id: "embarkButton",
     ))
   html.div(
@@ -1543,7 +1608,7 @@ fn room_panel(m: Model) -> Element(Msg) {
             "lightButton",
             room.stoke_cooldown_ms,
           ),
-          cooldown_ms: room.stoke_cooldown_ms,
+          cooldown_ms: wall_ms(m, room.stoke_cooldown_ms),
         ),
       )
     _ ->
@@ -1557,7 +1622,7 @@ fn room_panel(m: Model) -> Element(Msg) {
             "stokeButton",
             room.stoke_cooldown_ms,
           ),
-          cooldown_ms: room.stoke_cooldown_ms,
+          cooldown_ms: wall_ms(m, room.stoke_cooldown_ms),
         ),
       )
   }
@@ -1674,7 +1739,7 @@ fn ship_panel(m: Model) -> Element(Msg) {
       cost: [],
       disabled: ship.hull(m.state) <= 0,
       cooldown: model.cooldown_fraction(m, "liftoff", ship.liftoff_cooldown_ms),
-      cooldown_ms: ship.liftoff_cooldown_ms,
+      cooldown_ms: wall_ms(m, ship.liftoff_cooldown_ms),
       id: "liftoffButton",
     )),
     html.div([attribute.id("storesContainer")], [stores_view(m.state, False)]),
